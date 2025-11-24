@@ -14,6 +14,7 @@ import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
+import { CurrentUser } from '../../decorators/current-user.decorator';
 import { ROLES } from '../../constants/app.constants';
 
 @Controller('auth')
@@ -43,9 +44,9 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async getProfile(@Request() req) {
+  async getProfile(@CurrentUser() user) {
     return {
-      data: req.user,
+      data: user,
       status: 200,
       message: 'Profile retrieved successfully',
     };
@@ -55,9 +56,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
-  async adminOnly(@Request() req) {
+  async adminOnly(@CurrentUser() user) {
     return {
-      data: { message: 'This is an admin-only endpoint', user: req.user },
+      data: { message: 'This is an admin-only endpoint', user },
       status: 200,
       message: 'Admin access granted',
     };
@@ -67,9 +68,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE, ROLES.MERCHANT_BRANCH)
   @HttpCode(HttpStatus.OK)
-  async merchantOnly(@Request() req) {
+  async merchantOnly(@CurrentUser() user) {
     return {
-      data: { message: 'This is a merchant-only endpoint', user: req.user },
+      data: { message: 'This is a merchant-only endpoint', user },
       status: 200,
       message: 'Merchant access granted',
     };
@@ -79,9 +80,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
-  async studentOnly(@Request() req) {
+  async studentOnly(@CurrentUser() user) {
     return {
-      data: { message: 'This is a student-only endpoint', user: req.user },
+      data: { message: 'This is a student-only endpoint', user },
       status: 200,
       message: 'Student access granted',
     };

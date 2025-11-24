@@ -30,3 +30,10 @@ export interface JwtPayload {
   exp?: number;
 }
 
+export interface CurrentUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  is_active: boolean;
+}
+
