@@ -1,0 +1,99 @@
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  Get,
+  Request,
+} from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { SignupDto } from './dto/signup.dto';
+import { LoginDto } from './dto/login.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../decorators/roles.decorator';
+import { ROLES } from '../../constants/app.constants';
+
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
+  @Post('signup')
+  @HttpCode(HttpStatus.CREATED)
+  async signup(@Body() signupDto: SignupDto) {
+    return this.authService.signup(signupDto);
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(@Body() loginDto: LoginDto) {
+    return this.authService.login(loginDto);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async logout(@Request() req) {
+    const token = this.extractTokenFromHeader(req);
+    return this.authService.logout(token);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async getProfile(@Request() req) {
+    return {
+      data: req.user,
+      status: 200,
+      message: 'Profile retrieved successfully',
+    };
+  }
+
+  @Get('admin-only')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async adminOnly(@Request() req) {
+    return {
+      data: { message: 'This is an admin-only endpoint', user: req.user },
+      status: 200,
+      message: 'Admin access granted',
+    };
+  }
+
+  @Get('merchant-only')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE, ROLES.MERCHANT_BRANCH)
+  @HttpCode(HttpStatus.OK)
+  async merchantOnly(@Request() req) {
+    return {
+      data: { message: 'This is a merchant-only endpoint', user: req.user },
+      status: 200,
+      message: 'Merchant access granted',
+    };
+  }
+
+  @Get('student-only')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async studentOnly(@Request() req) {
+    return {
+      data: { message: 'This is a student-only endpoint', user: req.user },
+      status: 200,
+      message: 'Student access granted',
+    };
+  }
+
+  private extractTokenFromHeader(request: any): string {
+    const authHeader = request.headers?.authorization;
+    if (!authHeader) {
+      return '';
+    }
+
+    const [type, token] = authHeader.split(' ') ?? [];
+    return type === 'Bearer' ? token : '';
+  }
+}

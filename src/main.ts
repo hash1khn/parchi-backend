@@ -1,8 +1,29 @@
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import morgan from 'morgan';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  await app.listen(process.env.PORT ?? 3000);
+  
+  app.enableCors();
+  
+  // Configure Morgan logging
+  const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
+  app.use(morgan(morganFormat));
+  
+  // Enable global validation
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
+
+  const port = process.env.PORT ?? 8080;
+  await app.listen(port);
+  console.log(`🚀 Server is running on port ${port}`);
+
 }
 bootstrap();
