@@ -149,6 +149,7 @@ model oauth_authorizations {
   created_at            DateTime                   @default(now()) @db.Timestamptz(6)
   expires_at            DateTime                   @default(dbgenerated("(now() + '00:03:00'::interval)")) @db.Timestamptz(6)
   approved_at           DateTime?                  @db.Timestamptz(6)
+  nonce                 String?
   oauth_clients         oauth_clients              @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   users                 auth_users?                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -298,6 +299,7 @@ model sessions {
   oauth_client_id        String?          @db.Uuid
   refresh_token_hmac_key String?
   refresh_token_counter  BigInt?
+  scopes                 String?
   mfa_amr_claims         mfa_amr_claims[]
   refresh_tokens         refresh_tokens[]
   oauth_clients          oauth_clients?   @relation(fields: [oauth_client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -575,19 +577,18 @@ model student_branch_stats {
 }
 
 model student_kyc {
-  id                    String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  student_id            String               @db.Uuid
+  id                    String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  student_id            String        @db.Uuid
   student_id_image_path String
   selfie_image_path     String
-  submitted_at          DateTime?            @default(now()) @db.Timestamptz(6)
-  reviewed_by           String?              @db.Uuid
-  reviewed_at           DateTime?            @db.Timestamptz(6)
+  submitted_at          DateTime?     @default(now()) @db.Timestamptz(6)
+  reviewed_by           String?       @db.Uuid
+  reviewed_at           DateTime?     @db.Timestamptz(6)
   review_notes          String?
-  status                verification_status? @default(pending)
-  is_annual_renewal     Boolean?             @default(false)
-  created_at            DateTime?            @default(now()) @db.Timestamptz(6)
-  users                 public_users?        @relation(fields: [reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  students              students             @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  is_annual_renewal     Boolean?      @default(false)
+  created_at            DateTime?     @default(now()) @db.Timestamptz(6)
+  users                 public_users? @relation(fields: [reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  students              students      @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("public")
 }

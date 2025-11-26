@@ -59,7 +59,6 @@ CREATE TABLE student_kyc (
     reviewed_by UUID REFERENCES users(id),
     reviewed_at TIMESTAMPTZ,
     review_notes TEXT,
-    status verification_status DEFAULT 'pending',
     is_annual_renewal BOOLEAN DEFAULT false,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );

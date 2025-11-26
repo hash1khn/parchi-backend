@@ -365,7 +365,6 @@ export class AuthService {
             student_id: student.id,
             student_id_image_path: signupDto.studentIdImageUrl,
             selfie_image_path: signupDto.selfieImageUrl,
-            status: 'pending',
           },
         });
 
