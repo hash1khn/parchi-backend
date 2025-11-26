@@ -11,6 +11,7 @@ import {
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
+import { StudentSignupDto } from './dto/student-signup.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
@@ -25,6 +26,12 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   async signup(@Body() signupDto: SignupDto) {
     return this.authService.signup(signupDto);
+  }
+
+  @Post('student/signup')
+  @HttpCode(HttpStatus.CREATED)
+  async studentSignup(@Body() studentSignupDto: StudentSignupDto) {
+    return this.authService.studentSignup(studentSignupDto);
   }
 
   @Post('login')

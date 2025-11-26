@@ -12,6 +12,10 @@ export const API_RESPONSE_MESSAGES = {
     EMAIL_NOT_VERIFIED: 'Email not verified',
     ACCOUNT_PENDING: 'Account is pending approval',
     ACCOUNT_REJECTED: 'Account has been rejected',
+    STUDENT_SIGNUP_SUCCESS:
+      'Student signup request submitted successfully. Verification pending.',
+    STUDENT_SIGNUP_EMAIL_EXISTS: 'Email already registered',
+    STUDENT_SIGNUP_INVALID_IMAGES: 'Invalid image URLs or images not accessible',
   },
 } as const;
 
