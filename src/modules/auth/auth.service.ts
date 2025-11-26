@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { StudentSignupDto } from './dto/student-signup.dto';
+import { CorporateSignupDto } from './dto/corporate-signup.dto';
 import { ApiResponse } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { ROLES, UserRole } from '../../constants/app.constants';
@@ -400,6 +401,120 @@ export class AuthService {
       }
       throw new BadRequestException(
         error.message || 'Student signup failed',
+      );
+    }
+  }
+
+  /**
+   * Corporate signup - Creates corporate merchant account
+   * Creates user in Supabase Auth, public.users, and merchants tables
+   * This endpoint is called by admin to create corporate accounts
+   */
+  async corporateSignup(
+    signupDto: CorporateSignupDto,
+  ): Promise<ApiResponse<any>> {
+    try {
+      // 1. Check if email already exists
+      const existingUser = await this.prisma.public_users.findUnique({
+        where: { email: signupDto.email },
+      });
+
+      if (existingUser) {
+        throw new ConflictException(
+          API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_EMAIL_EXISTS,
+        );
+      }
+
+      // 2. Validate logo_path URL format (basic validation)
+      const urlPattern = /^https?:\/\/.+/;
+      if (!urlPattern.test(signupDto.logo_path)) {
+        throw new UnprocessableEntityException(
+          API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_INVALID_LOGO,
+        );
+      }
+
+      // 3. Create user in Supabase Auth with password from frontend
+      const { data: authData, error: authError } =
+        await this.supabase.auth.signUp({
+          email: signupDto.email,
+          password: signupDto.password,
+          options: {
+            data: {
+              role: ROLES.MERCHANT_CORPORATE,
+              phone: signupDto.contact || null,
+            },
+            emailRedirectTo: undefined, // No email confirmation for now
+          },
+        });
+
+      if (authError || !authData.user) {
+        throw new BadRequestException(
+          authError?.message || 'Failed to create user account',
+        );
+      }
+
+      // Store user ID since TypeScript needs this for type narrowing
+      const userId = authData.user.id;
+
+      // 4. Use transaction to create all related records atomically
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Create public.users record
+        const publicUser = await tx.public_users.create({
+          data: {
+            id: userId,
+            email: signupDto.email,
+            phone: signupDto.contact || null,
+            role: ROLES.MERCHANT_CORPORATE,
+            is_active: false, // Inactive until verification approved
+          },
+        });
+
+        // Create merchants record
+        const merchant = await tx.merchants.create({
+          data: {
+            user_id: publicUser.id,
+            business_name: signupDto.name,
+            business_registration_number: signupDto.regNumber || null,
+            email_prefix: signupDto.emailPrefix,
+            contact_email: signupDto.contactEmail,
+            contact_phone: signupDto.contact,
+            logo_path: signupDto.logo_path,
+            category: signupDto.category || null,
+            verification_status: 'pending',
+          },
+        });
+
+        return {
+          user: publicUser,
+          merchant,
+        };
+      });
+
+      // 5. Return response (without sensitive data)
+      return {
+        status: 201,
+        message: API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_SUCCESS,
+        data: {
+          id: result.merchant.id,
+          email: result.user.email,
+          businessName: result.merchant.business_name,
+          emailPrefix: result.merchant.email_prefix,
+          contactEmail: result.merchant.contact_email,
+          category: result.merchant.category,
+          verificationStatus: result.merchant.verification_status,
+          createdAt: result.merchant.created_at,
+        },
+      };
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof UnprocessableEntityException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Corporate signup failed',
       );
     }
   }

@@ -16,6 +16,10 @@ export const API_RESPONSE_MESSAGES = {
       'Student signup request submitted successfully. Verification pending.',
     STUDENT_SIGNUP_EMAIL_EXISTS: 'Email already registered',
     STUDENT_SIGNUP_INVALID_IMAGES: 'Invalid image URLs or images not accessible',
+    CORPORATE_SIGNUP_SUCCESS:
+      'Corporate account created successfully. Verification pending.',
+    CORPORATE_SIGNUP_EMAIL_EXISTS: 'Email already registered',
+    CORPORATE_SIGNUP_INVALID_LOGO: 'Invalid logo URL format',
   },
 } as const;
 
