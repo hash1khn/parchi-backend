@@ -206,6 +206,7 @@ export class AuthService {
     }
   }
 
+  // --- UPDATED METHOD ---
   async validateUserFromSession(accessToken: string): Promise<any> {
     try {
       // Verify JWT token using SUPABASE_JWT_SECRET
@@ -226,16 +227,35 @@ export class AuthService {
         return null;
       }
 
+      // [LOGIC FIXED] Use 'any' or implicit typing instead of ': null'
+      let studentDetails: any = null;
+      
+      if (publicUser.role === ROLES.STUDENT) {
+        studentDetails = await this.prisma.students.findUnique({
+          where: { user_id: publicUser.id },
+          select: {
+            first_name: true,
+            last_name: true,
+            parchi_id: true,
+            university: true,
+            // Add any other fields you want available in the user profile
+          },
+        });
+      }
+
       return {
         id: publicUser.id,
         email: publicUser.email,
         role: publicUser.role,
         is_active: publicUser.is_active,
+        // [LOGIC ADDED] Attach student details to the user object
+        student: studentDetails,
       };
     } catch (error) {
       return null;
     }
   }
+  // --- UPDATED METHOD END ---
 
   async logout(accessToken: string): Promise<ApiResponse<null>> {
     try {
@@ -278,10 +298,6 @@ export class AuthService {
     return this.supabase;
   }
 
-  /**
-   * Student signup with verification documents
-   * Creates user in Supabase Auth, public.users, students, and student_kyc tables
-   */
   async studentSignup(
     signupDto: StudentSignupDto,
   ): Promise<ApiResponse<any>> {
@@ -297,8 +313,7 @@ export class AuthService {
         );
       }
 
-      // 2. Validate image URLs format (basic validation)
-      // In production, you might want to verify URLs are accessible
+      // 2. Validate image URLs format
       const urlPattern = /^https?:\/\/.+/;
       if (
         !urlPattern.test(signupDto.studentIdImageUrl) ||
@@ -309,7 +324,7 @@ export class AuthService {
         );
       }
 
-      // 3. Create user in Supabase Auth with password from frontend
+      // 3. Create user in Supabase Auth
       const { data: authData, error: authError } =
         await this.supabase.auth.signUp({
           email: signupDto.email,
@@ -319,7 +334,7 @@ export class AuthService {
               role: ROLES.STUDENT,
               phone: signupDto.phone || null,
             },
-            emailRedirectTo: undefined, // No email confirmation for now
+            emailRedirectTo: undefined,
           },
         });
 
@@ -329,26 +344,23 @@ export class AuthService {
         );
       }
 
-      // Store user ID since TypeScript needs this for type narrowing
       const userId = authData.user.id;
 
       // 5. Generate unique Parchi ID
       const parchiId = await generateParchiId(this.prisma);
 
-      // 6. Use transaction to create all related records atomically
+      // 6. Transaction
       const result = await this.prisma.$transaction(async (tx) => {
-        // Create public.users record
         const publicUser = await tx.public_users.create({
           data: {
             id: userId,
             email: signupDto.email,
             phone: signupDto.phone || null,
             role: ROLES.STUDENT,
-            is_active: false, // Inactive until verification approved
+            is_active: false, 
           },
         });
 
-        // Create students record
         const student = await tx.students.create({
           data: {
             user_id: publicUser.id,
@@ -360,7 +372,6 @@ export class AuthService {
           },
         });
 
-        // Create student_kyc record
         const studentKyc = await tx.student_kyc.create({
           data: {
             student_id: student.id,
@@ -376,7 +387,6 @@ export class AuthService {
         };
       });
 
-      // 7. Return response (without sensitive data)
       return {
         status: 201,
         message: API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_SUCCESS,
@@ -405,11 +415,6 @@ export class AuthService {
     }
   }
 
-  /**
-   * Corporate signup - Creates corporate merchant account
-   * Creates user in Supabase Auth, public.users, and merchants tables
-   * This endpoint is called by admin to create corporate accounts
-   */
   async corporateSignup(
     signupDto: CorporateSignupDto,
   ): Promise<ApiResponse<any>> {
@@ -425,7 +430,6 @@ export class AuthService {
         );
       }
 
-      // 2. Validate logo_path URL format (basic validation)
       const urlPattern = /^https?:\/\/.+/;
       if (!urlPattern.test(signupDto.logo_path)) {
         throw new UnprocessableEntityException(
@@ -433,7 +437,6 @@ export class AuthService {
         );
       }
 
-      // 3. Create user in Supabase Auth with password from frontend
       const { data: authData, error: authError } =
         await this.supabase.auth.signUp({
           email: signupDto.email,
@@ -443,7 +446,7 @@ export class AuthService {
               role: ROLES.MERCHANT_CORPORATE,
               phone: signupDto.contact || null,
             },
-            emailRedirectTo: undefined, // No email confirmation for now
+            emailRedirectTo: undefined,
           },
         });
 
@@ -453,23 +456,19 @@ export class AuthService {
         );
       }
 
-      // Store user ID since TypeScript needs this for type narrowing
       const userId = authData.user.id;
 
-      // 4. Use transaction to create all related records atomically
       const result = await this.prisma.$transaction(async (tx) => {
-        // Create public.users record
         const publicUser = await tx.public_users.create({
           data: {
             id: userId,
             email: signupDto.email,
             phone: signupDto.contact || null,
             role: ROLES.MERCHANT_CORPORATE,
-            is_active: true, // Inactive until verification approved
+            is_active: true,
           },
         });
 
-        // Create merchants record
         const merchant = await tx.merchants.create({
           data: {
             user_id: publicUser.id,
@@ -490,7 +489,6 @@ export class AuthService {
         };
       });
 
-      // 5. Return response (without sensitive data)
       return {
         status: 201,
         message: API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_SUCCESS,
@@ -519,4 +517,3 @@ export class AuthService {
     }
   }
 }
-
