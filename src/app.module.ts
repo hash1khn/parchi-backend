@@ -4,12 +4,14 @@ import { AppService } from './app.service';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { ConfigModule } from './common/config/config.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { MerchantsModule } from './modules/merchants/merchants.module';
 
 @Module({
   imports: [
     ConfigModule,
     PrismaModule,
     AuthModule,
+    MerchantsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

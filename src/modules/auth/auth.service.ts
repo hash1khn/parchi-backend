@@ -13,6 +13,7 @@ import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { StudentSignupDto } from './dto/student-signup.dto';
 import { CorporateSignupDto } from './dto/corporate-signup.dto';
+import { BranchSignupDto } from './dto/branch-signup.dto';
 import { ApiResponse } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { ROLES, UserRole } from '../../constants/app.constants';
@@ -516,4 +517,183 @@ export class AuthService {
       );
     }
   }
+
+  /**
+   * Branch signup - Creates branch merchant account
+   * Creates user in Supabase Auth, public.users, and merchant_branches tables
+   * This endpoint can be called by admin or corporate merchant to create branch accounts
+   * If admin creates: account is active immediately (no verification needed)
+   * If corporate merchant creates: account is pending verification
+   */
+  async branchSignup(
+    signupDto: BranchSignupDto,
+    currentUser: any,
+  ): Promise<ApiResponse<any>> {
+    try {
+      // 1. Check if email already exists
+      const existingUser = await this.prisma.public_users.findUnique({
+        where: { email: signupDto.email },
+      });
+
+      if (existingUser) {
+        throw new ConflictException(
+          API_RESPONSE_MESSAGES.AUTH.BRANCH_SIGNUP_EMAIL_EXISTS,
+        );
+      }
+
+      // 2. Determine merchant_id based on user role
+      let merchantId: string;
+
+      if (currentUser?.role === ROLES.MERCHANT_CORPORATE) {
+        // Corporate merchant: Get their own merchant_id from database
+        const corporateMerchant = await this.prisma.merchants.findUnique({
+          where: { user_id: currentUser.id },
+        });
+
+        if (!corporateMerchant) {
+          throw new BadRequestException(
+            'Corporate merchant account not found. Please contact support.',
+          );
+        }
+
+        merchantId = corporateMerchant.id;
+      } else if (currentUser?.role === ROLES.ADMIN) {
+        // Admin: Must provide linkedCorporate in request
+        if (!signupDto.linkedCorporate) {
+          throw new BadRequestException(
+            'linkedCorporate is required when creating branch as admin',
+          );
+        }
+
+        // Verify the corporate account exists
+        const corporateAccount = await this.prisma.merchants.findUnique({
+          where: { id: signupDto.linkedCorporate },
+        });
+
+        if (!corporateAccount) {
+          throw new BadRequestException(
+            API_RESPONSE_MESSAGES.AUTH.BRANCH_SIGNUP_INVALID_CORPORATE,
+          );
+        }
+
+        merchantId = signupDto.linkedCorporate;
+      } else {
+        throw new BadRequestException('Invalid user role for branch creation');
+      }
+
+      // 3. Create user in Supabase Auth with password from frontend
+      const { data: authData, error: authError } =
+        await this.supabase.auth.signUp({
+          email: signupDto.email,
+          password: signupDto.password,
+          options: {
+            data: {
+              role: ROLES.MERCHANT_BRANCH,
+              phone: signupDto.contact || null,
+            },
+            emailRedirectTo: undefined, // No email confirmation for now
+          },
+        });
+
+      if (authError || !authData.user) {
+        throw new BadRequestException(
+          authError?.message || 'Failed to create user account',
+        );
+      }
+
+      // Store user ID since TypeScript needs this for type narrowing
+      const userId = authData.user.id;
+
+      // 4. Convert latitude/longitude from string to Decimal if provided
+      const latitude = signupDto.latitude
+        ? parseFloat(signupDto.latitude)
+        : null;
+      const longitude = signupDto.longitude
+        ? parseFloat(signupDto.longitude)
+        : null;
+
+      // Validate coordinates if provided
+      if (latitude !== null && (isNaN(latitude) || latitude < -90 || latitude > 90)) {
+        throw new BadRequestException('Invalid latitude value');
+      }
+      if (longitude !== null && (isNaN(longitude) || longitude < -180 || longitude > 180)) {
+        throw new BadRequestException('Invalid longitude value');
+      }
+
+      // Determine if account should be active based on creator's role
+      // Admin creates: active immediately (no verification needed)
+      // Corporate merchant creates: inactive (pending verification)
+      const isActive = currentUser?.role === ROLES.ADMIN;
+
+      // 5. Use transaction to create all related records atomically
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Create public.users record
+        const publicUser = await tx.public_users.create({
+          data: {
+            id: userId,
+            email: signupDto.email,
+            phone: signupDto.contact || null,
+            role: ROLES.MERCHANT_BRANCH,
+            is_active: isActive,
+          },
+        });
+
+        // Create merchant_branches record
+        const branch = await tx.merchant_branches.create({
+          data: {
+            merchant_id: merchantId,
+            user_id: publicUser.id,
+            branch_name: signupDto.name,
+            address: signupDto.address,
+            city: signupDto.city,
+            contact_phone: signupDto.contact || null,
+            latitude: latitude !== null ? latitude : undefined,
+            longitude: longitude !== null ? longitude : undefined,
+          },
+        });
+
+        return {
+          user: publicUser,
+          branch,
+        };
+      });
+
+      // 6. Return response (without sensitive data)
+      // Use different message based on whether account is active or pending
+      const successMessage =
+        isActive
+          ? API_RESPONSE_MESSAGES.AUTH.BRANCH_SIGNUP_SUCCESS_ADMIN
+          : API_RESPONSE_MESSAGES.AUTH.BRANCH_SIGNUP_SUCCESS;
+
+      return {
+        status: 201,
+        message: successMessage,
+        data: {
+          id: result.branch.id,
+          email: result.user.email,
+          branchName: result.branch.branch_name,
+          address: result.branch.address,
+          city: result.branch.city,
+          contactPhone: result.branch.contact_phone,
+          latitude: result.branch.latitude?.toString() || null,
+          longitude: result.branch.longitude?.toString() || null,
+          linkedCorporate: merchantId,
+          isActive: result.user.is_active,
+          createdAt: result.branch.created_at,
+        },
+      };
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof UnprocessableEntityException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Branch signup failed',
+      );
+    }
+  }
 }
+

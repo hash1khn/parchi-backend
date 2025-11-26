@@ -20,6 +20,18 @@ export const API_RESPONSE_MESSAGES = {
       'Corporate account created successfully. Verification pending.',
     CORPORATE_SIGNUP_EMAIL_EXISTS: 'Email already registered',
     CORPORATE_SIGNUP_INVALID_LOGO: 'Invalid logo URL format',
+    BRANCH_SIGNUP_SUCCESS:
+      'Branch account created successfully. Verification pending.',
+    BRANCH_SIGNUP_SUCCESS_ADMIN:
+      'Branch account created successfully and activated.',
+    BRANCH_SIGNUP_EMAIL_EXISTS: 'Email already registered',
+    BRANCH_SIGNUP_INVALID_CORPORATE: 'Invalid or non-existent corporate account',
+  },
+  // Merchant messages
+  MERCHANT: {
+    LIST_SUCCESS: 'Corporate merchants retrieved successfully',
+    NOT_FOUND: 'Merchant not found',
+    INVALID_ID: 'Invalid merchant ID',
   },
 } as const;
 

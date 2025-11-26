@@ -13,6 +13,7 @@ import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { StudentSignupDto } from './dto/student-signup.dto';
 import { CorporateSignupDto } from './dto/corporate-signup.dto';
+import { BranchSignupDto } from './dto/branch-signup.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
@@ -41,6 +42,17 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   async corporateSignup(@Body() corporateSignupDto: CorporateSignupDto) {
     return this.authService.corporateSignup(corporateSignupDto);
+  }
+
+  @Post('branch/signup')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.CREATED)
+  async branchSignup(
+    @Body() branchSignupDto: BranchSignupDto,
+    @CurrentUser() currentUser: any,
+  ) {
+    return this.authService.branchSignup(branchSignupDto, currentUser);
   }
 
   @Post('login')
