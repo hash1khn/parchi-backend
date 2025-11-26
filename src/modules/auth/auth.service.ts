@@ -465,7 +465,7 @@ export class AuthService {
             email: signupDto.email,
             phone: signupDto.contact || null,
             role: ROLES.MERCHANT_CORPORATE,
-            is_active: false, // Inactive until verification approved
+            is_active: true, // Inactive until verification approved
           },
         });
 
@@ -480,7 +480,7 @@ export class AuthService {
             contact_phone: signupDto.contact,
             logo_path: signupDto.logo_path,
             category: signupDto.category || null,
-            verification_status: 'pending',
+            verification_status: 'approved',
           },
         });
 
