@@ -35,5 +35,24 @@ export interface CurrentUser {
   email: string;
   role: UserRole;
   is_active: boolean;
+  // Role-specific details (only populated for the user's role)
+  student?: {
+    first_name: string;
+    last_name: string;
+    parchi_id: string;
+    university: string;
+  } | null;
+  merchant?: {
+    id: string;
+    business_name: string;
+    email_prefix: string | null;
+    category: string | null;
+  } | null;
+  branch?: {
+    id: string;
+    branch_name: string;
+    merchant_id: string;
+    city: string;
+  } | null;
 }
 

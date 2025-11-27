@@ -228,9 +228,11 @@ export class AuthService {
         return null;
       }
 
-      // [LOGIC FIXED] Use 'any' or implicit typing instead of ': null'
+      // Fetch role-specific details based on user role
       let studentDetails: any = null;
-      
+      let merchantDetails: any = null;
+      let branchDetails: any = null;
+
       if (publicUser.role === ROLES.STUDENT) {
         studentDetails = await this.prisma.students.findUnique({
           where: { user_id: publicUser.id },
@@ -239,7 +241,26 @@ export class AuthService {
             last_name: true,
             parchi_id: true,
             university: true,
-            // Add any other fields you want available in the user profile
+          },
+        });
+      } else if (publicUser.role === ROLES.MERCHANT_CORPORATE) {
+        merchantDetails = await this.prisma.merchants.findUnique({
+          where: { user_id: publicUser.id },
+          select: {
+            id: true,
+            business_name: true,
+            email_prefix: true,
+            category: true,
+          },
+        });
+      } else if (publicUser.role === ROLES.MERCHANT_BRANCH) {
+        branchDetails = await this.prisma.merchant_branches.findUnique({
+          where: { user_id: publicUser.id },
+          select: {
+            id: true,
+            branch_name: true,
+            merchant_id: true,
+            city: true,
           },
         });
       }
@@ -249,8 +270,10 @@ export class AuthService {
         email: publicUser.email,
         role: publicUser.role,
         is_active: publicUser.is_active,
-        // [LOGIC ADDED] Attach student details to the user object
+        // Attach role-specific details to the user object
         student: studentDetails,
+        merchant: merchantDetails,
+        branch: branchDetails,
       };
     } catch (error) {
       return null;
