@@ -270,6 +270,7 @@ export class AuthService {
         email: publicUser.email,
         role: publicUser.role,
         is_active: publicUser.is_active,
+        phone: publicUser.phone, 
         // Attach role-specific details to the user object
         student: studentDetails,
         merchant: merchantDetails,
