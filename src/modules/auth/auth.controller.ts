@@ -14,6 +14,8 @@ import { LoginDto } from './dto/login.dto';
 import { StudentSignupDto } from './dto/student-signup.dto';
 import { CorporateSignupDto } from './dto/corporate-signup.dto';
 import { BranchSignupDto } from './dto/branch-signup.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
@@ -59,6 +61,28 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(forgotPasswordDto);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @Body() changePasswordDto: ChangePasswordDto,
+    @CurrentUser() currentUser: any,
+    @Request() req,
+  ) {
+    const token = this.extractTokenFromHeader(req);
+    return this.authService.changePassword(
+      changePasswordDto,
+      token,
+      currentUser.id,
+    );
   }
 
   @Post('logout')

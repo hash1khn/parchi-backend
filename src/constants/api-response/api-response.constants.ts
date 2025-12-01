@@ -26,6 +26,11 @@ export const API_RESPONSE_MESSAGES = {
       'Branch account created successfully and activated.',
     BRANCH_SIGNUP_EMAIL_EXISTS: 'Email already registered',
     BRANCH_SIGNUP_INVALID_CORPORATE: 'Invalid or non-existent corporate account',
+    FORGOT_PASSWORD_SUCCESS: 'Password reset email sent successfully',
+    CHANGE_PASSWORD_SUCCESS: 'Password changed successfully',
+    CHANGE_PASSWORD_INVALID_CURRENT: 'Current password is incorrect',
+    CHANGE_PASSWORD_FAILED: 'Password change failed',
+    USER_NOT_FOUND: 'User not found',
   },
   // Merchant messages
   MERCHANT: {

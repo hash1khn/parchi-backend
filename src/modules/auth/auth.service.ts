@@ -14,6 +14,8 @@ import { LoginDto } from './dto/login.dto';
 import { StudentSignupDto } from './dto/student-signup.dto';
 import { CorporateSignupDto } from './dto/corporate-signup.dto';
 import { BranchSignupDto } from './dto/branch-signup.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { ApiResponse } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { ROLES, UserRole } from '../../constants/app.constants';
@@ -270,7 +272,6 @@ export class AuthService {
         email: publicUser.email,
         role: publicUser.role,
         is_active: publicUser.is_active,
-        phone: publicUser.phone, 
         // Attach role-specific details to the user object
         student: studentDetails,
         merchant: merchantDetails,
@@ -716,6 +717,120 @@ export class AuthService {
       }
       throw new BadRequestException(
         error.message || 'Branch signup failed',
+      );
+    }
+  }
+
+  /**
+   * Forgot Password - Sends password reset email via Supabase
+   * This will send an email to the user with a password reset link
+   */
+  async forgotPassword(
+    forgotPasswordDto: ForgotPasswordDto,
+  ): Promise<ApiResponse<null>> {
+    try {
+      // Check if user exists in public.users
+      const publicUser = await this.prisma.public_users.findUnique({
+        where: { email: forgotPasswordDto.email },
+      });
+
+      if (!publicUser) {
+        // Don't reveal if user exists or not for security reasons
+        // Return success message even if user doesn't exist
+        return {
+          data: null,
+          status: 200,
+          message: API_RESPONSE_MESSAGES.AUTH.FORGOT_PASSWORD_SUCCESS,
+        };
+      }
+
+      // Use Supabase to send password reset email
+      const { error } = await this.supabase.auth.resetPasswordForEmail(
+        forgotPasswordDto.email,
+        {
+          redirectTo: this.configService.get<string>('PASSWORD_RESET_REDIRECT_URL') || undefined,
+        },
+      );
+
+      if (error) {
+        throw new BadRequestException(error.message);
+      }
+
+      return {
+        data: null,
+        status: 200,
+        message: API_RESPONSE_MESSAGES.AUTH.FORGOT_PASSWORD_SUCCESS,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to send password reset email',
+      );
+    }
+  }
+
+  /**
+   * Change Password - Changes password for authenticated user
+   * Requires current password verification and user's access token
+   * 
+   * Implements the password change logic directly using SQL queries:
+   * 1. Verifies the current password by checking it against the encrypted password in auth.users
+   * 2. Updates the password if verification succeeds
+   * 3. Returns error if password is wrong
+   * 
+   * This approach:
+   * - Doesn't create unnecessary sessions
+   * - Performs verification and update in database operations
+   * - Uses the existing authenticated session (via access token)
+   * - Directly queries the auth.users table using raw SQL
+   */
+  async changePassword(
+    changePasswordDto: ChangePasswordDto,
+    accessToken: string,
+    userId: string,
+  ): Promise<ApiResponse<null>> {
+    try {
+      // Step 1: Verify current password by checking if it matches the encrypted password
+      // We query auth.users table directly using raw SQL with parameterized queries for security
+      // Prisma automatically handles parameterization to prevent SQL injection
+      const verifyResult = await this.prisma.$queryRaw<Array<{ encrypted_password: string }>>`
+        SELECT encrypted_password
+        FROM auth.users
+        WHERE id = ${userId}::uuid
+          AND encrypted_password = crypt(${changePasswordDto.currentPassword}, encrypted_password)
+      `;
+
+      // If no matching password found, current password is incorrect
+      if (!verifyResult || verifyResult.length === 0) {
+        throw new UnauthorizedException(
+          API_RESPONSE_MESSAGES.AUTH.CHANGE_PASSWORD_INVALID_CURRENT,
+        );
+      }
+
+      // Step 2: Update password with new encrypted password
+      // Generate new salt and encrypt the new password
+      await this.prisma.$executeRaw`
+        UPDATE auth.users 
+        SET encrypted_password = crypt(${changePasswordDto.newPassword}, gen_salt('bf')) 
+        WHERE id = ${userId}::uuid
+      `;
+
+      return {
+        data: null,
+        status: 200,
+        message: API_RESPONSE_MESSAGES.AUTH.CHANGE_PASSWORD_SUCCESS,
+      };
+    } catch (error) {
+      if (
+        error instanceof UnauthorizedException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || API_RESPONSE_MESSAGES.AUTH.CHANGE_PASSWORD_FAILED,
       );
     }
   }
