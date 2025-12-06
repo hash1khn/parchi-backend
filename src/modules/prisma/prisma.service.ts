@@ -6,8 +6,16 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
+  constructor() {
+    super({
+      log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    });
+  }
+
   async onModuleInit() {
-    await this.$connect();
+    // Prisma connects lazily by default - no need to call $connect() explicitly
+    // This prevents connection pool exhaustion issues
+    // Connections are established automatically when queries are executed
   }
 
   async onModuleDestroy() {

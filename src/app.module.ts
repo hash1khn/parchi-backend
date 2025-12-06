@@ -6,6 +6,7 @@ import { ConfigModule } from './common/config/config.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { OffersModule } from './modules/offers/offers.module';
+import { StudentsModule } from './modules/students/students.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { OffersModule } from './modules/offers/offers.module';
     AuthModule,
     MerchantsModule,
     OffersModule,
+    StudentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

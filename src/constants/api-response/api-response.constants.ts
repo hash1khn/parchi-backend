@@ -73,5 +73,14 @@ export const API_RESPONSE_MESSAGES = {
     ANALYTICS_SUCCESS: 'Offer analytics retrieved successfully',
     TOGGLE_SUCCESS: 'Offer status toggled successfully',
   },
+  // Student messages
+  STUDENT: {
+    LIST_SUCCESS: 'Students retrieved successfully',
+    GET_SUCCESS: 'Student details retrieved successfully',
+    NOT_FOUND: 'Student not found',
+    APPROVE_SUCCESS: 'Student approved successfully',
+    REJECT_SUCCESS: 'Student rejected successfully',
+    INVALID_ID: 'Invalid student ID',
+  },
 } as const;
 
