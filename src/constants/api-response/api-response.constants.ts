@@ -52,5 +52,25 @@ export const API_RESPONSE_MESSAGES = {
     BRANCH_ACCESS_DENIED: 'Access denied. You can only manage your own branches',
     CORPORATE_ACCESS_DENIED: 'Access denied. Only admins can manage corporate accounts',
   },
+  // Offer messages
+  OFFER: {
+    CREATE_SUCCESS: 'Offer created successfully',
+    GET_SUCCESS: 'Offer retrieved successfully',
+    LIST_SUCCESS: 'Offers retrieved successfully',
+    UPDATE_SUCCESS: 'Offer updated successfully',
+    DELETE_SUCCESS: 'Offer deleted successfully',
+    NOT_FOUND: 'Offer not found',
+    ACCESS_DENIED: 'Access denied. You can only manage your own offers',
+    INVALID_MERCHANT: 'Invalid merchant ID',
+    INVALID_BRANCH: 'Invalid branch ID',
+    BRANCH_NOT_BELONGS_TO_MERCHANT: 'Branch does not belong to this merchant',
+    BRANCHES_ASSIGNED_SUCCESS: 'Branches assigned to offer successfully',
+    BRANCHES_REMOVED_SUCCESS: 'Branches removed from offer successfully',
+    APPROVE_SUCCESS: 'Offer approved successfully',
+    REJECT_SUCCESS: 'Offer rejected successfully',
+    INVALID_DATE_RANGE: 'validUntil must be after validFrom',
+    INVALID_DISCOUNT_VALUE: 'Invalid discount value',
+    ANALYTICS_SUCCESS: 'Offer analytics retrieved successfully',
+  },
 } as const;
 

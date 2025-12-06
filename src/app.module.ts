@@ -5,6 +5,7 @@ import { PrismaModule } from './modules/prisma/prisma.module';
 import { ConfigModule } from './common/config/config.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
+import { OffersModule } from './modules/offers/offers.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { MerchantsModule } from './modules/merchants/merchants.module';
     PrismaModule,
     AuthModule,
     MerchantsModule,
+    OffersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -31,6 +31,7 @@ export interface CorporateMerchantResponse {
 export interface BranchResponse {
   id: string;
   merchantId: string;
+  merchantName: string;
   userId: string | null;
   branchName: string;
   address: string;
@@ -343,6 +344,13 @@ export class MerchantsService {
 
     const branches = await this.prisma.merchant_branches.findMany({
       where: whereClause,
+      include: {
+        merchants: {
+          select: {
+            business_name: true,
+          },
+        },
+      },
       orderBy: {
         created_at: 'desc',
       },
@@ -351,6 +359,7 @@ export class MerchantsService {
     const formattedBranches: BranchResponse[] = branches.map((branch) => ({
       id: branch.id,
       merchantId: branch.merchant_id,
+      merchantName: branch.merchants.business_name,
       userId: branch.user_id,
       branchName: branch.branch_name,
       address: branch.address,
@@ -417,6 +426,7 @@ export class MerchantsService {
     const formattedBranch: BranchResponse = {
       id: branch.id,
       merchantId: branch.merchant_id,
+      merchantName: branch.merchants.business_name,
       userId: branch.user_id,
       branchName: branch.branch_name,
       address: branch.address,
@@ -517,6 +527,13 @@ export class MerchantsService {
     const updatedBranch = await this.prisma.merchant_branches.update({
       where: { id },
       data: updateData,
+      include: {
+        merchants: {
+          select: {
+            business_name: true,
+          },
+        },
+      },
     });
 
     // Update user is_active if provided (keep in sync with branch is_active)
@@ -530,6 +547,7 @@ export class MerchantsService {
     const formattedBranch: BranchResponse = {
       id: updatedBranch.id,
       merchantId: updatedBranch.merchant_id,
+      merchantName: updatedBranch.merchants.business_name,
       userId: updatedBranch.user_id,
       branchName: updatedBranch.branch_name,
       address: updatedBranch.address,
@@ -666,6 +684,13 @@ export class MerchantsService {
     // Fetch updated branch
     const updatedBranch = await this.prisma.merchant_branches.findUnique({
       where: { id },
+      include: {
+        merchants: {
+          select: {
+            business_name: true,
+          },
+        },
+      },
     });
 
     if (!updatedBranch) {
@@ -677,6 +702,7 @@ export class MerchantsService {
     const formattedBranch: BranchResponse = {
       id: updatedBranch.id,
       merchantId: updatedBranch.merchant_id,
+      merchantName: updatedBranch.merchants.business_name,
       userId: updatedBranch.user_id,
       branchName: updatedBranch.branch_name,
       address: updatedBranch.address,
