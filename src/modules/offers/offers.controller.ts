@@ -59,6 +59,50 @@ export class OffersController {
     );
   }
 
+  // ========== Student App Endpoints ==========
+
+  @Get('active')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async getActiveOffers(
+    @Query('category') category?: string,
+    @Query('latitude') latitude?: string,
+    @Query('longitude') longitude?: string,
+    @Query('radius', new DefaultValuePipe(10), ParseIntPipe) radius?: number,
+    @Query('sort') sort?: 'popularity' | 'proximity' | 'newest',
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit?: number,
+  ) {
+    return this.offersService.getActiveOffersForStudents(
+      category,
+      latitude ? parseFloat(latitude) : undefined,
+      longitude ? parseFloat(longitude) : undefined,
+      radius,
+      sort,
+      page,
+      limit,
+    );
+  }
+
+  @Get('merchant/:merchantId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async getOffersByMerchant(@Param('merchantId') merchantId: string) {
+    return this.offersService.getOffersByMerchantForStudents(merchantId);
+  }
+
+  @Get(':id/details')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async getOfferDetails(@Param('id') id: string) {
+    return this.offersService.getOfferDetailsForStudents(id);
+  }
+
+  // ========== Merchant Corporate Account Endpoints (continued) ==========
+
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE, ROLES.ADMIN)

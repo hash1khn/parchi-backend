@@ -66,6 +66,23 @@ export interface OfferAnalyticsResponse {
   }>;
 }
 
+export interface OfferResponseWithDistance extends OfferResponse {
+  distance?: number;
+}
+
+export interface OfferDetailsResponse extends OfferResponse {
+  branches: Array<{
+    branchId: string;
+    branchName: string;
+    address: string;
+    city: string;
+    latitude: number | null;
+    longitude: number | null;
+    distance?: number;
+    isActive: boolean;
+  }>;
+}
+
 @Injectable()
 export class OffersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -1004,6 +1021,310 @@ export class OffersService {
       status: 200,
       message: API_RESPONSE_MESSAGES.OFFER.DELETE_SUCCESS,
     };
+  }
+
+  /**
+   * Get active offers for students
+   * Student only
+   */
+  async getActiveOffersForStudents(
+    category?: string,
+    latitude?: number,
+    longitude?: number,
+    radius: number = 10,
+    sort?: 'popularity' | 'proximity' | 'newest',
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<PaginatedResponse<OfferResponseWithDistance>> {
+    const skip = calculateSkip(page, limit);
+    const now = new Date();
+
+    // Build where clause for active offers
+    const whereClause: any = {
+      status: 'active',
+      valid_from: { lte: now },
+      valid_until: { gte: now },
+    };
+
+    // Filter by merchant category if provided
+    if (category) {
+      whereClause.merchants = {
+        category: category,
+      };
+    }
+
+    // Get all active offers with merchant and branch info
+    const offers = await this.prisma.offers.findMany({
+      where: whereClause,
+      include: {
+        offer_branches: {
+          where: {
+            is_active: true,
+          },
+          include: {
+            merchant_branches: {
+              select: {
+                id: true,
+                branch_name: true,
+                latitude: true,
+                longitude: true,
+                address: true,
+                city: true,
+                is_active: true,
+              },
+            },
+          },
+        },
+        merchants: {
+          select: {
+            id: true,
+            business_name: true,
+            logo_path: true,
+            category: true,
+          },
+        },
+      },
+    });
+
+    // Format offers and calculate distances if coordinates provided
+    let formattedOffers: OfferResponseWithDistance[] = offers.map((offer) => {
+      const formatted = this.formatOfferResponse(offer);
+      
+      // Calculate minimum distance to any branch if coordinates provided
+      if (latitude !== undefined && longitude !== undefined) {
+        const distances = offer.offer_branches
+          .filter((ob) => ob.merchant_branches.latitude && ob.merchant_branches.longitude)
+          .map((ob) => {
+            const branchLat = Number(ob.merchant_branches.latitude);
+            const branchLng = Number(ob.merchant_branches.longitude);
+            return this.calculateDistance(
+              latitude,
+              longitude,
+              branchLat,
+              branchLng,
+            );
+          });
+        
+        const minDistance = distances.length > 0 ? Math.min(...distances) : undefined;
+        return { ...formatted, distance: minDistance } as OfferResponseWithDistance;
+      }
+      
+      return formatted as OfferResponseWithDistance;
+    });
+
+    // Filter by radius if coordinates provided
+    if (latitude !== undefined && longitude !== undefined) {
+      formattedOffers = formattedOffers.filter(
+        (offer) => offer.distance !== undefined && offer.distance <= radius,
+      );
+    }
+
+    // Sort offers
+    if (sort === 'popularity') {
+      formattedOffers.sort((a, b) => b.currentRedemptions - a.currentRedemptions);
+    } else if (sort === 'proximity' && latitude !== undefined && longitude !== undefined) {
+      formattedOffers.sort((a, b) => {
+        const distA = a.distance ?? Infinity;
+        const distB = b.distance ?? Infinity;
+        return distA - distB;
+      });
+    } else if (sort === 'newest') {
+      formattedOffers.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+    }
+
+    // Apply pagination
+    const total = formattedOffers.length;
+    const paginatedOffers = formattedOffers.slice(skip, skip + limit);
+
+    return {
+      data: {
+        data: paginatedOffers,
+        pagination: calculatePaginationMeta(total, page, limit),
+      },
+      status: 200,
+      message: API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
+    };
+  }
+
+  /**
+   * Get offer details for students
+   * Student only
+   */
+  async getOfferDetailsForStudents(
+    id: string,
+  ): Promise<ApiResponse<OfferDetailsResponse>> {
+    const now = new Date();
+    
+    const offer = await this.prisma.offers.findUnique({
+      where: { id },
+      include: {
+        offer_branches: {
+          where: {
+            is_active: true,
+          },
+          include: {
+            merchant_branches: {
+              select: {
+                id: true,
+                branch_name: true,
+                address: true,
+                city: true,
+                latitude: true,
+                longitude: true,
+                is_active: true,
+              },
+            },
+          },
+        },
+        merchants: {
+          select: {
+            id: true,
+            business_name: true,
+            logo_path: true,
+            category: true,
+          },
+        },
+      },
+    });
+
+    if (!offer) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.OFFER.NOT_FOUND);
+    }
+
+    // Check if offer is active and valid
+    if (
+      offer.status !== 'active' ||
+      offer.valid_from > now ||
+      offer.valid_until < now
+    ) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.OFFER.NOT_FOUND);
+    }
+
+    const formatted = this.formatOfferResponse(offer);
+    
+    // Format branches with full details
+    const branches = offer.offer_branches.map((ob) => ({
+      branchId: ob.merchant_branches.id,
+      branchName: ob.merchant_branches.branch_name,
+      address: ob.merchant_branches.address,
+      city: ob.merchant_branches.city,
+      latitude: ob.merchant_branches.latitude
+        ? Number(ob.merchant_branches.latitude)
+        : null,
+      longitude: ob.merchant_branches.longitude
+        ? Number(ob.merchant_branches.longitude)
+        : null,
+      isActive: ob.is_active ?? true,
+    }));
+
+    return {
+      data: {
+        ...formatted,
+        branches,
+      },
+      status: 200,
+      message: API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS,
+    };
+  }
+
+  /**
+   * Get offers by merchant for students
+   * Student only
+   */
+  async getOffersByMerchantForStudents(
+    merchantId: string,
+  ): Promise<ApiResponse<OfferResponse[]>> {
+    const now = new Date();
+
+    // Verify merchant exists
+    const merchant = await this.prisma.merchants.findUnique({
+      where: { id: merchantId },
+    });
+
+    if (!merchant) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    // Get active offers for this merchant
+    const offers = await this.prisma.offers.findMany({
+      where: {
+        merchant_id: merchantId,
+        status: 'active',
+        valid_from: { lte: now },
+        valid_until: { gte: now },
+      },
+      include: {
+        offer_branches: {
+          where: {
+            is_active: true,
+          },
+          include: {
+            merchant_branches: {
+              select: {
+                id: true,
+                branch_name: true,
+                is_active: true,
+              },
+            },
+          },
+        },
+        merchants: {
+          select: {
+            id: true,
+            business_name: true,
+            logo_path: true,
+            category: true,
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    const formattedOffers = offers.map((offer) =>
+      this.formatOfferResponse(offer),
+    );
+
+    return {
+      data: formattedOffers,
+      status: 200,
+      message: API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
+    };
+  }
+
+  /**
+   * Calculate distance between two coordinates using Haversine formula
+   * Returns distance in kilometers
+   */
+  private calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = this.toRadians(lat2 - lat1);
+    const dLon = this.toRadians(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(this.toRadians(lat1)) *
+        Math.cos(this.toRadians(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  /**
+   * Convert degrees to radians
+   */
+  private toRadians(degrees: number): number {
+    return degrees * (Math.PI / 180);
   }
 
   /**
