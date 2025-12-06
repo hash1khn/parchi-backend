@@ -509,6 +509,78 @@ export class OffersService {
   }
 
   /**
+   * Toggle offer status (active/inactive)
+   * Merchant Corporate only (their own offers)
+   */
+  async toggleOfferStatus(
+    id: string,
+    currentUser: CurrentUser,
+  ): Promise<ApiResponse<OfferResponse>> {
+    // Check if offer exists
+    const offer = await this.prisma.offers.findUnique({
+      where: { id },
+    });
+
+    if (!offer) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.OFFER.NOT_FOUND);
+    }
+
+    // Authorization check
+    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      if (!currentUser.merchant?.id) {
+        throw new ForbiddenException(
+          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
+        );
+      }
+      if (offer.merchant_id !== currentUser.merchant.id) {
+        throw new ForbiddenException(
+          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
+        );
+      }
+    } else if (currentUser.role !== ROLES.ADMIN) {
+      throw new ForbiddenException(
+        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
+      );
+    }
+
+    // Toggle status
+    const newStatus = offer.status === 'active' ? 'inactive' : 'active';
+
+    // Update offer status
+    const updatedOffer = await this.prisma.offers.update({
+      where: { id },
+      data: { status: newStatus },
+      include: {
+        offer_branches: {
+          include: {
+            merchant_branches: {
+              select: {
+                id: true,
+                branch_name: true,
+                is_active: true,
+              },
+            },
+          },
+        },
+        merchants: {
+          select: {
+            id: true,
+            business_name: true,
+            logo_path: true,
+            category: true,
+          },
+        },
+      },
+    });
+
+    return {
+      data: this.formatOfferResponse(updatedOffer),
+      status: 200,
+      message: API_RESPONSE_MESSAGES.OFFER.TOGGLE_SUCCESS,
+    };
+  }
+
+  /**
    * Delete offer
    * Merchant Corporate only (their own offers)
    */

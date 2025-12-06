@@ -71,6 +71,7 @@ export const API_RESPONSE_MESSAGES = {
     INVALID_DATE_RANGE: 'validUntil must be after validFrom',
     INVALID_DISCOUNT_VALUE: 'Invalid discount value',
     ANALYTICS_SUCCESS: 'Offer analytics retrieved successfully',
+    TOGGLE_SUCCESS: 'Offer status toggled successfully',
   },
 } as const;
 

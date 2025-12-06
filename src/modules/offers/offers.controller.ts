@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Param,
   Body,
@@ -124,6 +125,17 @@ export class OffersController {
     @CurrentUser() currentUser: ICurrentUser,
   ) {
     return this.offersService.updateOffer(id, updateDto, currentUser);
+  }
+
+  @Patch(':id/toggle')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  async toggleOfferStatus(
+    @Param('id') id: string,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    return this.offersService.toggleOfferStatus(id, currentUser);
   }
 
   @Delete(':id')
