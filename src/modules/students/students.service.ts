@@ -10,6 +10,10 @@ import {
   calculatePaginationMeta,
   calculateSkip,
 } from '../../utils/pagination.util';
+import {
+  createApiResponse,
+  createPaginatedResponse,
+} from '../../utils/serializer.util';
 
 export interface StudentListResponse {
   id: string;
@@ -131,14 +135,11 @@ export class StudentsService {
       this.formatStudentListResponse(student),
     );
 
-    return {
-      data: {
-        data: formattedStudents,
-        pagination: calculatePaginationMeta(total, page, limit),
-      },
-      status: 200,
-      message: API_RESPONSE_MESSAGES.STUDENT.LIST_SUCCESS,
-    };
+    return createPaginatedResponse(
+      formattedStudents,
+      calculatePaginationMeta(total, page, limit),
+      API_RESPONSE_MESSAGES.STUDENT.LIST_SUCCESS,
+    );
   }
 
   /**
@@ -198,14 +199,11 @@ export class StudentsService {
       this.formatStudentResponse(student),
     );
 
-    return {
-      data: {
-        data: formattedStudents,
-        pagination: calculatePaginationMeta(total, page, limit),
-      },
-      status: 200,
-      message: API_RESPONSE_MESSAGES.STUDENT.LIST_SUCCESS,
-    };
+    return createPaginatedResponse(
+      formattedStudents,
+      calculatePaginationMeta(total, page, limit),
+      API_RESPONSE_MESSAGES.STUDENT.LIST_SUCCESS,
+    );
   }
 
   /**
@@ -246,11 +244,10 @@ export class StudentsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
-    return {
-      data: this.formatStudentDetailResponse(student),
-      status: 200,
-      message: API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS,
-    };
+    return createApiResponse(
+      this.formatStudentDetailResponse(student),
+      API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS,
+    );
   }
 
   /**
@@ -368,14 +365,12 @@ export class StudentsService {
       });
     });
 
-    return {
-      data: this.formatStudentResponse(result!),
-      status: 200,
-      message:
-        approveRejectDto.action === 'approve'
-          ? API_RESPONSE_MESSAGES.STUDENT.APPROVE_SUCCESS
-          : API_RESPONSE_MESSAGES.STUDENT.REJECT_SUCCESS,
-    };
+    return createApiResponse(
+      this.formatStudentResponse(result!),
+      approveRejectDto.action === 'approve'
+        ? API_RESPONSE_MESSAGES.STUDENT.APPROVE_SUCCESS
+        : API_RESPONSE_MESSAGES.STUDENT.REJECT_SUCCESS,
+    );
   }
 
   /**

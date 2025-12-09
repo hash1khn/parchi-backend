@@ -189,7 +189,7 @@ This keeps auth logic **centralized**, not scattered across services.
 ```ts
 {
   data: {
-    data: T[],
+    items: T[],
     pagination: {
       page: number,
       limit: number,

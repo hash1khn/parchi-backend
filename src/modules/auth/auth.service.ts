@@ -21,6 +21,7 @@ import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response
 import { ROLES, UserRole } from '../../constants/app.constants';
 import { JwtPayload } from '../../types/global.types';
 import { generateParchiId } from '../../utils/parchi-id.util';
+import { createApiResponse } from '../../utils/serializer.util';
 
 @Injectable()
 export class AuthService {
@@ -95,8 +96,8 @@ export class AuthService {
         },
       });
 
-      return {
-        data: {
+      return createApiResponse(
+        {
           user: {
             id: publicUser.id,
             email: publicUser.email,
@@ -105,9 +106,9 @@ export class AuthService {
           },
           session: authData.session,
         },
-        status: 201,
-        message: API_RESPONSE_MESSAGES.AUTH.SIGNUP_SUCCESS,
-      };
+        API_RESPONSE_MESSAGES.AUTH.SIGNUP_SUCCESS,
+        201,
+      );
     } catch (error) {
       if (
         error instanceof ConflictException ||
@@ -159,8 +160,8 @@ export class AuthService {
         );
       }
 
-      return {
-        data: {
+      return createApiResponse(
+        {
           user: {
             id: publicUser.id,
             email: publicUser.email,
@@ -169,9 +170,8 @@ export class AuthService {
           },
           session: authData.session,
         },
-        status: 200,
-        message: API_RESPONSE_MESSAGES.AUTH.LOGIN_SUCCESS,
-      };
+        API_RESPONSE_MESSAGES.AUTH.LOGIN_SUCCESS,
+      );
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         throw error;
@@ -307,11 +307,10 @@ export class AuthService {
         throw new BadRequestException(error.message);
       }
 
-      return {
-        data: null,
-        status: 200,
-        message: API_RESPONSE_MESSAGES.AUTH.LOGOUT_SUCCESS,
-      };
+      return createApiResponse(
+        null,
+        API_RESPONSE_MESSAGES.AUTH.LOGOUT_SUCCESS,
+      );
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
@@ -413,10 +412,8 @@ export class AuthService {
         };
       });
 
-      return {
-        status: 201,
-        message: API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_SUCCESS,
-        data: {
+      return createApiResponse(
+        {
           id: result.student.id,
           email: result.user.email,
           firstName: result.student.first_name,
@@ -426,7 +423,9 @@ export class AuthService {
           verificationStatus: result.student.verification_status,
           createdAt: result.student.created_at,
         },
-      };
+        API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_SUCCESS,
+        201,
+      );
     } catch (error) {
       if (
         error instanceof ConflictException ||
@@ -515,10 +514,8 @@ export class AuthService {
         };
       });
 
-      return {
-        status: 201,
-        message: API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_SUCCESS,
-        data: {
+      return createApiResponse(
+        {
           id: result.merchant.id,
           email: result.user.email,
           businessName: result.merchant.business_name,
@@ -528,7 +525,9 @@ export class AuthService {
           verificationStatus: result.merchant.verification_status,
           createdAt: result.merchant.created_at,
         },
-      };
+        API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_SUCCESS,
+        201,
+      );
     } catch (error) {
       if (
         error instanceof ConflictException ||
@@ -690,10 +689,8 @@ export class AuthService {
           ? API_RESPONSE_MESSAGES.AUTH.BRANCH_SIGNUP_SUCCESS_ADMIN
           : API_RESPONSE_MESSAGES.AUTH.BRANCH_SIGNUP_SUCCESS;
 
-      return {
-        status: 201,
-        message: successMessage,
-        data: {
+      return createApiResponse(
+        {
           id: result.branch.id,
           email: result.user.email,
           branchName: result.branch.branch_name,
@@ -706,7 +703,9 @@ export class AuthService {
           isActive: result.user.is_active,
           createdAt: result.branch.created_at,
         },
-      };
+        successMessage,
+        201,
+      );
     } catch (error) {
       if (
         error instanceof ConflictException ||
@@ -737,11 +736,10 @@ export class AuthService {
       if (!publicUser) {
         // Don't reveal if user exists or not for security reasons
         // Return success message even if user doesn't exist
-        return {
-          data: null,
-          status: 200,
-          message: API_RESPONSE_MESSAGES.AUTH.FORGOT_PASSWORD_SUCCESS,
-        };
+        return createApiResponse(
+          null,
+          API_RESPONSE_MESSAGES.AUTH.FORGOT_PASSWORD_SUCCESS,
+        );
       }
 
       // Use Supabase to send password reset email
@@ -756,11 +754,10 @@ export class AuthService {
         throw new BadRequestException(error.message);
       }
 
-      return {
-        data: null,
-        status: 200,
-        message: API_RESPONSE_MESSAGES.AUTH.FORGOT_PASSWORD_SUCCESS,
-      };
+      return createApiResponse(
+        null,
+        API_RESPONSE_MESSAGES.AUTH.FORGOT_PASSWORD_SUCCESS,
+      );
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
@@ -817,11 +814,10 @@ export class AuthService {
         WHERE id = ${userId}::uuid
       `;
 
-      return {
-        data: null,
-        status: 200,
-        message: API_RESPONSE_MESSAGES.AUTH.CHANGE_PASSWORD_SUCCESS,
-      };
+      return createApiResponse(
+        null,
+        API_RESPONSE_MESSAGES.AUTH.CHANGE_PASSWORD_SUCCESS,
+      );
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||

@@ -21,6 +21,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import { ROLES } from '../../constants/app.constants';
+import { createApiResponse } from '../../utils/serializer.util';
 
 @Controller('auth')
 export class AuthController {
@@ -97,11 +98,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async getProfile(@CurrentUser() user) {
-    return {
-      data: user,
-      status: 200,
-      message: 'Profile retrieved successfully',
-    };
+    return createApiResponse(user, 'Profile retrieved successfully');
   }
 
   @Get('admin-only')
@@ -109,11 +106,10 @@ export class AuthController {
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async adminOnly(@CurrentUser() user) {
-    return {
-      data: { message: 'This is an admin-only endpoint', user },
-      status: 200,
-      message: 'Admin access granted',
-    };
+    return createApiResponse(
+      { message: 'This is an admin-only endpoint', user },
+      'Admin access granted',
+    );
   }
 
   @Get('merchant-only')
@@ -121,11 +117,10 @@ export class AuthController {
   @Roles(ROLES.MERCHANT_CORPORATE, ROLES.MERCHANT_BRANCH)
   @HttpCode(HttpStatus.OK)
   async merchantOnly(@CurrentUser() user) {
-    return {
-      data: { message: 'This is a merchant-only endpoint', user },
-      status: 200,
-      message: 'Merchant access granted',
-    };
+    return createApiResponse(
+      { message: 'This is a merchant-only endpoint', user },
+      'Merchant access granted',
+    );
   }
 
   @Get('student-only')
@@ -133,11 +128,10 @@ export class AuthController {
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async studentOnly(@CurrentUser() user) {
-    return {
-      data: { message: 'This is a student-only endpoint', user },
-      status: 200,
-      message: 'Student access granted',
-    };
+    return createApiResponse(
+      { message: 'This is a student-only endpoint', user },
+      'Student access granted',
+    );
   }
 
   private extractTokenFromHeader(request: any): string {

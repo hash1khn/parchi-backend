@@ -8,7 +8,7 @@ export interface ApiResponse<T = any> {
 
 export interface PaginatedResponse<T = any> {
   data: {
-    data: T[];
+    items: T[];
     pagination: {
       page: number;
       limit: number;

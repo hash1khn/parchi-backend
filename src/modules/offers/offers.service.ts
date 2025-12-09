@@ -17,6 +17,10 @@ import {
   calculatePaginationMeta,
   calculateSkip,
 } from '../../utils/pagination.util';
+import {
+  createApiResponse,
+  createPaginatedResponse,
+} from '../../utils/serializer.util';
 
 export interface OfferResponse {
   id: string;
@@ -218,11 +222,10 @@ export class OffersService {
       },
     });
 
-    return {
-      data: this.formatOfferResponse(offerWithRelations),
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.CREATE_SUCCESS,
-    };
+    return createApiResponse(
+      this.formatOfferResponse(offerWithRelations),
+      API_RESPONSE_MESSAGES.OFFER.CREATE_SUCCESS,
+    );
   }
 
   /**
@@ -289,14 +292,11 @@ export class OffersService {
       this.formatOfferResponse(offer),
     );
 
-    return {
-      data: {
-        data: formattedOffers,
-        pagination: calculatePaginationMeta(total, page, limit),
-      },
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
-    };
+    return createPaginatedResponse(
+      formattedOffers,
+      calculatePaginationMeta(total, page, limit),
+      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
+    );
   }
 
   /**
@@ -354,11 +354,10 @@ export class OffersService {
       );
     }
 
-    return {
-      data: this.formatOfferResponse(offer),
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS,
-    };
+    return createApiResponse(
+      this.formatOfferResponse(offer),
+      API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS,
+    );
   }
 
   /**
@@ -501,11 +500,10 @@ export class OffersService {
       },
     });
 
-    return {
-      data: this.formatOfferResponse(updatedOffer),
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.UPDATE_SUCCESS,
-    };
+    return createApiResponse(
+      this.formatOfferResponse(updatedOffer),
+      API_RESPONSE_MESSAGES.OFFER.UPDATE_SUCCESS,
+    );
   }
 
   /**
@@ -573,11 +571,10 @@ export class OffersService {
       },
     });
 
-    return {
-      data: this.formatOfferResponse(updatedOffer),
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.TOGGLE_SUCCESS,
-    };
+    return createApiResponse(
+      this.formatOfferResponse(updatedOffer),
+      API_RESPONSE_MESSAGES.OFFER.TOGGLE_SUCCESS,
+    );
   }
 
   /**
@@ -620,11 +617,10 @@ export class OffersService {
       where: { id },
     });
 
-    return {
-      data: null,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.DELETE_SUCCESS,
-    };
+    return createApiResponse(
+      null,
+      API_RESPONSE_MESSAGES.OFFER.DELETE_SUCCESS,
+    );
   }
 
   /**
@@ -715,11 +711,10 @@ export class OffersService {
       },
     });
 
-    return {
-      data: this.formatOfferResponse(updatedOffer!),
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.BRANCHES_ASSIGNED_SUCCESS,
-    };
+    return createApiResponse(
+      this.formatOfferResponse(updatedOffer!),
+      API_RESPONSE_MESSAGES.OFFER.BRANCHES_ASSIGNED_SUCCESS,
+    );
   }
 
   /**
@@ -784,11 +779,10 @@ export class OffersService {
       },
     });
 
-    return {
-      data: this.formatOfferResponse(updatedOffer!),
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.BRANCHES_REMOVED_SUCCESS,
-    };
+    return createApiResponse(
+      this.formatOfferResponse(updatedOffer!),
+      API_RESPONSE_MESSAGES.OFFER.BRANCHES_REMOVED_SUCCESS,
+    );
   }
 
   /**
@@ -886,8 +880,8 @@ export class OffersService {
       ? offer.total_limit - totalRedemptions
       : null;
 
-    return {
-      data: {
+    return createApiResponse(
+      {
         totalRedemptions,
         currentRedemptions: totalRedemptions,
         remainingRedemptions,
@@ -898,9 +892,8 @@ export class OffersService {
         })),
         redemptionsByDate,
       },
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.ANALYTICS_SUCCESS,
-    };
+      API_RESPONSE_MESSAGES.OFFER.ANALYTICS_SUCCESS,
+    );
   }
 
   /**
@@ -962,14 +955,11 @@ export class OffersService {
       this.formatOfferResponse(offer),
     );
 
-    return {
-      data: {
-        data: formattedOffers,
-        pagination: calculatePaginationMeta(total, page, limit),
-      },
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
-    };
+    return createPaginatedResponse(
+      formattedOffers,
+      calculatePaginationMeta(total, page, limit),
+      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
+    );
   }
 
   /**
@@ -1008,11 +998,10 @@ export class OffersService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.OFFER.NOT_FOUND);
     }
 
-    return {
-      data: this.formatOfferResponse(offer),
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS,
-    };
+    return createApiResponse(
+      this.formatOfferResponse(offer),
+      API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS,
+    );
   }
 
   /**
@@ -1060,14 +1049,12 @@ export class OffersService {
       },
     });
 
-    return {
-      data: this.formatOfferResponse(updatedOffer),
-      status: 200,
-      message:
-        approveRejectDto.action === 'approve'
-          ? API_RESPONSE_MESSAGES.OFFER.APPROVE_SUCCESS
-          : API_RESPONSE_MESSAGES.OFFER.REJECT_SUCCESS,
-    };
+    return createApiResponse(
+      this.formatOfferResponse(updatedOffer),
+      approveRejectDto.action === 'approve'
+        ? API_RESPONSE_MESSAGES.OFFER.APPROVE_SUCCESS
+        : API_RESPONSE_MESSAGES.OFFER.REJECT_SUCCESS,
+    );
   }
 
   /**
@@ -1088,11 +1075,10 @@ export class OffersService {
       where: { id },
     });
 
-    return {
-      data: null,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.DELETE_SUCCESS,
-    };
+    return createApiResponse(
+      null,
+      API_RESPONSE_MESSAGES.OFFER.DELETE_SUCCESS,
+    );
   }
 
   /**
@@ -1212,14 +1198,11 @@ export class OffersService {
     const total = formattedOffers.length;
     const paginatedOffers = formattedOffers.slice(skip, skip + limit);
 
-    return {
-      data: {
-        data: paginatedOffers,
-        pagination: calculatePaginationMeta(total, page, limit),
-      },
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
-    };
+    return createPaginatedResponse(
+      paginatedOffers,
+      calculatePaginationMeta(total, page, limit),
+      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
+    );
   }
 
   /**
@@ -1293,14 +1276,13 @@ export class OffersService {
       isActive: ob.is_active ?? true,
     }));
 
-    return {
-      data: {
+    return createApiResponse(
+      {
         ...formatted,
         branches,
       },
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS,
-    };
+      API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS,
+    );
   }
 
   /**
@@ -1362,11 +1344,10 @@ export class OffersService {
       this.formatOfferResponse(offer),
     );
 
-    return {
-      data: formattedOffers,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
-    };
+    return createApiResponse(
+      formattedOffers,
+      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
+    );
   }
 
   /**

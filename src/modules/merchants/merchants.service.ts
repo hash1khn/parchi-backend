@@ -11,6 +11,7 @@ import { UpdateCorporateAccountDto } from './dto/update-corporate-account.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
 import { ROLES } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
+import { createApiResponse } from '../../utils/serializer.util';
 
 export interface CorporateMerchantResponse {
   id: string;
@@ -84,11 +85,10 @@ export class MerchantsService {
       }),
     );
 
-    return {
-      data: formattedMerchants,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.MERCHANT.LIST_SUCCESS,
-    };
+    return createApiResponse(
+      formattedMerchants,
+      API_RESPONSE_MESSAGES.MERCHANT.LIST_SUCCESS,
+    );
   }
 
   /**
@@ -130,11 +130,10 @@ export class MerchantsService {
       updatedAt: merchant.updated_at,
     };
 
-    return {
-      data: formattedMerchant,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.MERCHANT.GET_SUCCESS,
-    };
+    return createApiResponse(
+      formattedMerchant,
+      API_RESPONSE_MESSAGES.MERCHANT.GET_SUCCESS,
+    );
   }
 
   /**
@@ -264,11 +263,10 @@ export class MerchantsService {
       updatedAt: updatedMerchant.updated_at,
     };
 
-    return {
-      data: formattedMerchant,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.MERCHANT.UPDATE_SUCCESS,
-    };
+    return createApiResponse(
+      formattedMerchant,
+      API_RESPONSE_MESSAGES.MERCHANT.UPDATE_SUCCESS,
+    );
   }
 
   /**
@@ -299,11 +297,10 @@ export class MerchantsService {
       where: { id },
     });
 
-    return {
-      data: null,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.MERCHANT.DELETE_SUCCESS,
-    };
+    return createApiResponse(
+      null,
+      API_RESPONSE_MESSAGES.MERCHANT.DELETE_SUCCESS,
+    );
   }
 
   /**
@@ -372,11 +369,10 @@ export class MerchantsService {
       updatedAt: branch.updated_at,
     }));
 
-    return {
-      data: formattedBranches,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.MERCHANT.BRANCH_LIST_SUCCESS,
-    };
+    return createApiResponse(
+      formattedBranches,
+      API_RESPONSE_MESSAGES.MERCHANT.BRANCH_LIST_SUCCESS,
+    );
   }
 
   /**
@@ -439,11 +435,10 @@ export class MerchantsService {
       updatedAt: branch.updated_at,
     };
 
-    return {
-      data: formattedBranch,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.MERCHANT.BRANCH_GET_SUCCESS,
-    };
+    return createApiResponse(
+      formattedBranch,
+      API_RESPONSE_MESSAGES.MERCHANT.BRANCH_GET_SUCCESS,
+    );
   }
 
   /**
@@ -560,11 +555,10 @@ export class MerchantsService {
       updatedAt: updatedBranch.updated_at,
     };
 
-    return {
-      data: formattedBranch,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.MERCHANT.BRANCH_UPDATE_SUCCESS,
-    };
+    return createApiResponse(
+      formattedBranch,
+      API_RESPONSE_MESSAGES.MERCHANT.BRANCH_UPDATE_SUCCESS,
+    );
   }
 
   /**
@@ -620,11 +614,10 @@ export class MerchantsService {
       where: { id },
     });
 
-    return {
-      data: null,
-      status: 200,
-      message: API_RESPONSE_MESSAGES.MERCHANT.BRANCH_DELETE_SUCCESS,
-    };
+    return createApiResponse(
+      null,
+      API_RESPONSE_MESSAGES.MERCHANT.BRANCH_DELETE_SUCCESS,
+    );
   }
 
   /**
@@ -715,14 +708,12 @@ export class MerchantsService {
       updatedAt: updatedBranch.updated_at,
     };
 
-    return {
-      data: formattedBranch,
-      status: 200,
-      message:
-        action === 'approved'
-          ? API_RESPONSE_MESSAGES.MERCHANT.BRANCH_APPROVE_SUCCESS
-          : API_RESPONSE_MESSAGES.MERCHANT.BRANCH_REJECT_SUCCESS,
-    };
+    return createApiResponse(
+      formattedBranch,
+      action === 'approved'
+        ? API_RESPONSE_MESSAGES.MERCHANT.BRANCH_APPROVE_SUCCESS
+        : API_RESPONSE_MESSAGES.MERCHANT.BRANCH_REJECT_SUCCESS,
+    );
   }
 }
 
