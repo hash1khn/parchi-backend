@@ -33,7 +33,7 @@ export class OffersController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.MERCHANT_CORPORATE)
+  @Roles(ROLES.MERCHANT_CORPORATE, ROLES.ADMIN)
   @HttpCode(HttpStatus.CREATED)
   async createOffer(
     @Body() createDto: CreateOfferDto,

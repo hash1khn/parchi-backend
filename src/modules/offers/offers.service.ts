@@ -93,26 +93,67 @@ export class OffersService {
 
   /**
    * Create a new offer
-   * Merchant Corporate only
+   * Merchant Corporate or Admin
    */
   async createOffer(
     createDto: CreateOfferDto,
     currentUser: CurrentUser,
   ): Promise<ApiResponse<OfferResponse>> {
-    // Verify user is a corporate merchant
-    if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
+    let merchantId: string;
+
+    // Determine merchant ID based on user role
+    if (currentUser.role === ROLES.ADMIN) {
+      // Admin must provide merchantId
+      if (!createDto.merchantId) {
+        throw new BadRequestException(
+          API_RESPONSE_MESSAGES.OFFER.INVALID_MERCHANT,
+        );
+      }
+
+      // Verify merchant exists and is a corporate merchant
+      const merchant = await this.prisma.merchants.findUnique({
+        where: { id: createDto.merchantId },
+        include: {
+          users: {
+            select: {
+              role: true,
+            },
+          },
+        },
+      });
+
+      if (!merchant) {
+        throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+      }
+
+      if (merchant.users.role !== ROLES.MERCHANT_CORPORATE) {
+        throw new BadRequestException(
+          API_RESPONSE_MESSAGES.OFFER.INVALID_MERCHANT,
+        );
+      }
+
+      merchantId = createDto.merchantId;
+    } else if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      // Merchant corporate uses their own merchant ID
+      if (!currentUser.merchant?.id) {
+        throw new ForbiddenException(
+          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
+        );
+      }
+
+      // Merchant corporate should not provide merchantId
+      if (createDto.merchantId) {
+        throw new BadRequestException(
+          'Merchant corporate users cannot specify merchantId. Use your own merchant account.',
+        );
+      }
+
+      merchantId = currentUser.merchant.id;
+    } else {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
       );
     }
-
-    if (!currentUser.merchant?.id) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
-    }
-
-    const merchantId = currentUser.merchant.id;
 
     // Validate date range
     const validFrom = new Date(createDto.validFrom);

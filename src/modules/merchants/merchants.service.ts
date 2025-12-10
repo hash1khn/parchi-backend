@@ -270,6 +270,113 @@ export class MerchantsService {
   }
 
   /**
+   * Toggle corporate account status (active/inactive)
+   * Admin only
+   * When deactivating, cascades deactivation to all branches
+   */
+  async toggleCorporateAccountStatus(
+    id: string,
+  ): Promise<ApiResponse<CorporateMerchantResponse>> {
+    // Check if corporate account exists
+    const merchant = await this.prisma.merchants.findUnique({
+      where: { id },
+      include: {
+        users: true,
+      },
+    });
+
+    if (!merchant) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    // Verify it's a corporate account
+    if (merchant.users.role !== ROLES.MERCHANT_CORPORATE) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    // Toggle isActive status
+    const newIsActive = !(merchant.is_active ?? true);
+
+    // Update merchant and user is_active status
+    await this.prisma.$transaction(async (tx) => {
+      // Update merchant is_active
+      await tx.merchants.update({
+        where: { id },
+        data: { is_active: newIsActive },
+      });
+
+      // Update user is_active
+      await tx.public_users.update({
+        where: { id: merchant.user_id },
+        data: { is_active: newIsActive },
+      });
+
+      // Cascade: If corporate account is deactivated, deactivate all its branches
+      // If corporate account is activated, branches remain as they are (individually managed)
+      if (newIsActive === false) {
+        // Get all branches for this corporate account
+        const branches = await tx.merchant_branches.findMany({
+          where: { merchant_id: id },
+          select: { id: true, user_id: true },
+        });
+
+        // Deactivate all branches and their users
+        if (branches.length > 0) {
+          // Update all branches to inactive
+          await tx.merchant_branches.updateMany({
+            where: { merchant_id: id },
+            data: { is_active: false },
+          });
+
+          // Update all branch users to inactive
+          const branchUserIds = branches
+            .map((b) => b.user_id)
+            .filter((userId) => userId !== null) as string[];
+          if (branchUserIds.length > 0) {
+            await tx.public_users.updateMany({
+              where: { id: { in: branchUserIds } },
+              data: { is_active: false },
+            });
+          }
+        }
+      }
+    });
+
+    // Fetch updated merchant
+    const updatedMerchant = await this.prisma.merchants.findUnique({
+      where: { id },
+      include: {
+        users: true,
+      },
+    });
+
+    if (!updatedMerchant) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    const formattedMerchant: CorporateMerchantResponse = {
+      id: updatedMerchant.id,
+      userId: updatedMerchant.user_id,
+      businessName: updatedMerchant.business_name,
+      businessRegistrationNumber: updatedMerchant.business_registration_number,
+      contactEmail: updatedMerchant.contact_email,
+      contactPhone: updatedMerchant.contact_phone,
+      logoPath: updatedMerchant.logo_path,
+      category: updatedMerchant.category,
+      verificationStatus: updatedMerchant.verification_status || 'pending',
+      verifiedAt: updatedMerchant.verified_at,
+      isActive: updatedMerchant.is_active,
+      createdAt: updatedMerchant.created_at,
+      updatedAt: updatedMerchant.updated_at,
+    };
+
+    return createApiResponse(
+      formattedMerchant,
+      API_RESPONSE_MESSAGES.MERCHANT.TOGGLE_SUCCESS,
+    );
+  }
+
+  /**
    * Delete corporate account
    * Admin only
    * This will cascade delete related branches and other related records

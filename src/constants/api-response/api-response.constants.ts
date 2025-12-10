@@ -40,6 +40,7 @@ export const API_RESPONSE_MESSAGES = {
     GET_SUCCESS: 'Corporate account retrieved successfully',
     CREATE_SUCCESS: 'Corporate account created successfully',
     UPDATE_SUCCESS: 'Corporate account updated successfully',
+    TOGGLE_SUCCESS: 'Corporate account status toggled successfully',
     DELETE_SUCCESS: 'Corporate account deleted successfully',
     BRANCH_LIST_SUCCESS: 'Branches retrieved successfully',
     BRANCH_GET_SUCCESS: 'Branch retrieved successfully',

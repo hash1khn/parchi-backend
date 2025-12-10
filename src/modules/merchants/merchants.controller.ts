@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Delete,
   Param,
   Body,
@@ -52,6 +53,14 @@ export class MerchantsController {
     @Body() updateDto: UpdateCorporateAccountDto,
   ) {
     return this.merchantsService.updateCorporateAccount(id, updateDto);
+  }
+
+  @Patch('corporate/:id/toggle')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async toggleCorporateAccountStatus(@Param('id') id: string) {
+    return this.merchantsService.toggleCorporateAccountStatus(id);
   }
 
   @Delete('corporate/:id')

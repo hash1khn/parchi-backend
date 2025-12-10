@@ -69,5 +69,9 @@ export class CreateOfferDto {
   @IsArray()
   @IsString({ each: true })
   branchIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  merchantId?: string;
 }
 
