@@ -52,16 +52,29 @@ export class MerchantsService {
   /**
    * Get all corporate merchants
    * Returns merchants where the associated user has role 'merchant_corporate'
+   * Supports optional search parameter to filter by business name, email, or phone
    */
-  async getAllCorporateMerchants(): Promise<
-    ApiResponse<CorporateMerchantResponse[]>
-  > {
-    const merchants = await this.prisma.merchants.findMany({
-      where: {
-        users: {
-          role: 'merchant_corporate',
-        },
+  async getAllCorporateMerchants(
+    search?: string,
+  ): Promise<ApiResponse<CorporateMerchantResponse[]>> {
+    const whereClause: any = {
+      users: {
+        role: 'merchant_corporate',
       },
+    };
+
+    // Add search filter if provided
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      whereClause.OR = [
+        { business_name: { contains: searchTerm, mode: 'insensitive' } },
+        { contact_email: { contains: searchTerm, mode: 'insensitive' } },
+        { contact_phone: { contains: searchTerm, mode: 'insensitive' } },
+      ];
+    }
+
+    const merchants = await this.prisma.merchants.findMany({
+      where: whereClause,
       orderBy: {
         created_at: 'desc',
       },
@@ -415,10 +428,12 @@ export class MerchantsService {
    * Admin: can view all branches
    * Corporate: can only view their own branches
    * Only shows branches of active corporate accounts
+   * Supports optional search parameter to filter by branch name, merchant name, or city
    */
   async getBranches(
     currentUser: CurrentUser,
     corporateAccountId?: string,
+    search?: string,
   ): Promise<ApiResponse<BranchResponse[]>> {
     let whereClause: any = {
       merchants: {
@@ -444,6 +459,24 @@ export class MerchantsService {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
       );
+    }
+
+    // Add search filter if provided
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      whereClause.AND = [
+        {
+          OR: [
+            { branch_name: { contains: searchTerm, mode: 'insensitive' } },
+            { city: { contains: searchTerm, mode: 'insensitive' } },
+            {
+              merchants: {
+                business_name: { contains: searchTerm, mode: 'insensitive' },
+              },
+            },
+          ],
+        },
+      ];
     }
 
     const branches = await this.prisma.merchant_branches.findMany({

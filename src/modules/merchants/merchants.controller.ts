@@ -32,8 +32,10 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
-  async getAllCorporateMerchants() {
-    return this.merchantsService.getAllCorporateMerchants();
+  async getAllCorporateMerchants(
+    @Query('search') search?: string,
+  ) {
+    return this.merchantsService.getAllCorporateMerchants(search);
   }
 
   @Get('corporate/:id')
@@ -80,10 +82,12 @@ export class MerchantsController {
   async getBranches(
     @CurrentUser() currentUser: ICurrentUser,
     @Query('corporateAccountId') corporateAccountId?: string,
+    @Query('search') search?: string,
   ) {
     return this.merchantsService.getBranches(
       currentUser,
       corporateAccountId,
+      search,
     );
   }
 
