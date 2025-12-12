@@ -527,6 +527,10 @@ model offers {
   @@index([merchant_id], map: "idx_offers_merchant")
   @@index([status], map: "idx_offers_status")
   @@index([valid_from, valid_until], map: "idx_offers_validity")
+  @@index([status, valid_from, valid_until, created_at(sort: Desc)], map: "idx_offers_active_valid_created")
+  @@index([merchant_id, status, created_at(sort: Desc)], map: "idx_offers_merchant_status_created")
+  @@index([merchant_id, status, valid_from, valid_until, created_at(sort: Desc)], map: "idx_offers_merchant_active_valid_created")
+  @@index([created_at(sort: Desc)], map: "idx_offers_created")
   @@schema("public")
 }
 
