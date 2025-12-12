@@ -7,6 +7,7 @@ import {
   UseGuards,
   Get,
   Request,
+  Patch,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
@@ -22,6 +23,7 @@ import { Roles } from '../../decorators/roles.decorator';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { createApiResponse } from '../../utils/serializer.util';
+import { UpdateProfilePictureDto } from './dto/update-profile-picture.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -85,6 +87,18 @@ export class AuthController {
       currentUser.id,
     );
   }
+
+  @Patch('student/profile-picture')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async updateProfilePicture(
+    @Body() dto: UpdateProfilePictureDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.authService.updateStudentProfilePicture(user.id, dto.imageUrl);
+  }
+
 
   @Post('logout')
   @UseGuards(JwtAuthGuard)

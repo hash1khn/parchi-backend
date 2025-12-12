@@ -243,6 +243,7 @@ export class AuthService {
             last_name: true,
             parchi_id: true,
             university: true,
+            profile_picture: true, // [ADD THIS LINE]
           },
         });
       } else if (publicUser.role === ROLES.MERCHANT_CORPORATE) {
@@ -767,6 +768,42 @@ export class AuthService {
       );
     }
   }
+
+  /**
+   * Update Student Profile Picture
+   * Stores the Supabase Storage URL in the database
+   */
+  async updateStudentProfilePicture(
+    userId: string,
+    imageUrl: string,
+  ): Promise<ApiResponse<any>> {
+    try {
+      // 1. Verify user is a student
+      const student = await this.prisma.students.findUnique({
+        where: { user_id: userId },
+      });
+
+      if (!student) {
+        throw new BadRequestException('Student profile not found');
+      }
+
+      // 2. Update database
+      const updatedStudent = await this.prisma.students.update({
+        where: { user_id: userId },
+        data: {
+          profile_picture: imageUrl,
+        },
+      });
+
+      return createApiResponse(
+        { profilePicture: updatedStudent.profile_picture },
+        'Profile picture updated successfully',
+      );
+    } catch (error) {
+      throw new BadRequestException('Failed to update profile picture');
+    }
+  }
+
 
   /**
    * Change Password - Changes password for authenticated user

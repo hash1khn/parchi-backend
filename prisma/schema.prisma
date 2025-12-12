@@ -620,6 +620,7 @@ model students {
   first_name              String                   @db.VarChar(100)
   last_name               String                   @db.VarChar(100)
   university              String                   @db.VarChar(255)
+  profile_picture         String?                  @db.Text
   graduation_year         Int?
   is_founders_club        Boolean?                 @default(false)
   total_savings           Decimal?                 @default(0.00) @db.Decimal(12, 2)
