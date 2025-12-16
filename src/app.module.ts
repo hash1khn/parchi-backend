@@ -7,6 +7,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { StudentsModule } from './modules/students/students.module';
+import { RedemptionsModule } from './modules/redemptions/redemptions.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { StudentsModule } from './modules/students/students.module';
     MerchantsModule,
     OffersModule,
     StudentsModule,
+    RedemptionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
