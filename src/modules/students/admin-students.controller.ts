@@ -47,6 +47,14 @@ export class AdminStudentsController {
     return this.studentsService.getAllStudents(status, page, limit);
   }
 
+  @Get('by-parchi/:parchiId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_BRANCH)
+  @HttpCode(HttpStatus.OK)
+  async getStudentByParchiId(@Param('parchiId') parchiId: string) {
+    return this.studentsService.getStudentByParchiId(parchiId);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)

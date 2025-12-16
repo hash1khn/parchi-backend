@@ -15,6 +15,15 @@ import {
   createPaginatedResponse,
 } from '../../utils/serializer.util';
 
+export interface StudentVerificationResponse {
+  parchiId: string;
+  firstName: string;
+  lastName: string;
+  university: string;
+  verificationStatus: string;
+  profilePicture: string | null;
+}
+
 export interface StudentListResponse {
   id: string;
   userId: string;
@@ -205,6 +214,46 @@ export class StudentsService {
       formattedStudents,
       calculatePaginationMeta(total, page, limit),
       API_RESPONSE_MESSAGES.STUDENT.LIST_SUCCESS,
+    );
+  }
+
+  /**
+   * Get student verification details by Parchi ID
+   * For merchant branches to verify student identity during redemption
+   * Returns minimal information needed for verification
+   */
+  async getStudentByParchiId(
+    parchiId: string,
+  ): Promise<ApiResponse<StudentVerificationResponse>> {
+    // Normalize parchi ID (uppercase, trim)
+    const normalizedParchiId = parchiId.trim().toUpperCase();
+
+    const student = await this.prisma.students.findUnique({
+      where: { parchi_id: normalizedParchiId },
+      select: {
+        parchi_id: true,
+        first_name: true,
+        last_name: true,
+        university: true,
+        verification_status: true,
+        profile_picture: true,
+      },
+    });
+
+    if (!student) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
+    }
+
+    return createApiResponse(
+      {
+        parchiId: student.parchi_id,
+        firstName: student.first_name,
+        lastName: student.last_name,
+        university: student.university,
+        verificationStatus: student.verification_status || 'pending',
+        profilePicture: student.profile_picture,
+      },
+      API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS,
     );
   }
 
