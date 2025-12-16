@@ -35,7 +35,11 @@ export class StudentSignupDto {
 
   @IsNotEmpty()
   @IsUrl()
-  studentIdImageUrl: string;
+  studentIdCardFrontUrl: string;
+
+  @IsNotEmpty()
+  @IsUrl()
+  studentIdCardBackUrl: string;
 
   @IsNotEmpty()
   @IsUrl()

@@ -342,7 +342,8 @@ export class AuthService {
       // 2. Validate image URLs format
       const urlPattern = /^https?:\/\/.+/;
       if (
-        !urlPattern.test(signupDto.studentIdImageUrl) ||
+        !urlPattern.test(signupDto.studentIdCardFrontUrl) ||
+        !urlPattern.test(signupDto.studentIdCardBackUrl) ||
         !urlPattern.test(signupDto.selfieImageUrl)
       ) {
         throw new UnprocessableEntityException(
@@ -401,7 +402,8 @@ export class AuthService {
         const studentKyc = await tx.student_kyc.create({
           data: {
             student_id: student.id,
-            student_id_image_path: signupDto.studentIdImageUrl,
+            student_id_card_front_path: signupDto.studentIdCardFrontUrl,
+            student_id_card_back_path: signupDto.studentIdCardBackUrl,
             selfie_image_path: signupDto.selfieImageUrl,
           },
         });

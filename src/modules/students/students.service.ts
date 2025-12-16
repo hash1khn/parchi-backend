@@ -55,7 +55,8 @@ export interface StudentKycResponse {
   updatedAt: Date | null;
   kyc?: {
     id: string;
-    studentIdImagePath: string;
+    studentIdCardFrontPath: string;
+    studentIdCardBackPath: string;
     selfieImagePath: string;
     submittedAt: Date | null;
     reviewedBy: string | null;
@@ -73,7 +74,8 @@ export interface StudentKycResponse {
 export interface StudentDetailResponse extends StudentKycResponse {
   kyc: {
     id: string;
-    studentIdImagePath: string;
+    studentIdCardFrontPath: string;
+    studentIdCardBackPath: string;
     selfieImagePath: string;
     submittedAt: Date | null;
     reviewedBy: string | null;
@@ -425,7 +427,8 @@ export class StudentsService {
       kyc: latestKyc
         ? {
             id: latestKyc.id,
-            studentIdImagePath: latestKyc.student_id_image_path,
+            studentIdCardFrontPath: latestKyc.student_id_card_front_path,
+            studentIdCardBackPath: latestKyc.student_id_card_back_path,
             selfieImagePath: latestKyc.selfie_image_path,
             submittedAt: latestKyc.submitted_at,
             reviewedBy: latestKyc.reviewed_by,
@@ -471,7 +474,8 @@ export class StudentsService {
       kyc: latestKyc
         ? {
             id: latestKyc.id,
-            studentIdImagePath: latestKyc.student_id_image_path,
+            studentIdCardFrontPath: latestKyc.student_id_card_front_path,
+            studentIdCardBackPath: latestKyc.student_id_card_back_path,
             selfieImagePath: latestKyc.selfie_image_path,
             submittedAt: latestKyc.submitted_at,
             reviewedBy: latestKyc.reviewed_by,
