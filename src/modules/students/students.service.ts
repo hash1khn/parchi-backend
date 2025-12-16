@@ -21,7 +21,7 @@ export interface StudentVerificationResponse {
   lastName: string;
   university: string;
   verificationStatus: string;
-  profilePicture: string | null;
+  verificationSelfie: string | null;
 }
 
 export interface StudentListResponse {
@@ -236,7 +236,7 @@ export class StudentsService {
         last_name: true,
         university: true,
         verification_status: true,
-        profile_picture: true,
+        verification_selfie_path: true,
       },
     });
 
@@ -251,7 +251,7 @@ export class StudentsService {
         lastName: student.last_name,
         university: student.university,
         verificationStatus: student.verification_status || 'pending',
-        profilePicture: student.profile_picture,
+        verificationSelfie: student.verification_selfie_path,
       },
       API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS,
     );
@@ -343,7 +343,14 @@ export class StudentsService {
 
     // Use transaction to ensure all updates happen atomically
     const result = await this.prisma.$transaction(async (tx) => {
-      // 1. Update student verification status
+      // Get KYC selfie path if available and approving
+      const latestKyc = student.student_kyc.length > 0 ? student.student_kyc[0] : null;
+      const selfiePath = 
+        approveRejectDto.action === 'approve' && latestKyc
+          ? latestKyc.selfie_image_path
+          : undefined;
+
+      // 1. Update student verification status and save selfie if approving
       const updatedStudent = await tx.students.update({
         where: { id },
         data: {
@@ -354,6 +361,8 @@ export class StudentsService {
             approveRejectDto.action === 'approve'
               ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
               : null,
+          // Save selfie image from KYC before deleting it
+          ...(selfiePath && { verification_selfie_path: selfiePath }),
         },
       });
 
@@ -366,11 +375,9 @@ export class StudentsService {
       });
 
       // 3. Handle KYC record
-      if (student.student_kyc.length > 0) {
-        const latestKyc = student.student_kyc[0];
-
+      if (latestKyc) {
         if (approveRejectDto.action === 'approve') {
-          // Delete KYC data immediately after approving
+          // Delete KYC data immediately after approving (selfie already saved)
           await tx.student_kyc.delete({
             where: { id: latestKyc.id },
           });

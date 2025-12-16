@@ -615,27 +615,28 @@ model student_merchant_stats {
 }
 
 model students {
-  id                      String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id                 String                   @unique @db.Uuid
-  parchi_id               String                   @unique @db.VarChar(10)
-  first_name              String                   @db.VarChar(100)
-  last_name               String                   @db.VarChar(100)
-  university              String                   @db.VarChar(255)
-  graduation_year         Int?
-  is_founders_club        Boolean?                 @default(false)
-  total_savings           Decimal?                 @default(0.00) @db.Decimal(12, 2)
-  total_redemptions       Int?                     @default(0)
-  verification_status     verification_status?     @default(pending)
-  verified_at             DateTime?                @db.Timestamptz(6)
-  verification_expires_at DateTime?                @db.Timestamptz(6)
-  created_at              DateTime?                @default(now()) @db.Timestamptz(6)
-  updated_at              DateTime?                @default(now()) @db.Timestamptz(6)
-  profile_picture         String?
-  redemptions             redemptions[]
-  student_branch_stats    student_branch_stats[]
-  student_kyc             student_kyc[]
-  student_merchant_stats  student_merchant_stats[]
-  users                   public_users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                       String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                  String                   @unique @db.Uuid
+  parchi_id                String                   @unique @db.VarChar(10)
+  first_name               String                   @db.VarChar(100)
+  last_name                String                   @db.VarChar(100)
+  university               String                   @db.VarChar(255)
+  graduation_year          Int?
+  is_founders_club         Boolean?                 @default(false)
+  total_savings            Decimal?                 @default(0.00) @db.Decimal(12, 2)
+  total_redemptions        Int?                     @default(0)
+  verification_status      verification_status?     @default(pending)
+  verified_at              DateTime?                @db.Timestamptz(6)
+  verification_expires_at  DateTime?                @db.Timestamptz(6)
+  created_at               DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime?                @default(now()) @db.Timestamptz(6)
+  profile_picture          String?
+  verification_selfie_path String?
+  redemptions              redemptions[]
+  student_branch_stats     student_branch_stats[]
+  student_kyc              student_kyc[]
+  student_merchant_stats   student_merchant_stats[]
+  users                    public_users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([parchi_id], map: "idx_students_parchi_id")
   @@index([user_id], map: "idx_students_user")
