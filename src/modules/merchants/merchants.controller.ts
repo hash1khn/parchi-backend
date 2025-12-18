@@ -24,7 +24,17 @@ import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 
 @Controller('merchants')
 export class MerchantsController {
-  constructor(private readonly merchantsService: MerchantsService) {}
+  constructor(private readonly merchantsService: MerchantsService) { }
+
+  // ========== Brands Endpoints (Student & Public) ==========
+
+  @Get('brands')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async getAllBrands() {
+    return this.merchantsService.getAllBrands();
+  }
 
   // ========== Corporate Account Endpoints (Admin Only) ==========
 

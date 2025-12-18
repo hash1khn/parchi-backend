@@ -103,6 +103,53 @@ export class MerchantsService {
       API_RESPONSE_MESSAGES.MERCHANT.LIST_SUCCESS,
     );
   }
+  
+  /**
+   * Get all active brands (corporate merchants)
+   * Accessible by students
+   */
+  async getAllBrands(): Promise<ApiResponse<Partial<CorporateMerchantResponse>[]>> {
+    const brands = await this.prisma.merchants.findMany({
+      where: {
+        verification_status: 'approved',
+        is_active: true,
+        users: {
+          role: 'merchant_corporate',
+        },
+      },
+      select: {
+        id: true,
+        business_name: true,
+        logo_path: true,
+        category: true,
+        merchant_bonus_settings: {
+          select: {
+            discount_type: true,
+            discount_value: true,
+          },
+        },
+      },
+      orderBy: {
+        business_name: 'asc',
+      },
+    });
+
+    const formattedBrands = brands.map((brand) => ({
+      id: brand.id,
+      businessName: brand.business_name,
+      logoPath: brand.logo_path,
+      category: brand.category,
+      discountType: brand.merchant_bonus_settings?.discount_type,
+      discountValue: brand.merchant_bonus_settings?.discount_value
+        ? Number(brand.merchant_bonus_settings.discount_value)
+        : null,
+    }));
+
+    return createApiResponse(
+      formattedBrands,
+      'Brands retrieved successfully',
+    );
+  }
 
   /**
    * Get corporate account by ID
