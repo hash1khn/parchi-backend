@@ -51,8 +51,11 @@ export class AdminStudentsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN, ROLES.MERCHANT_BRANCH)
   @HttpCode(HttpStatus.OK)
-  async getStudentByParchiId(@Param('parchiId') parchiId: string) {
-    return this.studentsService.getStudentByParchiId(parchiId);
+  async getStudentByParchiId(
+    @Param('parchiId') parchiId: string,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    return this.studentsService.getStudentByParchiId(parchiId, currentUser);
   }
 
   @Get(':id')

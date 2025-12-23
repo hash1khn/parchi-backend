@@ -1,10 +1,12 @@
 import {
   Injectable,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ApiResponse, PaginatedResponse } from '../../types/global.types';
+import { ApiResponse, PaginatedResponse, CurrentUser } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
+import { ROLES } from '../../constants/app.constants';
 import { ApproveRejectStudentDto } from './dto/approve-reject-student.dto';
 import {
   calculatePaginationMeta,
@@ -22,6 +24,15 @@ export interface StudentVerificationResponse {
   university: string;
   verificationStatus: string;
   verificationSelfie: string | null;
+  offer: {
+    id: string;
+    title: string;
+    description: string | null;
+    discountType: string;
+    discountValue: number;
+    maxDiscountAmount: number | null;
+    isBonus: boolean;
+  } | null;
 }
 
 export interface StudentListResponse {
@@ -224,13 +235,28 @@ export class StudentsService {
    */
   async getStudentByParchiId(
     parchiId: string,
+    currentUser: CurrentUser,
   ): Promise<ApiResponse<StudentVerificationResponse>> {
+    // Verify branch access
+    if (currentUser.role !== ROLES.MERCHANT_BRANCH || !currentUser.branch?.id) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+
+    const branchId = currentUser.branch.id;
+    // For merchant branch users, the merchant_id is inside the branch object
+    const merchantId = currentUser.branch.merchant_id;
+
+    if (!merchantId) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+
     // Normalize parchi ID (uppercase, trim)
     const normalizedParchiId = parchiId.trim().toUpperCase();
 
     const student = await this.prisma.students.findUnique({
       where: { parchi_id: normalizedParchiId },
       select: {
+        id: true,
         parchi_id: true,
         first_name: true,
         last_name: true,
@@ -244,6 +270,93 @@ export class StudentsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
+    // Determine applicable offer
+    let applicableOffer: {
+      id: string;
+      title: string;
+      description: string | null;
+      discountType: string;
+      discountValue: number;
+      maxDiscountAmount: number | null;
+      isBonus: boolean;
+    } | null = null;
+    const now = new Date();
+
+    // 1. Get student stats for this branch to check bonus eligibility (Branch-specific loyalty)
+    const studentStats = await this.prisma.student_branch_stats.findUnique({
+      where: {
+        student_id_branch_id: {
+          student_id: student.id,
+          branch_id: branchId,
+        },
+      },
+    });
+
+    const currentRedemptions = studentStats?.redemption_count || 0;
+    
+    // 2. Check bonus settings
+    const bonusSettings = await this.prisma.merchant_bonus_settings.findUnique({
+      where: { merchant_id: merchantId },
+    });
+
+    let isBonusEligible = false;
+
+    if (bonusSettings && bonusSettings.is_active) {
+      // Check if this redemption qualifies for bonus (e.g. 5th redemption)
+      // Logic: (current_count + 1) % required === 0
+      if ((currentRedemptions + 1) % bonusSettings.redemptions_required === 0) {
+        isBonusEligible = true;
+      }
+    }
+
+    // 3. Get active default offer for the branch
+    // We need this for validity dates even if bonus is applied
+    const defaultOffer = await this.prisma.offers.findFirst({
+      where: {
+        merchant_id: merchantId,
+        status: 'active',
+        valid_from: { lte: now },
+        valid_until: { gte: now },
+        offer_branches: {
+          some: {
+            branch_id: branchId,
+            is_active: true,
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc', // Assuming latest created active offer is the default
+      },
+    });
+
+    if (isBonusEligible && bonusSettings && defaultOffer) {
+      // Construct bonus offer using bonus settings and default offer's validity
+      applicableOffer = {
+        id: defaultOffer.id, // Use real offer ID so it can be looked up during redemption
+        title: 'Loyalty Bonus Reward',
+        description: `Congratulations! You've unlocked a loyalty bonus.`,
+        discountType: bonusSettings.discount_type,
+        discountValue: Number(bonusSettings.discount_value),
+        maxDiscountAmount: bonusSettings.max_discount_amount 
+          ? Number(bonusSettings.max_discount_amount) 
+          : null,
+        isBonus: true,
+      };
+    } else if (defaultOffer) {
+      // Use default offer
+      applicableOffer = {
+        id: defaultOffer.id,
+        title: defaultOffer.title,
+        description: defaultOffer.description,
+        discountType: defaultOffer.discount_type,
+        discountValue: Number(defaultOffer.discount_value),
+        maxDiscountAmount: defaultOffer.max_discount_amount
+          ? Number(defaultOffer.max_discount_amount)
+          : null,
+        isBonus: false,
+      };
+    }
+
     return createApiResponse(
       {
         parchiId: student.parchi_id,
@@ -252,6 +365,7 @@ export class StudentsService {
         university: student.university,
         verificationStatus: student.verification_status || 'pending',
         verificationSelfie: student.verification_selfie_path,
+        offer: applicableOffer,
       },
       API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS,
     );

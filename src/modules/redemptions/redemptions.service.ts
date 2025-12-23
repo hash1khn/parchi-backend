@@ -343,23 +343,9 @@ export class RedemptionsService {
         }
 
         // 10. Check student's daily limit for this offer at this branch
-        const studentTodayRedemptions = await tx.redemptions.count({
-          where: {
-            student_id: student.id,
-            offer_id: createDto.offerId,
-            branch_id: branchId,
-            created_at: {
-              gte: startOfDay,
-            },
-          },
-        });
-
-        // Assuming one redemption per student per offer per day per branch
-        if (studentTodayRedemptions > 0) {
-          throw new BadRequestException(
-            API_RESPONSE_MESSAGES.REDEMPTION.STUDENT_DAILY_LIMIT_REACHED,
-          );
-        }
+        // REMOVED: Hardcoded limit of 1 redemption per student per day per branch removed as per requirement.
+        // const studentTodayRedemptions = await tx.redemptions.count({ ... });
+        // if (studentTodayRedemptions > 0) { ... }
 
         // 11. Calculate bonus discount
         let isBonusApplied = false;
@@ -370,21 +356,21 @@ export class RedemptionsService {
         });
 
         if (bonusSettings && bonusSettings.is_active) {
-          const studentMerchantStats = await tx.student_merchant_stats.findUnique(
-            {
-              where: {
-                student_id_merchant_id: {
-                  student_id: student.id,
-                  merchant_id: branch.merchant_id,
-                },
+          const studentBranchStats = await tx.student_branch_stats.findUnique({
+            where: {
+              student_id_branch_id: {
+                student_id: student.id,
+                branch_id: branchId,
               },
             },
-          );
+          });
 
           const redemptionCount =
-            studentMerchantStats?.redemption_count || 0;
+            studentBranchStats?.redemption_count || 0;
 
-          if (redemptionCount >= bonusSettings.redemptions_required) {
+          // Check if this redemption qualifies for bonus (e.g. 5th redemption)
+          // Logic: (current_count + 1) % required === 0
+          if ((redemptionCount + 1) % bonusSettings.redemptions_required === 0) {
             isBonusApplied = true;
 
             if (bonusSettings.discount_type === 'percentage') {
