@@ -5,8 +5,12 @@ import {
   IsEnum,
   IsNumber,
   IsDateString,
+  IsArray,
+  IsInt,
   Min,
   Max,
+  ValidateIf,
+  Matches,
 } from 'class-validator';
 
 export class UpdateOfferDto {
@@ -66,5 +70,33 @@ export class UpdateOfferDto {
   @IsOptional()
   @IsEnum(['active', 'inactive'])
   status?: 'active' | 'inactive';
+
+  @IsOptional()
+  @IsEnum(['always', 'custom'])
+  scheduleType?: 'always' | 'custom';
+
+  @ValidateIf((o) => o.scheduleType === 'custom')
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  allowedDays?: number[];
+
+  @ValidateIf((o) => o.scheduleType === 'custom')
+  @IsOptional()
+  @IsString()
+  @Matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, {
+    message: 'startTime must be in HH:mm format',
+  })
+  startTime?: string;
+
+  @ValidateIf((o) => o.scheduleType === 'custom')
+  @IsOptional()
+  @IsString()
+  @Matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, {
+    message: 'endTime must be in HH:mm format',
+  })
+  endTime?: string;
 }
 

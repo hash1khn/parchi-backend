@@ -228,6 +228,62 @@ export class RedemptionsService {
           );
         }
 
+        // 5.5. Validate schedule (allowed_days and time windows)
+        const scheduleType = offer.schedule_type || 'always';
+        if (scheduleType === 'custom') {
+          // Check if today is in allowed_days
+          const allowedDays = offer.allowed_days || [];
+          if (allowedDays.length > 0) {
+            const today = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            if (!allowedDays.includes(today)) {
+              const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+              throw new BadRequestException(
+                `This offer is not available on ${dayNames[today]}. It is only available on: ${allowedDays.map(d => dayNames[d]).join(', ')}`,
+              );
+            }
+          }
+
+          // Check if current time is within the time window
+          const startTime = offer.start_time;
+          const endTime = offer.end_time;
+          
+          if (startTime && endTime) {
+            const currentTime = now.getHours() * 60 + now.getMinutes(); // Current time in minutes
+            
+            // Convert database time to minutes
+            const formatTimeToMinutes = (time: Date): number => {
+              const date = new Date(time);
+              return date.getUTCHours() * 60 + date.getUTCMinutes();
+            };
+            
+            const startMinutes = formatTimeToMinutes(startTime);
+            const endMinutes = formatTimeToMinutes(endTime);
+            
+            // Handle time windows that span midnight (e.g., 22:00 - 02:00)
+            let isWithinWindow = false;
+            if (startMinutes <= endMinutes) {
+              // Normal time window (e.g., 09:00 - 17:00)
+              isWithinWindow = currentTime >= startMinutes && currentTime <= endMinutes;
+            } else {
+              // Time window spans midnight (e.g., 22:00 - 02:00)
+              isWithinWindow = currentTime >= startMinutes || currentTime <= endMinutes;
+            }
+            
+            if (!isWithinWindow) {
+              const formatTimeString = (time: Date): string => {
+                const date = new Date(time);
+                const hours = date.getUTCHours().toString().padStart(2, '0');
+                const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+                return `${hours}:${minutes}`;
+              };
+              
+              throw new BadRequestException(
+                `This offer is only available between ${formatTimeString(startTime)} and ${formatTimeString(endTime)}. Current time is outside this window.`,
+              );
+            }
+          }
+        }
+
         // 6. Check offer limits
         if (
           offer.total_limit &&

@@ -244,7 +244,7 @@ export class MerchantsService {
 
     // Update verification_status if provided
     if (updateDto.verificationStatus !== undefined) {
-      updateData.verification_status = updateDto.verificationStatus as any;
+      updateData.verification_status = updateDto.verificationStatus;
       if (updateDto.verificationStatus === 'approved') {
         updateData.verified_at = new Date();
       }

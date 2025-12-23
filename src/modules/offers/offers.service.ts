@@ -42,6 +42,10 @@ export interface OfferResponse {
   createdBy: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
+  scheduleType: string | null;
+  allowedDays: number[];
+  startTime: string | null;
+  endTime: string | null;
   branches?: Array<{
     branchId: string;
     branchName: string;
@@ -175,6 +179,7 @@ export class OffersService {
     }
 
     // Validate branches if provided
+    let targetBranchIds: string[] = [];
     if (createDto.branchIds && createDto.branchIds.length > 0) {
       const branches = await this.prisma.merchant_branches.findMany({
         where: {
@@ -188,7 +193,112 @@ export class OffersService {
           API_RESPONSE_MESSAGES.OFFER.BRANCH_NOT_BELONGS_TO_MERCHANT,
         );
       }
+
+      targetBranchIds = createDto.branchIds;
+    } else {
+      // If no branches specified, get all merchant branches
+      const allBranches = await this.prisma.merchant_branches.findMany({
+        where: {
+          merchant_id: merchantId,
+          is_active: true,
+        },
+      });
+      targetBranchIds = allBranches.map((branch) => branch.id);
     }
+
+    // Check for "One Active Offer" rule - verify branches don't already have active offers
+    const now = new Date();
+    if (targetBranchIds.length > 0) {
+      const activeOffers = await this.prisma.offers.findMany({
+        where: {
+          merchant_id: merchantId,
+          status: 'active',
+          valid_from: { lte: now },
+          valid_until: { gte: now },
+        },
+        include: {
+          offer_branches: {
+            where: {
+              branch_id: { in: targetBranchIds },
+              is_active: true,
+            },
+            include: {
+              merchant_branches: {
+                select: {
+                  id: true,
+                  branch_name: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Find branches that already have active offers
+      const busyBranches: Array<{ id: string; name: string }> = [];
+      activeOffers.forEach((offer) => {
+        offer.offer_branches.forEach((ob) => {
+          if (!busyBranches.find((b) => b.id === ob.merchant_branches.id)) {
+            busyBranches.push({
+              id: ob.merchant_branches.id,
+              name: ob.merchant_branches.branch_name,
+            });
+          }
+        });
+      });
+
+      if (busyBranches.length > 0) {
+        const branchNames = busyBranches.map((b) => b.name).join(', ');
+        throw new BadRequestException(
+          `Cannot create offer: The following branches already have active offers: ${branchNames}. Only one active offer per branch is allowed.`,
+        );
+      }
+    }
+
+    // Validate schedule fields
+    const scheduleType = createDto.scheduleType || 'always';
+    if (scheduleType === 'custom') {
+      // Validate allowed days
+      if (createDto.allowedDays && createDto.allowedDays.length > 0) {
+        const invalidDays = createDto.allowedDays.filter(
+          (day) => day < 0 || day > 6,
+        );
+        if (invalidDays.length > 0) {
+          throw new BadRequestException(
+            'allowedDays must contain values between 0 (Sunday) and 6 (Saturday)',
+          );
+        }
+      }
+
+      // Validate time fields
+      if (createDto.startTime && createDto.endTime) {
+        const [startHours, startMinutes] = createDto.startTime
+          .split(':')
+          .map(Number);
+        const [endHours, endMinutes] = createDto.endTime.split(':').map(Number);
+        const startTotal = startHours * 60 + startMinutes;
+        const endTotal = endHours * 60 + endMinutes;
+
+        if (endTotal <= startTotal) {
+          throw new BadRequestException(
+            'endTime must be after startTime',
+          );
+        }
+      } else if (createDto.startTime || createDto.endTime) {
+        throw new BadRequestException(
+          'Both startTime and endTime must be provided when scheduleType is custom',
+        );
+      }
+    }
+
+    // Convert time strings to Date objects for database storage
+    const convertTimeToDate = (timeString: string | undefined): Date | null => {
+      if (!timeString) return null;
+      const [hours, minutes] = timeString.split(':').map(Number);
+      const date = new Date();
+      date.setUTCHours(hours, minutes, 0, 0);
+      return date;
+    };
 
     // Create offer
     const offer = await this.prisma.$transaction(async (tx) => {
@@ -210,6 +320,19 @@ export class OffersService {
           current_redemptions: 0,
           status: 'active',
           created_by: currentUser.id,
+          schedule_type: scheduleType,
+          allowed_days:
+            scheduleType === 'custom' && createDto.allowedDays
+              ? createDto.allowedDays
+              : [],
+          start_time:
+            scheduleType === 'custom'
+              ? convertTimeToDate(createDto.startTime)
+              : null,
+          end_time:
+            scheduleType === 'custom'
+              ? convertTimeToDate(createDto.endTime)
+              : null,
         },
       });
 
@@ -480,8 +603,79 @@ export class OffersService {
       }
     }
 
+    // Validate schedule fields if provided
+    const offerScheduleType = offer.schedule_type ?? 'always';
+    const newScheduleType = updateDto.scheduleType ?? offerScheduleType;
+    
+    // If changing to 'custom', validate required fields
+    if (newScheduleType === 'custom') {
+      // Validate allowed days if provided
+      const allowedDays = updateDto.allowedDays ?? offer.allowed_days ?? [];
+      if (allowedDays.length > 0) {
+        const invalidDays = allowedDays.filter((day) => day < 0 || day > 6);
+        if (invalidDays.length > 0) {
+          throw new BadRequestException(
+            'allowedDays must contain values between 0 (Sunday) and 6 (Saturday)',
+          );
+        }
+      }
+
+      // If changing to custom or updating times, validate
+      const isChangingToCustom = updateDto.scheduleType === 'custom' && offerScheduleType !== 'custom';
+      const isUpdatingTimes = updateDto.startTime !== undefined || updateDto.endTime !== undefined;
+      
+      if (isChangingToCustom || isUpdatingTimes) {
+        const startTime = updateDto.startTime ?? (offer.start_time ? this.formatTimeFromDate(offer.start_time) : null);
+        const endTime = updateDto.endTime ?? (offer.end_time ? this.formatTimeFromDate(offer.end_time) : null);
+
+        if (!startTime || !endTime) {
+          throw new BadRequestException(
+            'Both startTime and endTime must be provided when scheduleType is custom',
+          );
+        }
+
+        const [startHours, startMinutes] = startTime.split(':').map(Number);
+        const [endHours, endMinutes] = endTime.split(':').map(Number);
+        const startTotal = startHours * 60 + startMinutes;
+        const endTotal = endHours * 60 + endMinutes;
+
+        if (endTotal <= startTotal) {
+          throw new BadRequestException(
+            'endTime must be after startTime',
+          );
+        }
+      }
+    }
+
+    // Convert time strings to Date objects for database storage
+    const convertTimeToDate = (timeString: string | undefined): Date | null => {
+      if (!timeString) return null;
+      const [hours, minutes] = timeString.split(':').map(Number);
+      const date = new Date();
+      date.setUTCHours(hours, minutes, 0, 0);
+      return date;
+    };
+
     // Prepare update data
-    const updateData: any = {};
+    const updateData: {
+      title?: string;
+      description?: string | null;
+      image_url?: string | null;
+      discount_type?: string;
+      discount_value?: number;
+      min_order_value?: number;
+      max_discount_amount?: number | null;
+      terms_conditions?: string | null;
+      valid_from?: Date;
+      valid_until?: Date;
+      daily_limit?: number | null;
+      total_limit?: number | null;
+      status?: 'active' | 'inactive';
+      schedule_type?: string;
+      allowed_days?: number[];
+      start_time?: Date | null;
+      end_time?: Date | null;
+    } = {};
     if (updateDto.title !== undefined) {
       updateData.title = updateDto.title;
     }
@@ -520,6 +714,24 @@ export class OffersService {
     }
     if (updateDto.status !== undefined) {
       updateData.status = updateDto.status;
+    }
+    if (updateDto.scheduleType !== undefined) {
+      updateData.schedule_type = updateDto.scheduleType;
+      // If changing to 'always', clear schedule fields
+      if (updateDto.scheduleType === 'always') {
+        updateData.allowed_days = [];
+        updateData.start_time = null;
+        updateData.end_time = null;
+      }
+    }
+    if (updateDto.allowedDays !== undefined) {
+      updateData.allowed_days = updateDto.allowedDays;
+    }
+    if (updateDto.startTime !== undefined) {
+      updateData.start_time = convertTimeToDate(updateDto.startTime);
+    }
+    if (updateDto.endTime !== undefined) {
+      updateData.end_time = convertTimeToDate(updateDto.endTime);
     }
 
     // Update offer
@@ -1422,9 +1634,29 @@ export class OffersService {
   }
 
   /**
+   * Format time from Date to HH:mm string
+   */
+  private formatTimeFromDate(time: Date | null | undefined): string | null {
+    if (!time) return null;
+    const date = new Date(time);
+    const hours = date.getUTCHours().toString().padStart(2, '0');
+    const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  }
+
+  /**
    * Format offer response
    */
   private formatOfferResponse(offer: any): OfferResponse {
+    // Format time fields from DateTime to HH:mm string
+    const formatTime = (time: Date | null | undefined): string | null => {
+      if (!time) return null;
+      const date = new Date(time);
+      const hours = date.getUTCHours().toString().padStart(2, '0');
+      const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+      return `${hours}:${minutes}`;
+    };
+
     return {
       id: offer.id,
       merchantId: offer.merchant_id,
@@ -1449,6 +1681,10 @@ export class OffersService {
       createdBy: offer.created_by,
       createdAt: offer.created_at,
       updatedAt: offer.updated_at,
+      scheduleType: offer.schedule_type || 'always',
+      allowedDays: offer.allowed_days || [],
+      startTime: formatTime(offer.start_time),
+      endTime: formatTime(offer.end_time),
       branches: offer.offer_branches
         ? offer.offer_branches.map((ob: any) => ({
             branchId: ob.merchant_branches.id,
