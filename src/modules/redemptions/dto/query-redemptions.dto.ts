@@ -7,11 +7,17 @@ import {
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+  REDEMPTION_STATUS,
+  type RedemptionStatus,
+} from '../../../constants/app.constants';
 
 export class QueryRedemptionsDto {
   @IsOptional()
-  @IsEnum(['pending', 'verified', 'rejected'])
-  status?: 'pending' | 'verified' | 'rejected';
+  @IsEnum(REDEMPTION_STATUS, {
+    message: `Status must be one of: ${Object.values(REDEMPTION_STATUS).join(', ')}`,
+  })
+  status?: RedemptionStatus;
 
   @IsOptional()
   @IsDateString()

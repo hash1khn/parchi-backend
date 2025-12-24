@@ -112,6 +112,11 @@ export interface StudentDetailResponse extends StudentKycResponse {
 
 @Injectable()
 export class StudentsService {
+  // Constants
+  private readonly ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+  private readonly LOYALTY_BONUS_TITLE = 'Loyalty Bonus Reward';
+  private readonly LOYALTY_BONUS_DESCRIPTION = `Congratulations! You've unlocked a loyalty bonus.`;
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -237,13 +242,12 @@ export class StudentsService {
     parchiId: string,
     currentUser: CurrentUser,
   ): Promise<ApiResponse<StudentVerificationResponse>> {
-    // Verify branch access
+    // Early validation
     if (currentUser.role !== ROLES.MERCHANT_BRANCH || !currentUser.branch?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
 
     const branchId = currentUser.branch.id;
-    // For merchant branch users, the merchant_id is inside the branch object
     const merchantId = currentUser.branch.merchant_id;
 
     if (!merchantId) {
@@ -253,6 +257,7 @@ export class StudentsService {
     // Normalize parchi ID (uppercase, trim)
     const normalizedParchiId = parchiId.trim().toUpperCase();
 
+    // Get student first (required for subsequent queries)
     const student = await this.prisma.students.findUnique({
       where: { parchi_id: normalizedParchiId },
       select: {
@@ -270,92 +275,66 @@ export class StudentsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
-    // Determine applicable offer
-    let applicableOffer: {
-      id: string;
-      title: string;
-      description: string | null;
-      discountType: string;
-      discountValue: number;
-      maxDiscountAmount: number | null;
-      isBonus: boolean;
-    } | null = null;
+    // Parallelize independent queries for better performance
     const now = new Date();
-
-    // 1. Get student stats for this branch to check bonus eligibility (Branch-specific loyalty)
-    const studentStats = await this.prisma.student_branch_stats.findUnique({
-      where: {
-        student_id_branch_id: {
-          student_id: student.id,
-          branch_id: branchId,
-        },
-      },
-    });
-
-    const currentRedemptions = studentStats?.redemption_count || 0;
-    
-    // 2. Check bonus settings
-    const bonusSettings = await this.prisma.merchant_bonus_settings.findUnique({
-      where: { merchant_id: merchantId },
-    });
-
-    let isBonusEligible = false;
-
-    if (bonusSettings && bonusSettings.is_active) {
-      // Check if this redemption qualifies for bonus (e.g. 5th redemption)
-      // Logic: (current_count + 1) % required === 0
-      if ((currentRedemptions + 1) % bonusSettings.redemptions_required === 0) {
-        isBonusEligible = true;
-      }
-    }
-
-    // 3. Get active default offer for the branch
-    // We need this for validity dates even if bonus is applied
-    const defaultOffer = await this.prisma.offers.findFirst({
-      where: {
-        merchant_id: merchantId,
-        status: 'active',
-        valid_from: { lte: now },
-        valid_until: { gte: now },
-        offer_branches: {
-          some: {
+    const [studentStats, bonusSettings, defaultOffer] = await Promise.all([
+      // 1. Get student stats for this branch to check bonus eligibility
+      this.prisma.student_branch_stats.findUnique({
+        where: {
+          student_id_branch_id: {
+            student_id: student.id,
             branch_id: branchId,
-            is_active: true,
           },
         },
-      },
-      orderBy: {
-        created_at: 'desc', // Assuming latest created active offer is the default
-      },
-    });
+        select: {
+          redemption_count: true,
+        },
+      }),
+      // 2. Get bonus settings
+      this.prisma.merchant_bonus_settings.findUnique({
+        where: { merchant_id: merchantId },
+        select: {
+          is_active: true,
+          redemptions_required: true,
+          discount_type: true,
+          discount_value: true,
+          max_discount_amount: true,
+        },
+      }),
+      // 3. Get active default offer for the branch
+      this.prisma.offers.findFirst({
+        where: {
+          merchant_id: merchantId,
+          status: 'active',
+          valid_from: { lte: now },
+          valid_until: { gte: now },
+          offer_branches: {
+            some: {
+              branch_id: branchId,
+              is_active: true,
+            },
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          discount_type: true,
+          discount_value: true,
+          max_discount_amount: true,
+        },
+        orderBy: {
+          created_at: 'desc',
+        },
+      }),
+    ]);
 
-    if (isBonusEligible && bonusSettings && defaultOffer) {
-      // Construct bonus offer using bonus settings and default offer's validity
-      applicableOffer = {
-        id: defaultOffer.id, // Use real offer ID so it can be looked up during redemption
-        title: 'Loyalty Bonus Reward',
-        description: `Congratulations! You've unlocked a loyalty bonus.`,
-        discountType: bonusSettings.discount_type,
-        discountValue: Number(bonusSettings.discount_value),
-        maxDiscountAmount: bonusSettings.max_discount_amount 
-          ? Number(bonusSettings.max_discount_amount) 
-          : null,
-        isBonus: true,
-      };
-    } else if (defaultOffer) {
-      // Use default offer
-      applicableOffer = {
-        id: defaultOffer.id,
-        title: defaultOffer.title,
-        description: defaultOffer.description,
-        discountType: defaultOffer.discount_type,
-        discountValue: Number(defaultOffer.discount_value),
-        maxDiscountAmount: defaultOffer.max_discount_amount
-          ? Number(defaultOffer.max_discount_amount)
-          : null,
-        isBonus: false,
-      };
-    }
+    // Determine applicable offer
+    const applicableOffer = this.determineApplicableOffer(
+      studentStats,
+      bonusSettings,
+      defaultOffer,
+    );
 
     return createApiResponse(
       {
@@ -369,6 +348,74 @@ export class StudentsService {
       },
       API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS,
     );
+  }
+
+  /**
+   * Determine the applicable offer based on student stats, bonus settings, and default offer
+   * Returns bonus offer if eligible, otherwise default offer
+   */
+  private determineApplicableOffer(
+    studentStats: { redemption_count: number | null } | null,
+    bonusSettings: {
+      is_active: boolean | null;
+      redemptions_required: number;
+      discount_type: string;
+      discount_value: any; // Prisma Decimal type
+      max_discount_amount: any | null; // Prisma Decimal type
+    } | null,
+    defaultOffer: {
+      id: string;
+      title: string;
+      description: string | null;
+      discount_type: string;
+      discount_value: any; // Prisma Decimal type
+      max_discount_amount: any | null; // Prisma Decimal type
+    } | null,
+  ): {
+    id: string;
+    title: string;
+    description: string | null;
+    discountType: string;
+    discountValue: number;
+    maxDiscountAmount: number | null;
+    isBonus: boolean;
+  } | null {
+    if (!defaultOffer) {
+      return null;
+    }
+
+    const currentRedemptions = studentStats?.redemption_count ?? 0;
+    const isBonusEligible =
+      bonusSettings?.is_active === true &&
+      (currentRedemptions + 1) % bonusSettings.redemptions_required === 0;
+
+    if (isBonusEligible && bonusSettings) {
+      // Construct bonus offer using bonus settings and default offer's validity
+      return {
+        id: defaultOffer.id, // Use real offer ID so it can be looked up during redemption
+        title: this.LOYALTY_BONUS_TITLE,
+        description: this.LOYALTY_BONUS_DESCRIPTION,
+        discountType: bonusSettings.discount_type,
+        discountValue: Number(bonusSettings.discount_value),
+        maxDiscountAmount: bonusSettings.max_discount_amount
+          ? Number(bonusSettings.max_discount_amount)
+          : null,
+        isBonus: true,
+      };
+    }
+
+    // Use default offer
+    return {
+      id: defaultOffer.id,
+      title: defaultOffer.title,
+      description: defaultOffer.description,
+      discountType: defaultOffer.discount_type,
+      discountValue: Number(defaultOffer.discount_value),
+      maxDiscountAmount: defaultOffer.max_discount_amount
+        ? Number(defaultOffer.max_discount_amount)
+        : null,
+      isBonus: false,
+    };
   }
 
   /**
@@ -473,7 +520,7 @@ export class StudentsService {
           // Set expiration date to 1 year from now if approved
           verification_expires_at:
             approveRejectDto.action === 'approve'
-              ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
+              ? new Date(now.getTime() + this.ONE_YEAR_MS)
               : null,
           // Save selfie image from KYC before deleting it
           ...(selfiePath && { verification_selfie_path: selfiePath }),

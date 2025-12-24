@@ -4,7 +4,12 @@ import {
   IsString,
   IsUrl,
   IsBoolean,
+  IsEnum,
 } from 'class-validator';
+import {
+  VERIFICATION_STATUS,
+  type VerificationStatus,
+} from '../../../constants/app.constants';
 
 export class UpdateCorporateAccountDto {
   @IsOptional()
@@ -36,7 +41,9 @@ export class UpdateCorporateAccountDto {
   isActive?: boolean;
 
   @IsOptional()
-  @IsString()
-  verificationStatus?: 'pending' | 'approved' | 'rejected' | 'expired';
+  @IsEnum(VERIFICATION_STATUS, {
+    message: `Verification status must be one of: ${Object.values(VERIFICATION_STATUS).join(', ')}`,
+  })
+  verificationStatus?: VerificationStatus;
 }
 

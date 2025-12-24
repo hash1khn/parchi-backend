@@ -13,6 +13,12 @@ import {
   ValidateIf,
   Matches,
 } from 'class-validator';
+import {
+  DISCOUNT_TYPE,
+  SCHEDULE_TYPE,
+  type DiscountType,
+  type ScheduleType,
+} from '../../../constants/app.constants';
 
 export class CreateOfferDto {
   @IsNotEmpty()
@@ -28,8 +34,10 @@ export class CreateOfferDto {
   imageUrl?: string;
 
   @IsNotEmpty()
-  @IsEnum(['percentage', 'fixed'])
-  discountType: 'percentage' | 'fixed';
+  @IsEnum(DISCOUNT_TYPE, {
+    message: `Discount type must be one of: ${Object.values(DISCOUNT_TYPE).join(', ')}`,
+  })
+  discountType: DiscountType;
 
   @IsNotEmpty()
   @IsNumber()
@@ -78,8 +86,10 @@ export class CreateOfferDto {
   merchantId?: string;
 
   @IsOptional()
-  @IsEnum(['always', 'custom'])
-  scheduleType?: 'always' | 'custom';
+  @IsEnum(SCHEDULE_TYPE, {
+    message: `Schedule type must be one of: ${Object.values(SCHEDULE_TYPE).join(', ')}`,
+  })
+  scheduleType?: ScheduleType;
 
   @ValidateIf((o) => o.scheduleType === 'custom')
   @IsOptional()

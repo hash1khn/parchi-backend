@@ -17,6 +17,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { ApproveRejectStudentDto } from './dto/approve-reject-student.dto';
+import { QueryStudentsDto } from './dto/query-students.dto';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 
@@ -40,11 +41,11 @@ export class AdminStudentsController {
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getAllStudents(
-    @Query('status') status?: 'pending' | 'approved' | 'rejected' | 'expired',
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit?: number,
+    @Query() queryDto: QueryStudentsDto,
   ) {
-    return this.studentsService.getAllStudents(status, page, limit);
+    const page = queryDto.page ?? 1;
+    const limit = queryDto.limit ?? 10;
+    return this.studentsService.getAllStudents(queryDto.status, page, limit);
   }
 
   @Get('by-parchi/:parchiId')
