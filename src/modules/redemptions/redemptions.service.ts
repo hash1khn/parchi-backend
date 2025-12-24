@@ -1554,5 +1554,73 @@ export class RedemptionsService {
         return { created_at: 'desc' };
     }
   }
-}
+  /**
+   * Get daily redemption stats for a branch
+   * Returns today's count and percentage change vs yesterday
+   */
+  async getBranchDailyStats(currentUser: CurrentUser) {
+    if (!currentUser.branch?.id) {
+      console.log('Forbidden: No branch ID for user', currentUser.id);
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
 
+    const branchId = currentUser.branch.id;
+    const now = new Date();
+
+    // Today's range (00:00:00 to now)
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    // Yesterday's range (00:00:00 to 23:59:59)
+    const startOfYesterday = new Date(startOfToday);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    
+    const endOfYesterday = new Date(startOfToday);
+    endOfYesterday.setMilliseconds(-1);
+
+    const [todayCount, yesterdayCount] = await Promise.all([
+      this.prisma.redemptions.count({
+        where: {
+          branch_id: branchId,
+          created_at: {
+            gte: startOfToday,
+          },
+        },
+      }),
+      this.prisma.redemptions.count({
+        where: {
+          branch_id: branchId,
+          created_at: {
+            gte: startOfYesterday,
+            lte: endOfYesterday,
+          },
+        },
+      }),
+    ]);
+
+    let percentageChange = 0;
+    let trend: 'up' | 'down' | 'neutral' = 'neutral';
+
+    if (yesterdayCount > 0) {
+      percentageChange = ((todayCount - yesterdayCount) / yesterdayCount) * 100;
+    } else if (todayCount > 0) {
+      percentageChange = 100; // 100% increase if yesterday was 0 and today is > 0
+    }
+
+    if (percentageChange > 0) {
+      trend = 'up';
+    } else if (percentageChange < 0) {
+      trend = 'down';
+    }
+
+    return createApiResponse(
+      {
+        todayCount,
+        yesterdayCount,
+        percentageChange: Math.round(percentageChange),
+        trend,
+      },
+      API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
+    );
+  }
+}

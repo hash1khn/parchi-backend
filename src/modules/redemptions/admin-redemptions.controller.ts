@@ -28,6 +28,16 @@ export class AdminRedemptionsController {
   constructor(private readonly redemptionsService: RedemptionsService) {}
 
   // ========== Branch Staff Endpoints ==========
+  
+  @Get('stats/daily')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_BRANCH)
+  @HttpCode(HttpStatus.OK)
+  async getBranchDailyStats(@CurrentUser() currentUser: ICurrentUser) {
+    console.log('getBranchDailyStats called by:', currentUser.id, currentUser.role);
+    console.log('Branch:', currentUser.branch);
+    return this.redemptionsService.getBranchDailyStats(currentUser);
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
