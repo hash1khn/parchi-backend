@@ -1711,4 +1711,116 @@ export class RedemptionsService {
       API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
     );
   }
+
+  /**
+   * Get aggregated stats for a branch
+   * Includes: Unique Students, Bonus Deals, Peak Hour, Hourly Chart Data
+   */
+  async getBranchAggregatedStats(currentUser: CurrentUser) {
+    if (!currentUser.branch?.id) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+
+    const branchId = currentUser.branch.id;
+    const now = new Date();
+
+    // 1. Standard "Today" Range (00:00:00 to 23:59:59) for Summary Metrics
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(now);
+    endOfToday.setHours(23, 59, 59, 999);
+
+    // 2. Hourly Chart Range (Today 06:00 to Tomorrow 02:00)
+    const chartStart = new Date(now);
+    chartStart.setHours(6, 0, 0, 0);
+    
+    const chartEnd = new Date(now);
+    chartEnd.setDate(chartEnd.getDate() + 1); // Tomorrow
+    chartEnd.setHours(2, 0, 0, 0);
+
+    // --- Parallel Queries ---
+    const [todayRedemptions, chartRedemptions] = await Promise.all([
+      // Query 1: For Unique Students & Bonus Deals (Standard Today)
+      this.prisma.redemptions.findMany({
+        where: {
+          branch_id: branchId,
+          created_at: {
+            gte: startOfToday,
+            lte: endOfToday,
+          },
+        },
+        select: {
+          student_id: true,
+          is_bonus_applied: true,
+        },
+      }),
+
+      // Query 2: For Hourly Chart & Peak Hour (6am - 2am)
+      this.prisma.redemptions.findMany({
+        where: {
+          branch_id: branchId,
+          created_at: {
+            gte: chartStart,
+            lte: chartEnd,
+          },
+        },
+        select: {
+          created_at: true,
+        },
+      }),
+    ]);
+
+    // --- Process Summary Metrics ---
+    const uniqueStudents = new Set(todayRedemptions.map(r => r.student_id)).size;
+    const bonusDealsCount = todayRedemptions.filter(r => r.is_bonus_applied).length;
+
+    // --- Process Hourly Data ---
+    // Initialize buckets for 6am to 2am (20 hours)
+    // Map keys: 6, 7, ..., 23, 0, 1
+    const hourlyMap = new Map<number, number>();
+    const hours = [
+      6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1
+    ];
+    hours.forEach(h => hourlyMap.set(h, 0));
+
+    chartRedemptions.forEach(r => {
+      if (r.created_at) {
+        const h = new Date(r.created_at).getHours();
+        if (hourlyMap.has(h)) {
+          hourlyMap.set(h, (hourlyMap.get(h) || 0) + 1);
+        }
+      }
+    });
+
+    // Format for response
+    const hourlyData = hours.map(h => ({
+      hour: h,
+      count: hourlyMap.get(h) || 0,
+      label: h === 0 ? '12 AM' : h === 12 ? '12 PM' : h > 12 ? `${h - 12} PM` : `${h} AM`
+    }));
+
+    // --- Calculate Peak Hour ---
+    let maxCount = -1;
+    let peakHourLabel = 'N/A';
+    
+    hourlyData.forEach(d => {
+      if (d.count > maxCount) {
+        maxCount = d.count;
+        peakHourLabel = d.label;
+      }
+    });
+
+    if (maxCount === 0) peakHourLabel = 'N/A';
+
+    return createApiResponse(
+      {
+        uniqueStudents,
+        bonusDealsCount,
+        peakHour: peakHourLabel,
+        hourlyData,
+      },
+      API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
+    );
+  }
 }
+

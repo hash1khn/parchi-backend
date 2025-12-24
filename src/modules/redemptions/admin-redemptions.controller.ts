@@ -45,6 +45,14 @@ export class AdminRedemptionsController {
     return this.redemptionsService.getBranchDailyRedemptionDetails(currentUser);
   }
 
+  @Get('stats/aggregated')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_BRANCH)
+  @HttpCode(HttpStatus.OK)
+  async getBranchAggregatedStats(@CurrentUser() currentUser: ICurrentUser) {
+    return this.redemptionsService.getBranchAggregatedStats(currentUser);
+  }
+
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_BRANCH)
@@ -55,6 +63,8 @@ export class AdminRedemptionsController {
   ) {
     return this.redemptionsService.createRedemption(createDto, currentUser);
   }
+
+
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
