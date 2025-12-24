@@ -5,13 +5,14 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { ApiResponse, PaginatedResponse } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { AssignBranchesDto } from './dto/assign-branches.dto';
 import { ApproveRejectOfferDto } from './dto/approve-reject-offer.dto';
-import { ROLES } from '../../constants/app.constants';
+import { ROLES, OfferStatus } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
 import {
   calculatePaginationMeta,
@@ -398,7 +399,7 @@ export class OffersService {
    */
   async getMerchantOffers(
     currentUser: CurrentUser,
-    status?: 'active' | 'inactive',
+    status?: OfferStatus,
     page: number = 1,
     limit: number = 10,
   ): Promise<PaginatedResponse<OfferResponse>> {
@@ -417,7 +418,7 @@ export class OffersService {
     const merchantId = currentUser.merchant.id;
     const skip = calculateSkip(page, limit);
 
-    const whereClause: any = {
+    const whereClause: Prisma.offersWhereInput = {
       merchant_id: merchantId,
     };
 
@@ -1154,14 +1155,14 @@ export class OffersService {
    * Admin only
    */
   async getAllOffers(
-    status?: 'active' | 'inactive',
+    status?: OfferStatus,
     merchantId?: string,
     page: number = 1,
     limit: number = 10,
   ): Promise<PaginatedResponse<OfferResponse>> {
     const skip = calculateSkip(page, limit);
 
-    const whereClause: any = {};
+    const whereClause: Prisma.offersWhereInput = {};
     if (status) {
       whereClause.status = status;
     }
@@ -1351,7 +1352,7 @@ export class OffersService {
     const now = new Date();
 
     // Build where clause for active offers
-    const whereClause: any = {
+    const whereClause: Prisma.offersWhereInput = {
       status: 'active',
       valid_from: { lte: now },
       valid_until: { gte: now },

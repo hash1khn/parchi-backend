@@ -4,9 +4,10 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { ApiResponse, PaginatedResponse, CurrentUser } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
-import { ROLES } from '../../constants/app.constants';
+import { ROLES, VerificationStatus } from '../../constants/app.constants';
 import { ApproveRejectStudentDto } from './dto/approve-reject-student.dto';
 import {
   calculatePaginationMeta,
@@ -174,13 +175,13 @@ export class StudentsService {
    * Admin only
    */
   async getAllStudents(
-    status?: 'pending' | 'approved' | 'rejected' | 'expired',
+    status?:VerificationStatus,
     page: number = 1,
     limit: number = 10,
   ): Promise<PaginatedResponse<StudentKycResponse>> {
     const skip = calculateSkip(page, limit);
 
-    const whereClause: any = {};
+    const whereClause: Prisma.studentsWhereInput = {};
     if (status) {
       whereClause.verification_status = status;
     }

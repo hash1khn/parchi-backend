@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { ApiResponse } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { UpdateCorporateAccountDto } from './dto/update-corporate-account.dto';
@@ -57,7 +58,7 @@ export class MerchantsService {
   async getAllCorporateMerchants(
     search?: string,
   ): Promise<ApiResponse<CorporateMerchantResponse[]>> {
-    const whereClause: any = {
+    const whereClause: Prisma.merchantsWhereInput = {
       users: {
         role: 'merchant_corporate',
       },
@@ -482,7 +483,7 @@ export class MerchantsService {
     corporateAccountId?: string,
     search?: string,
   ): Promise<ApiResponse<BranchResponse[]>> {
-    let whereClause: any = {
+    let whereClause: Prisma.merchant_branchesWhereInput = {
       merchants: {
         is_active: true, // Only show branches of active corporate accounts
       },

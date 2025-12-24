@@ -12,6 +12,7 @@ import {
   HttpStatus,
   UseGuards,
   ParseIntPipe,
+  ParseUUIDPipe,
   DefaultValuePipe,
 } from '@nestjs/common';
 import { OffersService } from './offers.service';
@@ -23,6 +24,8 @@ import { ROLES } from '../../constants/app.constants';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { AssignBranchesDto } from './dto/assign-branches.dto';
+import { QueryMerchantOffersDto } from './dto/query-merchant-offers.dto';
+import { QueryActiveOffersDto } from './dto/query-active-offers.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 
 @Controller('offers')
@@ -48,13 +51,13 @@ export class OffersController {
   @HttpCode(HttpStatus.OK)
   async getMerchantOffers(
     @CurrentUser() currentUser: ICurrentUser,
-    @Query('status') status?: 'active' | 'inactive',
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit?: number,
+    @Query() queryDto: QueryMerchantOffersDto,
   ) {
+    const page = queryDto.page ?? 1;
+    const limit = queryDto.limit ?? 10;
     return this.offersService.getMerchantOffers(
       currentUser,
-      status,
+      queryDto.status,
       page,
       limit,
     );
@@ -67,20 +70,17 @@ export class OffersController {
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getActiveOffers(
-    @Query('category') category?: string,
-    @Query('latitude') latitude?: string,
-    @Query('longitude') longitude?: string,
-    @Query('radius', new DefaultValuePipe(10), ParseIntPipe) radius?: number,
-    @Query('sort') sort?: 'popularity' | 'proximity' | 'newest',
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit?: number,
+    @Query() queryDto: QueryActiveOffersDto,
   ) {
+    const radius = queryDto.radius ?? 10;
+    const page = queryDto.page ?? 1;
+    const limit = queryDto.limit ?? 10;
     return this.offersService.getActiveOffersForStudents(
-      category,
-      latitude ? parseFloat(latitude) : undefined,
-      longitude ? parseFloat(longitude) : undefined,
+      queryDto.category,
+      queryDto.latitude,
+      queryDto.longitude,
       radius,
-      sort,
+      queryDto.sort,
       page,
       limit,
     );
@@ -98,7 +98,7 @@ export class OffersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
-  async getOfferDetails(@Param('id') id: string) {
+  async getOfferDetails(@Param('id', ParseUUIDPipe) id: string) {
     return this.offersService.getOfferDetailsForStudents(id);
   }
 
@@ -109,7 +109,7 @@ export class OffersController {
   @Roles(ROLES.MERCHANT_CORPORATE, ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getOfferById(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
     return this.offersService.getOfferById(id, currentUser);
@@ -120,7 +120,7 @@ export class OffersController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async updateOffer(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateOfferDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
@@ -132,7 +132,7 @@ export class OffersController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async toggleOfferStatus(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
     return this.offersService.toggleOfferStatus(id, currentUser);
@@ -143,7 +143,7 @@ export class OffersController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async deleteOffer(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
     return this.offersService.deleteOffer(id, currentUser);
@@ -154,7 +154,7 @@ export class OffersController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async assignBranchesToOffer(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() assignDto: AssignBranchesDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
@@ -166,7 +166,7 @@ export class OffersController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async removeBranchesFromOffer(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() assignDto: AssignBranchesDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
@@ -182,7 +182,7 @@ export class OffersController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async getOfferAnalytics(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
     return this.offersService.getOfferAnalytics(id, currentUser);

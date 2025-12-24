@@ -10,6 +10,7 @@ import {
   HttpStatus,
   UseGuards,
   ParseIntPipe,
+  ParseUUIDPipe,
   DefaultValuePipe,
 } from '@nestjs/common';
 import { OffersService } from './offers.service';
@@ -18,6 +19,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { ApproveRejectOfferDto } from './dto/approve-reject-offer.dto';
+import { QueryAdminOffersDto } from './dto/query-admin-offers.dto';
 
 @Controller('admin/offers')
 export class AdminOffersController {
@@ -28,19 +30,23 @@ export class AdminOffersController {
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getAllOffers(
-    @Query('status') status?: 'active' | 'inactive',
-    @Query('merchantId') merchantId?: string,
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit?: number,
+    @Query() queryDto: QueryAdminOffersDto,
   ) {
-    return this.offersService.getAllOffers(status, merchantId, page, limit);
+    const page = queryDto.page ?? 1;
+    const limit = queryDto.limit ?? 10;
+    return this.offersService.getAllOffers(
+      queryDto.status,
+      queryDto.merchantId,
+      page,
+      limit,
+    );
   }
 
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
-  async getOfferByIdAdmin(@Param('id') id: string) {
+  async getOfferByIdAdmin(@Param('id', ParseUUIDPipe) id: string) {
     return this.offersService.getOfferByIdAdmin(id);
   }
 
@@ -49,7 +55,7 @@ export class AdminOffersController {
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async approveRejectOffer(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() approveRejectDto: ApproveRejectOfferDto,
   ) {
     return this.offersService.approveRejectOffer(id, approveRejectDto);
@@ -59,7 +65,7 @@ export class AdminOffersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
-  async deleteOfferAdmin(@Param('id') id: string) {
+  async deleteOfferAdmin(@Param('id', ParseUUIDPipe) id: string) {
     return this.offersService.deleteOfferAdmin(id);
   }
 }

@@ -9,6 +9,7 @@ import {
   HttpStatus,
   UseGuards,
   ParseIntPipe,
+  ParseUUIDPipe,
   DefaultValuePipe,
 } from '@nestjs/common';
 import { StudentsService } from './students.service';
@@ -18,6 +19,7 @@ import { Roles } from '../../decorators/roles.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { ApproveRejectStudentDto } from './dto/approve-reject-student.dto';
 import { QueryStudentsDto } from './dto/query-students.dto';
+import { QueryPendingStudentsDto } from './dto/query-pending-students.dto';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 
@@ -30,9 +32,10 @@ export class AdminStudentsController {
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getPendingApprovalStudents(
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit?: number,
+    @Query() queryDto: QueryPendingStudentsDto,
   ) {
+    const page = queryDto.page ?? 1;
+    const limit = queryDto.limit ?? 10;
     return this.studentsService.getPendingApprovalStudents(page, limit);
   }
 
@@ -63,7 +66,7 @@ export class AdminStudentsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
-  async getStudentDetailsForReview(@Param('id') id: string) {
+  async getStudentDetailsForReview(@Param('id', ParseUUIDPipe) id: string) {
     return this.studentsService.getStudentDetailsForReview(id);
   }
 
@@ -72,7 +75,7 @@ export class AdminStudentsController {
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async approveRejectStudent(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() approveRejectDto: ApproveRejectStudentDto,
     @CurrentUser() user: ICurrentUser,
   ) {

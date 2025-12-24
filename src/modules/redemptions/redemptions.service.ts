@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { ApiResponse, PaginatedResponse } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { CreateRedemptionDto } from './dto/create-redemption.dto';
@@ -575,7 +576,7 @@ export class RedemptionsService {
     const limit = queryDto.limit || 10;
     const skip = calculateSkip(page, limit);
 
-    const whereClause: any = {
+    const whereClause: Prisma.redemptionsWhereInput = {
       student_id: student.id,
     };
 
@@ -587,10 +588,18 @@ export class RedemptionsService {
         // For now, we'll use notes containing "REJECTED" or a status field
         // Since schema doesn't have status, we'll check verified_by is null and has rejection note
         whereClause.verified_by = null;
-        whereClause.notes = { contains: 'REJECTED', mode: 'insensitive' };
+        whereClause.notes = { 
+          contains: 'REJECTED', 
+          mode: 'insensitive' 
+        } as Prisma.StringNullableFilter;
       } else if (queryDto.status === 'pending') {
         whereClause.verified_by = null;
-        whereClause.notes = { not: { contains: 'REJECTED', mode: 'insensitive' } };
+        // For pending, notes should not contain REJECTED (case-insensitive)
+        // Use OR to handle null notes or notes without REJECTED
+        whereClause.OR = [
+          { notes: null },
+          { notes: { not: { contains: 'REJECTED' } } }
+        ];
       }
     }
 
@@ -778,7 +787,7 @@ export class RedemptionsService {
     const limit = queryDto.limit || 10;
     const skip = calculateSkip(page, limit);
 
-    const whereClause: any = {
+    const whereClause: Prisma.redemptionsWhereInput = {
       branch_id: branchId,
     };
 
@@ -788,10 +797,15 @@ export class RedemptionsService {
         whereClause.verified_by = { not: null };
       } else if (queryDto.status === 'rejected') {
         whereClause.verified_by = null;
-        whereClause.notes = { contains: 'REJECTED', mode: 'insensitive' };
+        whereClause.notes = { contains: 'REJECTED', mode: 'insensitive' } as Prisma.StringNullableFilter;
       } else if (queryDto.status === 'pending') {
         whereClause.verified_by = null;
-        whereClause.notes = { not: { contains: 'REJECTED', mode: 'insensitive' } };
+        // For pending, notes should not contain REJECTED (case-insensitive)
+        // Use OR to handle null notes or notes without REJECTED
+        whereClause.OR = [
+          { notes: null },
+          { notes: { not: { contains: 'REJECTED' } } }
+        ];
       }
     }
 
@@ -1156,7 +1170,7 @@ export class RedemptionsService {
     const limit = queryDto.limit || 10;
     const skip = calculateSkip(page, limit);
 
-    const whereClause: any = {};
+    const whereClause: Prisma.redemptionsWhereInput = {};
 
     // Status filter
     if (queryDto.status) {
@@ -1164,10 +1178,15 @@ export class RedemptionsService {
         whereClause.verified_by = { not: null };
       } else if (queryDto.status === 'rejected') {
         whereClause.verified_by = null;
-        whereClause.notes = { contains: 'REJECTED', mode: 'insensitive' };
+        whereClause.notes = { contains: 'REJECTED', mode: 'insensitive' } as Prisma.StringNullableFilter;
       } else if (queryDto.status === 'pending') {
         whereClause.verified_by = null;
-        whereClause.notes = { not: { contains: 'REJECTED', mode: 'insensitive' } };
+        // For pending, notes should not contain REJECTED (case-insensitive)
+        // Use OR to handle null notes or notes without REJECTED
+        whereClause.OR = [
+          { notes: null },
+          { notes: { not: { contains: 'REJECTED' } } }
+        ];
       }
     }
 

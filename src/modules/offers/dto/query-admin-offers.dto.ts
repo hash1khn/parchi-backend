@@ -1,5 +1,6 @@
 import {
   IsOptional,
+  IsString,
   IsEnum,
   IsInt,
   Min,
@@ -7,16 +8,20 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
-  VERIFICATION_STATUS,
-  type VerificationStatus,
+  OFFER_STATUS,
+  type OfferStatus,
 } from '../../../constants/app.constants';
 
-export class QueryStudentsDto {
+export class QueryAdminOffersDto {
   @IsOptional()
-  @IsEnum(VERIFICATION_STATUS, {
-    message: `Status must be one of: ${Object.values(VERIFICATION_STATUS).join(', ')}`,
+  @IsEnum(OFFER_STATUS, {
+    message: `Status must be one of: ${Object.values(OFFER_STATUS).join(', ')}`,
   })
-  status?: VerificationStatus;
+  status?: OfferStatus;
+
+  @IsOptional()
+  @IsString()
+  merchantId?: string;
 
   @IsOptional()
   @Type(() => Number)
