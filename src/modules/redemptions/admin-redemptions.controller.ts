@@ -34,9 +34,15 @@ export class AdminRedemptionsController {
   @Roles(ROLES.MERCHANT_BRANCH)
   @HttpCode(HttpStatus.OK)
   async getBranchDailyStats(@CurrentUser() currentUser: ICurrentUser) {
-    console.log('getBranchDailyStats called by:', currentUser.id, currentUser.role);
-    console.log('Branch:', currentUser.branch);
     return this.redemptionsService.getBranchDailyStats(currentUser);
+  }
+
+  @Get('stats/daily-details')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_BRANCH)
+  @HttpCode(HttpStatus.OK)
+  async getBranchDailyRedemptionDetails(@CurrentUser() currentUser: ICurrentUser) {
+    return this.redemptionsService.getBranchDailyRedemptionDetails(currentUser);
   }
 
   @Post()

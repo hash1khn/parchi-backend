@@ -1560,7 +1560,6 @@ export class RedemptionsService {
    */
   async getBranchDailyStats(currentUser: CurrentUser) {
     if (!currentUser.branch?.id) {
-      console.log('Forbidden: No branch ID for user', currentUser.id);
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
 
@@ -1620,6 +1619,76 @@ export class RedemptionsService {
         percentageChange: Math.round(percentageChange),
         trend,
       },
+      API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
+    );
+  }
+
+  /**
+   * Get daily redemption details for a branch
+   * Returns list of redemptions for today with student and offer details
+   */
+  async getBranchDailyRedemptionDetails(currentUser: CurrentUser) {
+    if (!currentUser.branch?.id) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+
+    const branchId = currentUser.branch.id;
+    const now = new Date();
+
+    // Today's range (00:00:00 to now)
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const redemptions = await this.prisma.redemptions.findMany({
+      where: {
+        branch_id: branchId,
+        created_at: {
+          gte: startOfToday,
+        },
+      },
+      include: {
+        students: {
+          select: {
+            parchi_id: true,
+          },
+        },
+        offers: {
+          select: {
+            title: true,
+            discount_type: true,
+            discount_value: true,
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    const formattedRedemptions = redemptions.map((redemption) => {
+      let discountDetails = '';
+      if (redemption.is_bonus_applied) {
+        discountDetails = 'Bonus Reward';
+      } else {
+        const value = Number(redemption.offers.discount_value);
+        if (redemption.offers.discount_type === 'percentage') {
+          discountDetails = `${value}% off`;
+        } else {
+          discountDetails = `Rs. ${value} off`;
+        }
+      }
+
+      return {
+        id: redemption.id,
+        parchiId: redemption.students.parchi_id,
+        offerTitle: redemption.offers.title,
+        discountDetails,
+        createdAt: redemption.created_at,
+      };
+    });
+
+    return createApiResponse(
+      formattedRedemptions,
       API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
     );
   }
