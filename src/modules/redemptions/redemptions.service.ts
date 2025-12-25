@@ -86,7 +86,7 @@ export class RedemptionsService {
   // Time window to prevent duplicate redemptions (5 seconds)
   private readonly DUPLICATE_PREVENTION_WINDOW_MS = 5000;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Create redemption
@@ -247,19 +247,19 @@ export class RedemptionsService {
           // Check if current time is within the time window
           const startTime = offer.start_time;
           const endTime = offer.end_time;
-          
+
           if (startTime && endTime) {
             const currentTime = now.getHours() * 60 + now.getMinutes(); // Current time in minutes
-            
+
             // Convert database time to minutes
             const formatTimeToMinutes = (time: Date): number => {
               const date = new Date(time);
               return date.getUTCHours() * 60 + date.getUTCMinutes();
             };
-            
+
             const startMinutes = formatTimeToMinutes(startTime);
             const endMinutes = formatTimeToMinutes(endTime);
-            
+
             // Handle time windows that span midnight (e.g., 22:00 - 02:00)
             let isWithinWindow = false;
             if (startMinutes <= endMinutes) {
@@ -269,7 +269,7 @@ export class RedemptionsService {
               // Time window spans midnight (e.g., 22:00 - 02:00)
               isWithinWindow = currentTime >= startMinutes || currentTime <= endMinutes;
             }
-            
+
             if (!isWithinWindow) {
               const formatTimeString = (time: Date): string => {
                 const date = new Date(time);
@@ -277,7 +277,7 @@ export class RedemptionsService {
                 const minutes = date.getUTCMinutes().toString().padStart(2, '0');
                 return `${hours}:${minutes}`;
               };
-              
+
               throw new BadRequestException(
                 `This offer is only available between ${formatTimeString(startTime)} and ${formatTimeString(endTime)}. Current time is outside this window.`,
               );
@@ -588,9 +588,9 @@ export class RedemptionsService {
         // For now, we'll use notes containing "REJECTED" or a status field
         // Since schema doesn't have status, we'll check verified_by is null and has rejection note
         whereClause.verified_by = null;
-        whereClause.notes = { 
-          contains: 'REJECTED', 
-          mode: 'insensitive' 
+        whereClause.notes = {
+          contains: 'REJECTED',
+          mode: 'insensitive'
         } as Prisma.StringNullableFilter;
       } else if (queryDto.status === 'pending') {
         whereClause.verified_by = null;
@@ -641,7 +641,11 @@ export class RedemptionsService {
             },
           },
           merchant_branches: {
-            include: {
+            select: {
+              id: true,
+              branch_name: true,
+              address: true,
+              city: true,
               merchants: {
                 select: {
                   id: true,
@@ -650,13 +654,6 @@ export class RedemptionsService {
                   category: true,
                 },
               },
-            },
-            select: {
-              id: true,
-              branch_name: true,
-              address: true,
-              city: true,
-              merchants: true,
             },
           },
         },
@@ -715,7 +712,11 @@ export class RedemptionsService {
           },
         },
         merchant_branches: {
-          include: {
+          select: {
+            id: true,
+            branch_name: true,
+            address: true,
+            city: true,
             merchants: {
               select: {
                 id: true,
@@ -724,13 +725,6 @@ export class RedemptionsService {
                 category: true,
               },
             },
-          },
-          select: {
-            id: true,
-            branch_name: true,
-            address: true,
-            city: true,
-            merchants: true,
           },
         },
         students: {
@@ -853,7 +847,11 @@ export class RedemptionsService {
             },
           },
           merchant_branches: {
-            include: {
+            select: {
+              id: true,
+              branch_name: true,
+              address: true,
+              city: true,
               merchants: {
                 select: {
                   id: true,
@@ -862,13 +860,6 @@ export class RedemptionsService {
                   category: true,
                 },
               },
-            },
-            select: {
-              id: true,
-              branch_name: true,
-              address: true,
-              city: true,
-              merchants: true,
             },
           },
           students: {
@@ -931,7 +922,11 @@ export class RedemptionsService {
           },
         },
         merchant_branches: {
-          include: {
+          select: {
+            id: true,
+            branch_name: true,
+            address: true,
+            city: true,
             merchants: {
               select: {
                 id: true,
@@ -940,13 +935,6 @@ export class RedemptionsService {
                 category: true,
               },
             },
-          },
-          select: {
-            id: true,
-            branch_name: true,
-            address: true,
-            city: true,
-            merchants: true,
           },
         },
         students: {
@@ -1060,7 +1048,11 @@ export class RedemptionsService {
             },
           },
           merchant_branches: {
-            include: {
+            select: {
+              id: true,
+              branch_name: true,
+              address: true,
+              city: true,
               merchants: {
                 select: {
                   id: true,
@@ -1069,13 +1061,6 @@ export class RedemptionsService {
                   category: true,
                 },
               },
-            },
-            select: {
-              id: true,
-              branch_name: true,
-              address: true,
-              city: true,
-              merchants: true,
             },
           },
           students: {
@@ -1242,7 +1227,11 @@ export class RedemptionsService {
             },
           },
           merchant_branches: {
-            include: {
+            select: {
+              id: true,
+              branch_name: true,
+              address: true,
+              city: true,
               merchants: {
                 select: {
                   id: true,
@@ -1251,13 +1240,6 @@ export class RedemptionsService {
                   category: true,
                 },
               },
-            },
-            select: {
-              id: true,
-              branch_name: true,
-              address: true,
-              city: true,
-              merchants: true,
             },
           },
           students: {
@@ -1307,7 +1289,11 @@ export class RedemptionsService {
           },
         },
         merchant_branches: {
-          include: {
+          select: {
+            id: true,
+            branch_name: true,
+            address: true,
+            city: true,
             merchants: {
               select: {
                 id: true,
@@ -1316,13 +1302,6 @@ export class RedemptionsService {
                 category: true,
               },
             },
-          },
-          select: {
-            id: true,
-            branch_name: true,
-            address: true,
-            city: true,
-            merchants: true,
           },
         },
         students: {
@@ -1437,7 +1416,11 @@ export class RedemptionsService {
             },
           },
           merchant_branches: {
-            include: {
+            select: {
+              id: true,
+              branch_name: true,
+              address: true,
+              city: true,
               merchants: {
                 select: {
                   id: true,
@@ -1446,13 +1429,6 @@ export class RedemptionsService {
                   category: true,
                 },
               },
-            },
-            select: {
-              id: true,
-              branch_name: true,
-              address: true,
-              city: true,
-              merchants: true,
             },
           },
         },
@@ -1517,36 +1493,36 @@ export class RedemptionsService {
       status,
       offer: redemption.offers
         ? {
-            id: redemption.offers.id,
-            title: redemption.offers.title,
-            discountType: redemption.offers.discount_type,
-            discountValue: Number(redemption.offers.discount_value),
-            imageUrl: redemption.offers.image_url,
-          }
+          id: redemption.offers.id,
+          title: redemption.offers.title,
+          discountType: redemption.offers.discount_type,
+          discountValue: Number(redemption.offers.discount_value),
+          imageUrl: redemption.offers.image_url,
+        }
         : undefined,
       branch: redemption.merchant_branches
         ? {
-            id: redemption.merchant_branches.id,
-            branchName: redemption.merchant_branches.branch_name,
-            address: redemption.merchant_branches.address,
-            city: redemption.merchant_branches.city,
-          }
+          id: redemption.merchant_branches.id,
+          branchName: redemption.merchant_branches.branch_name,
+          address: redemption.merchant_branches.address,
+          city: redemption.merchant_branches.city,
+        }
         : undefined,
       merchant: redemption.merchant_branches?.merchants
         ? {
-            id: redemption.merchant_branches.merchants.id,
-            businessName: redemption.merchant_branches.merchants.business_name,
-            logoPath: redemption.merchant_branches.merchants.logo_path,
-            category: redemption.merchant_branches.merchants.category,
-          }
+          id: redemption.merchant_branches.merchants.id,
+          businessName: redemption.merchant_branches.merchants.business_name,
+          logoPath: redemption.merchant_branches.merchants.logo_path,
+          category: redemption.merchant_branches.merchants.category,
+        }
         : undefined,
       student: redemption.students
         ? {
-            id: redemption.students.id,
-            parchiId: redemption.students.parchi_id,
-            firstName: redemption.students.first_name,
-            lastName: redemption.students.last_name,
-          }
+          id: redemption.students.id,
+          parchiId: redemption.students.parchi_id,
+          firstName: redemption.students.first_name,
+          lastName: redemption.students.last_name,
+        }
         : undefined,
     };
   }
@@ -1592,7 +1568,7 @@ export class RedemptionsService {
     // Yesterday's range (00:00:00 to 23:59:59)
     const startOfYesterday = new Date(startOfToday);
     startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-    
+
     const endOfYesterday = new Date(startOfToday);
     endOfYesterday.setMilliseconds(-1);
 
@@ -1733,7 +1709,7 @@ export class RedemptionsService {
     // 2. Hourly Chart Range (Today 06:00 to Tomorrow 02:00)
     const chartStart = new Date(now);
     chartStart.setHours(6, 0, 0, 0);
-    
+
     const chartEnd = new Date(now);
     chartEnd.setDate(chartEnd.getDate() + 1); // Tomorrow
     chartEnd.setHours(2, 0, 0, 0);
@@ -1802,7 +1778,7 @@ export class RedemptionsService {
     // --- Calculate Peak Hour ---
     let maxCount = -1;
     let peakHourLabel = 'N/A';
-    
+
     hourlyData.forEach(d => {
       if (d.count > maxCount) {
         maxCount = d.count;
