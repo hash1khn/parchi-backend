@@ -1,3 +1,4 @@
+// Trigger rebuild
 import {
   Injectable,
   NotFoundException,
@@ -13,6 +14,8 @@ import { UpdateBranchDto } from './dto/update-branch.dto';
 import { ROLES } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
 import { createApiResponse } from '../../utils/serializer.util';
+import { AssignOffersDto } from './dto/assign-offers.dto';
+import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
 
 export interface CorporateMerchantResponse {
   id: string;
@@ -44,6 +47,23 @@ export interface BranchResponse {
   isActive: boolean | null;
   createdAt: Date | null;
   updatedAt: Date | null;
+}
+
+export interface BranchAssignmentResponse {
+  id: string;
+  branchName: string;
+  standardOfferId: string | null;
+  bonusOfferId: string | null;
+}
+
+export interface BonusSettingsResponse {
+  redemptionsRequired: number;
+  discountType: string;
+  discountValue: number;
+  maxDiscountAmount: number | null;
+  validityDays: number | null;
+  isActive: boolean | null;
+  imageUrl: string | null;
 }
 
 @Injectable()
@@ -123,12 +143,6 @@ export class MerchantsService {
         business_name: true,
         logo_path: true,
         category: true,
-        merchant_bonus_settings: {
-          select: {
-            discount_type: true,
-            discount_value: true,
-          },
-        },
       },
       orderBy: {
         business_name: 'asc',
@@ -140,10 +154,6 @@ export class MerchantsService {
       businessName: brand.business_name,
       logoPath: brand.logo_path,
       category: brand.category,
-      discountType: brand.merchant_bonus_settings?.discount_type,
-      discountValue: brand.merchant_bonus_settings?.discount_value
-        ? Number(brand.merchant_bonus_settings.discount_value)
-        : null,
     }));
 
     return createApiResponse(
@@ -805,6 +815,256 @@ export class MerchantsService {
     return createApiResponse(
       null,
       API_RESPONSE_MESSAGES.MERCHANT.BRANCH_DELETE_SUCCESS,
+    );
+  }
+
+  /**
+   * Get branch assignments (active offers and bonus settings)
+   * Corporate only
+   */
+  async getBranchAssignments(
+    currentUser: CurrentUser,
+  ): Promise<ApiResponse<BranchAssignmentResponse[]>> {
+    if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+
+    const branches = await this.prisma.merchant_branches.findMany({
+      where: {
+        merchant_id: currentUser.merchant.id,
+      },
+      select: {
+        id: true,
+        branch_name: true,
+        offer_branches: {
+          where: { is_active: true },
+          select: {
+            offer_id: true,
+          },
+        },
+        branch_bonus_settings: {
+          select: {
+            redemptions_required: true,
+          },
+        },
+      },
+      orderBy: {
+        branch_name: 'asc',
+      },
+    });
+
+    const formatted: BranchAssignmentResponse[] = branches.map((b) => ({
+      id: b.id,
+      branchName: b.branch_name,
+      // We return the first active offer as "standard" for backward compatibility if needed,
+      // or we can change the response structure.
+      // Based on previous logic, let's assume the first active offer is the standard one.
+      standardOfferId: b.offer_branches.length > 0 ? b.offer_branches[0].offer_id : null,
+      bonusOfferId: null, // Bonus is now handled via settings, not a separate offer ID
+    }));
+
+    return createApiResponse(
+      formatted,
+      'Branch assignments retrieved successfully',
+    );
+  }
+
+  /**
+   * Assign offers to a branch (Manage offer_branches)
+   * Corporate only
+   */
+  async assignOffersToBranch(
+    branchId: string,
+    dto: AssignOffersDto,
+    currentUser: CurrentUser,
+  ): Promise<ApiResponse<BranchAssignmentResponse>> {
+    if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+
+    // Verify branch ownership
+    const branch = await this.prisma.merchant_branches.findUnique({
+      where: { id: branchId },
+    });
+
+    if (!branch || branch.merchant_id !== currentUser.merchant.id) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.BRANCH_NOT_FOUND);
+    }
+
+    // Verify offers exist and belong to merchant
+    const offerIds = [dto.standardOfferId];
+    // If bonusOfferId was passed, we ignore it or treat it as another active offer if intended.
+    // For now, we only focus on standardOfferId as the primary active offer.
+    
+    const count = await this.prisma.offers.count({
+      where: {
+        id: { in: offerIds },
+        merchant_id: currentUser.merchant.id,
+      },
+    });
+
+    if (count !== offerIds.length) {
+      throw new BadRequestException('One or more offers not found or do not belong to you');
+    }
+
+    // Transaction to update offer_branches
+    await this.prisma.$transaction(async (tx) => {
+      // Deactivate all existing offers for this branch
+      await tx.offer_branches.updateMany({
+        where: { branch_id: branchId },
+        data: { is_active: false },
+      });
+
+      // Activate/Create the selected offer
+      const existingLink = await tx.offer_branches.findUnique({
+        where: {
+          offer_id_branch_id: {
+            offer_id: dto.standardOfferId,
+            branch_id: branchId,
+          },
+        },
+      });
+
+      if (existingLink) {
+        await tx.offer_branches.update({
+          where: { id: existingLink.id },
+          data: { is_active: true },
+        });
+      } else {
+        await tx.offer_branches.create({
+          data: {
+            offer_id: dto.standardOfferId,
+            branch_id: branchId,
+            is_active: true,
+          },
+        });
+      }
+    });
+
+    return createApiResponse(
+      {
+        id: branch.id,
+        branchName: branch.branch_name,
+        standardOfferId: dto.standardOfferId,
+        bonusOfferId: null,
+      },
+      'Offers assigned successfully',
+    );
+  }
+
+
+
+  /**
+   * Get bonus settings for a branch
+   * Corporate only
+   */
+  async getBranchBonusSettings(
+    branchId: string,
+    currentUser: CurrentUser,
+  ): Promise<ApiResponse<BonusSettingsResponse>> {
+    if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+
+    // Verify branch ownership
+    const branch = await this.prisma.merchant_branches.findUnique({
+      where: { id: branchId },
+    });
+
+    if (!branch || branch.merchant_id !== currentUser.merchant.id) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.BRANCH_NOT_FOUND);
+    }
+
+    const settings = await this.prisma.branch_bonus_settings.findUnique({
+      where: { branch_id: branchId },
+    });
+
+    if (!settings) {
+      // Return default if not found
+      return createApiResponse(
+        {
+          redemptionsRequired: 5,
+          discountType: 'percentage',
+          discountValue: 0,
+          maxDiscountAmount: null,
+          validityDays: 30,
+          isActive: true,
+          imageUrl: null,
+        },
+        'Bonus settings retrieved successfully',
+      );
+    }
+
+    return createApiResponse(
+      {
+        redemptionsRequired: settings.redemptions_required,
+        discountType: settings.discount_type,
+        discountValue: Number(settings.discount_value),
+        maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
+        validityDays: settings.validity_days,
+        isActive: settings.is_active,
+        imageUrl: settings.image_url,
+      },
+      'Bonus settings retrieved successfully',
+    );
+  }
+
+  /**
+   * Update bonus settings for a branch
+   * Corporate only
+   */
+  async updateBranchBonusSettings(
+    branchId: string,
+    dto: UpdateBonusSettingsDto,
+    currentUser: CurrentUser,
+  ): Promise<ApiResponse<BonusSettingsResponse>> {
+    if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+
+    // Verify branch ownership
+    const branch = await this.prisma.merchant_branches.findUnique({
+      where: { id: branchId },
+    });
+
+    if (!branch || branch.merchant_id !== currentUser.merchant.id) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.BRANCH_NOT_FOUND);
+    }
+
+    const settings = await this.prisma.branch_bonus_settings.upsert({
+      where: { branch_id: branchId },
+      update: {
+        redemptions_required: dto.redemptionsRequired,
+        discount_type: dto.discountType,
+        discount_value: dto.discountValue,
+        max_discount_amount: dto.maxDiscountAmount,
+        validity_days: dto.validityDays,
+        is_active: dto.isActive,
+        image_url: dto.imageUrl,
+      },
+      create: {
+        branch_id: branchId,
+        redemptions_required: dto.redemptionsRequired,
+        discount_type: dto.discountType,
+        discount_value: dto.discountValue,
+        max_discount_amount: dto.maxDiscountAmount,
+        validity_days: dto.validityDays,
+        is_active: dto.isActive,
+        image_url: dto.imageUrl,
+      },
+    });
+
+    return createApiResponse(
+      {
+        redemptionsRequired: settings.redemptions_required,
+        discountType: settings.discount_type,
+        discountValue: Number(settings.discount_value),
+        maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
+        validityDays: settings.validity_days,
+        isActive: settings.is_active,
+        imageUrl: settings.image_url,
+      },
+      'Bonus settings updated successfully',
     );
   }
 

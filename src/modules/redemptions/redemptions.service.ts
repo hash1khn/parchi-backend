@@ -352,8 +352,8 @@ export class RedemptionsService {
         let isBonusApplied = false;
         let bonusDiscountApplied: number | null = null;
 
-        const bonusSettings = await tx.merchant_bonus_settings.findUnique({
-          where: { merchant_id: branch.merchant_id },
+        const bonusSettings = await tx.branch_bonus_settings.findUnique({
+          where: { branch_id: branchId },
         });
 
         if (bonusSettings && bonusSettings.is_active) {

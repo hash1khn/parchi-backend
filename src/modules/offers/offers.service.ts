@@ -181,31 +181,15 @@ export class OffersService {
 
     // Validate branches if provided
     let targetBranchIds: string[] = [];
-    if (createDto.branchIds && createDto.branchIds.length > 0) {
-      const branches = await this.prisma.merchant_branches.findMany({
-        where: {
-          id: { in: createDto.branchIds },
-          merchant_id: merchantId,
-        },
-      });
-
-      if (branches.length !== createDto.branchIds.length) {
-        throw new BadRequestException(
-          API_RESPONSE_MESSAGES.OFFER.BRANCH_NOT_BELONGS_TO_MERCHANT,
-        );
-      }
-
-      targetBranchIds = createDto.branchIds;
-    } else {
-      // If no branches specified, get all merchant branches
-      const allBranches = await this.prisma.merchant_branches.findMany({
-        where: {
-          merchant_id: merchantId,
-          is_active: true,
-        },
-      });
-      targetBranchIds = allBranches.map((branch) => branch.id);
-    }
+    
+    // Always get all merchant branches (ignoring createDto.branchIds as per new requirement)
+    const allBranches = await this.prisma.merchant_branches.findMany({
+      where: {
+        merchant_id: merchantId,
+        is_active: true,
+      },
+    });
+    targetBranchIds = allBranches.map((branch) => branch.id);
 
     // Check for "One Active Offer" rule - verify branches don't already have active offers
     const now = new Date();
@@ -338,32 +322,22 @@ export class OffersService {
       });
 
       // Assign branches if provided
-      if (createDto.branchIds && createDto.branchIds.length > 0) {
+      // Assign to all merchant branches (ignoring createDto.branchIds)
+      const allBranches = await tx.merchant_branches.findMany({
+        where: {
+          merchant_id: merchantId,
+          is_active: true,
+        },
+      });
+
+      if (allBranches.length > 0) {
         await tx.offer_branches.createMany({
-          data: createDto.branchIds.map((branchId) => ({
+          data: allBranches.map((branch) => ({
             offer_id: newOffer.id,
-            branch_id: branchId,
+            branch_id: branch.id,
             is_active: true,
           })),
         });
-      } else {
-        // If no branches specified, assign to all merchant branches
-        const allBranches = await tx.merchant_branches.findMany({
-          where: {
-            merchant_id: merchantId,
-            is_active: true,
-          },
-        });
-
-        if (allBranches.length > 0) {
-          await tx.offer_branches.createMany({
-            data: allBranches.map((branch) => ({
-              offer_id: newOffer.id,
-              branch_id: branch.id,
-              is_active: true,
-            })),
-          });
-        }
       }
 
       return newOffer;

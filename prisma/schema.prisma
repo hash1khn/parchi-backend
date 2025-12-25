@@ -419,42 +419,42 @@ model audit_logs {
   @@schema("public")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model merchant_bonus_settings {
-  id                   String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  merchant_id          String    @unique @db.Uuid
+model branch_bonus_settings {
+  id                   String            @id(map: "merchant_bonus_settings_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  branch_id            String            @unique @db.Uuid
   image_url            String?
-  redemptions_required Int       @default(5)
-  discount_type        String    @default("percentage") @db.VarChar(20)
-  discount_value       Decimal   @db.Decimal(10, 2)
-  max_discount_amount  Decimal?  @db.Decimal(10, 2)
-  validity_days        Int?      @default(30)
-  is_active            Boolean?  @default(true)
-  created_at           DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime? @default(now()) @db.Timestamptz(6)
-  merchants            merchants @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  redemptions_required Int               @default(5)
+  discount_type        String            @default("percentage") @db.VarChar(20)
+  discount_value       Decimal           @db.Decimal(10, 2)
+  max_discount_amount  Decimal?          @db.Decimal(10, 2)
+  validity_days        Int?              @default(30)
+  is_active            Boolean?          @default(true)
+  created_at           DateTime?         @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?         @default(now()) @db.Timestamptz(6)
+  merchant_branches    merchant_branches @relation(fields: [branch_id], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
 
 model merchant_branches {
-  id                   String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  merchant_id          String                 @db.Uuid
-  user_id              String?                @unique @db.Uuid
-  branch_name          String                 @db.VarChar(255)
-  address              String
-  city                 String                 @db.VarChar(100)
-  latitude             Decimal?               @db.Decimal(10, 8)
-  longitude            Decimal?               @db.Decimal(11, 8)
-  contact_phone        String?                @db.VarChar(20)
-  is_active            Boolean?               @default(true)
-  created_at           DateTime?              @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime?              @default(now()) @db.Timestamptz(6)
-  merchants            merchants              @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users                public_users?          @relation(fields: [user_id], references: [id], onUpdate: NoAction)
-  offer_branches       offer_branches[]
-  redemptions          redemptions[]
-  student_branch_stats student_branch_stats[]
+  id                    String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  merchant_id           String                 @db.Uuid
+  user_id               String?                @unique @db.Uuid
+  branch_name           String                 @db.VarChar(255)
+  address               String
+  city                  String                 @db.VarChar(100)
+  latitude              Decimal?               @db.Decimal(10, 8)
+  longitude             Decimal?               @db.Decimal(11, 8)
+  contact_phone         String?                @db.VarChar(20)
+  is_active             Boolean?               @default(true)
+  created_at            DateTime?              @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?              @default(now()) @db.Timestamptz(6)
+  branch_bonus_settings branch_bonus_settings?
+  merchants             merchants              @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                 public_users?          @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  offer_branches        offer_branches[]
+  redemptions           redemptions[]
+  student_branch_stats  student_branch_stats[]
 
   @@index([city], map: "idx_branches_location")
   @@index([merchant_id], map: "idx_branches_merchant")
@@ -476,7 +476,6 @@ model merchants {
   created_at                   DateTime?                @default(now()) @db.Timestamptz(6)
   updated_at                   DateTime?                @default(now()) @db.Timestamptz(6)
   email_prefix                 String?                  @db.VarChar(100)
-  merchant_bonus_settings      merchant_bonus_settings?
   merchant_branches            merchant_branches[]
   users                        public_users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   offers                       offers[]

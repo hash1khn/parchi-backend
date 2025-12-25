@@ -112,5 +112,10 @@ export class UpdateOfferDto {
     message: 'endTime must be in HH:mm format',
   })
   endTime?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  branchIds?: string[];
 }
 

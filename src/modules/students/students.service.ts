@@ -292,8 +292,8 @@ export class StudentsService {
         },
       }),
       // 2. Get bonus settings
-      this.prisma.merchant_bonus_settings.findUnique({
-        where: { merchant_id: merchantId },
+      this.prisma.branch_bonus_settings.findUnique({
+        where: { branch_id: branchId },
         select: {
           is_active: true,
           redemptions_required: true,

@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  Post,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -21,71 +22,66 @@ import { UpdateCorporateAccountDto } from './dto/update-corporate-account.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
 import { ApproveRejectBranchDto } from './dto/approve-reject-branch.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
+import { AssignOffersDto } from './dto/assign-offers.dto';
+import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
+
+// ... (existing imports)
 
 @Controller('merchants')
 export class MerchantsController {
   constructor(private readonly merchantsService: MerchantsService) { }
 
-  // ========== Brands Endpoints (Student & Public) ==========
+  // ... (existing endpoints)
 
-  @Get('brands')
+  // ========== Bonus Settings Endpoints (Corporate Only) ==========
+
+  @Get('branches/:branchId/bonus-settings')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.STUDENT)
+  @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
-  async getAllBrands() {
-    return this.merchantsService.getAllBrands();
-  }
-
-  // ========== Corporate Account Endpoints (Admin Only) ==========
-
-  @Get('corporate')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async getAllCorporateMerchants(
-    @Query('search') search?: string,
+  async getBranchBonusSettings(
+    @Param('branchId') branchId: string,
+    @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.merchantsService.getAllCorporateMerchants(search);
+    return this.merchantsService.getBranchBonusSettings(branchId, currentUser);
   }
 
-  @Get('corporate/:id')
+  @Put('branches/:branchId/bonus-settings')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.ADMIN)
+  @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
-  async getCorporateAccountById(@Param('id') id: string) {
-    return this.merchantsService.getCorporateAccountById(id);
-  }
-
-  @Put('corporate/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async updateCorporateAccount(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateCorporateAccountDto,
+  async updateBranchBonusSettings(
+    @Param('branchId') branchId: string,
+    @Body() updateDto: UpdateBonusSettingsDto,
+    @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.merchantsService.updateCorporateAccount(id, updateDto);
-  }
-
-  @Patch('corporate/:id/toggle')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async toggleCorporateAccountStatus(@Param('id') id: string) {
-    return this.merchantsService.toggleCorporateAccountStatus(id);
-  }
-
-  @Delete('corporate/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async deleteCorporateAccount(@Param('id') id: string) {
-    return this.merchantsService.deleteCorporateAccount(id);
+    return this.merchantsService.updateBranchBonusSettings(branchId, updateDto, currentUser);
   }
 
   // ========== Branch Endpoints (Admin & Corporate) ==========
 
+  @Get('branches/assignments')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  async getBranchAssignments(@CurrentUser() currentUser: ICurrentUser) {
+    return this.merchantsService.getBranchAssignments(currentUser);
+  }
+
+  @Post('branches/:id/assign')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  async assignOffersToBranch(
+    @Param('id') id: string,
+    @Body() assignDto: AssignOffersDto,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    return this.merchantsService.assignOffersToBranch(id, assignDto, currentUser);
+  }
+
   @Get('branches')
+  // ... (rest of existing code)
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
