@@ -31,7 +31,58 @@ import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
 export class MerchantsController {
   constructor(private readonly merchantsService: MerchantsService) { }
 
-  // ... (existing endpoints)
+  // ========== Corporate Merchant Endpoints (Admin) ==========
+
+  @Get('corporate')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async getAllCorporateMerchants(@Query('search') search?: string) {
+    return this.merchantsService.getAllCorporateMerchants(search);
+  }
+
+  @Get('brands')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async getAllBrands() {
+    return this.merchantsService.getAllBrands();
+  }
+
+  @Get('corporate/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async getCorporateAccountById(@Param('id') id: string) {
+    return this.merchantsService.getCorporateAccountById(id);
+  }
+
+  @Put('corporate/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async updateCorporateAccount(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateCorporateAccountDto,
+  ) {
+    return this.merchantsService.updateCorporateAccount(id, updateDto);
+  }
+
+  @Patch('corporate/:id/toggle')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async toggleCorporateAccountStatus(@Param('id') id: string) {
+    return this.merchantsService.toggleCorporateAccountStatus(id);
+  }
+
+  @Delete('corporate/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async deleteCorporateAccount(@Param('id') id: string) {
+    return this.merchantsService.deleteCorporateAccount(id);
+  }
 
   // ========== Bonus Settings Endpoints (Corporate Only) ==========
 
