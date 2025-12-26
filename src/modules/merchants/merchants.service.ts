@@ -68,7 +68,7 @@ export interface BonusSettingsResponse {
 
 @Injectable()
 export class MerchantsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Get all corporate merchants
@@ -124,7 +124,7 @@ export class MerchantsService {
       API_RESPONSE_MESSAGES.MERCHANT.LIST_SUCCESS,
     );
   }
-  
+
   /**
    * Get all active brands (corporate merchants)
    * Accessible by students
@@ -895,7 +895,7 @@ export class MerchantsService {
     const offerIds = [dto.standardOfferId];
     // If bonusOfferId was passed, we ignore it or treat it as another active offer if intended.
     // For now, we only focus on standardOfferId as the primary active offer.
-    
+
     const count = await this.prisma.offers.count({
       where: {
         id: { in: offerIds },
@@ -1163,5 +1163,250 @@ export class MerchantsService {
         : API_RESPONSE_MESSAGES.MERCHANT.BRANCH_REJECT_SUCCESS,
     );
   }
-}
 
+  /**
+   * Get corporate dashboard stats (Overview cards)
+   * Corporate only
+   */
+  async getDashboardStats(currentUser: CurrentUser) {
+    if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+    if (!currentUser.merchant?.id) {
+      throw new ForbiddenException(
+        API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
+      );
+    }
+
+    const merchantId = currentUser.merchant.id;
+
+    // 1. Get all branches for this merchant
+    const branches = await this.prisma.merchant_branches.findMany({
+      where: { merchant_id: merchantId },
+      select: { id: true },
+    });
+    const branchIds = branches.map((b) => b.id);
+
+    if (branchIds.length === 0) {
+      return createApiResponse(
+        {
+          totalRedemptions: 0,
+          totalDiscountGiven: 0,
+          avgDiscountPerOrder: 0,
+          uniqueStudents: 0,
+        },
+        'Dashboard stats retrieved successfully',
+      );
+    }
+
+    // 2. Aggregate Redemptions
+    const redemptions = await this.prisma.redemptions.findMany({
+      where: {
+        branch_id: { in: branchIds },
+      },
+      include: {
+        offers: {
+          select: {
+            discount_value: true,
+          },
+        },
+      },
+    });
+
+    const totalRedemptions = redemptions.length;
+    let totalDiscountGiven = 0;
+    const uniqueStudentIds = new Set<string>();
+
+    redemptions.forEach((r) => {
+      // Calculate total discount (offer base + bonus)
+      const offerDiscount = Number(r.offers.discount_value);
+      const bonusDiscount = r.bonus_discount_applied
+        ? Number(r.bonus_discount_applied)
+        : 0;
+      totalDiscountGiven += offerDiscount + bonusDiscount;
+
+      uniqueStudentIds.add(r.student_id);
+    });
+
+    const avgDiscountPerOrder =
+      totalRedemptions > 0 ? totalDiscountGiven / totalRedemptions : 0;
+
+    return createApiResponse(
+      {
+        totalRedemptions,
+        totalDiscountGiven,
+        avgDiscountPerOrder: Math.round(avgDiscountPerOrder), // Round to nearest integer
+        uniqueStudents: uniqueStudentIds.size,
+      },
+      'Dashboard stats retrieved successfully',
+    );
+  }
+
+  /**
+   * Get dashboard analytics (Line chart - Time of Day)
+   * Corporate only
+   */
+
+  async getDashboardAnalytics(currentUser: CurrentUser) {
+    if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+    if (!currentUser.merchant?.id) {
+      throw new ForbiddenException(
+        API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
+      );
+    }
+
+    const merchantId = currentUser.merchant.id;
+
+    // Get all branches
+    const branches = await this.prisma.merchant_branches.findMany({
+      where: { merchant_id: merchantId },
+      select: { id: true },
+    });
+    const branchIds = branches.map((b) => b.id);
+
+    if (branchIds.length === 0) {
+      return createApiResponse([], 'Analytics retrieved successfully');
+    }
+
+    // Get redemptions for the last 30 days to show "Peak Hours" trend
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+    startDate.setHours(0, 0, 0, 0);
+
+    const redemptions = await this.prisma.redemptions.findMany({
+      where: {
+        branch_id: { in: branchIds },
+        created_at: {
+          gte: startDate,
+        },
+      },
+      select: {
+        created_at: true,
+      },
+    });
+
+    // Group by hour (00:00, 01:00, ... 23:00)
+    const hourlyData = new Array(24).fill(0);
+
+    redemptions.forEach((r) => {
+      if (r.created_at) {
+        const hour = new Date(r.created_at).getHours();
+        hourlyData[hour]++;
+      }
+    });
+
+    // Format for chart with standard keys: name (label), value (number)
+    const chartData = hourlyData.map((count, hour) => ({
+      time: `${hour.toString().padStart(2, '0')}:00`,
+      name: `${hour.toString().padStart(2, '0')}:00`, // Standard chart key
+      redemptions: count,
+      value: count, // Standard chart key
+    }));
+
+    return createApiResponse(
+      chartData,
+      'Analytics retrieved successfully',
+    );
+  }
+
+  /**
+   * Get branch performance (Bar chart & Pie chart)
+   * Corporate only
+   */
+  async getBranchPerformance(currentUser: CurrentUser) {
+    if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+    if (!currentUser.merchant?.id) {
+      throw new ForbiddenException(
+        API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
+      );
+    }
+
+    const merchantId = currentUser.merchant.id;
+
+    // Get branches and count redemptions individually to be accurate
+    // Filter by active merchant accounts similar to getBranches
+    const branches = await this.prisma.merchant_branches.findMany({
+      where: {
+        merchant_id: merchantId,
+        merchants: { is_active: true }, // Consistency with getBranches
+      },
+      include: {
+        _count: {
+          select: { redemptions: true },
+        },
+      },
+    });
+
+    // Sort by redemptions desc
+    // Format with standard chart keys for maximum compatibility
+    const performanceData = branches.map((b) => ({
+      branchId: b.id,
+      branchName: b.branch_name,
+      name: b.branch_name, // Standard chart key (for labels)
+      redemptionCount: b._count.redemptions,
+      redemptions: b._count.redemptions,
+      value: b._count.redemptions, // Standard chart key (for values)
+    }));
+
+    // Sort by redemptions desc
+    performanceData.sort((a, b) => b.value - a.value);
+
+    return createApiResponse(
+      performanceData,
+      'Branch performance retrieved successfully',
+    );
+  }
+
+  /**
+   * Get offer performance (Top/Least performing)
+   * Corporate only
+   */
+  async getOfferPerformance(currentUser: CurrentUser) {
+    if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+    if (!currentUser.merchant?.id) {
+      throw new ForbiddenException(
+        API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
+      );
+    }
+
+    const merchantId = currentUser.merchant.id;
+
+    // Get offers for this merchant
+    const offers = await this.prisma.offers.findMany({
+      where: { merchant_id: merchantId },
+      select: {
+        id: true,
+        title: true,
+        discount_value: true,
+        discount_type: true,
+        status: true,
+        current_redemptions: true, // This is a counter on the offer table itself
+      },
+      orderBy: {
+        current_redemptions: 'desc',
+      },
+    });
+
+    const formattedOffers = offers.map((o) => ({
+      id: o.id,
+      title: o.title,
+      discount:
+        o.discount_type === 'percentage'
+          ? `${o.discount_value}% OFF`
+          : `Rs. ${o.discount_value} OFF`,
+      status: o.status,
+      redemptions: o.current_redemptions || 0,
+    }));
+
+    return createApiResponse(
+      formattedOffers,
+      'Offer performance retrieved successfully',
+    );
+  }
+}

@@ -84,6 +84,40 @@ export class MerchantsController {
     return this.merchantsService.deleteCorporateAccount(id);
   }
 
+  // ========== Corporate Dashboard Endpoints ==========
+
+  @Get('dashboard/stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  async getDashboardStats(@CurrentUser() currentUser: ICurrentUser) {
+    return this.merchantsService.getDashboardStats(currentUser);
+  }
+
+  @Get('dashboard/analytics')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  async getDashboardAnalytics(@CurrentUser() currentUser: ICurrentUser) {
+    return this.merchantsService.getDashboardAnalytics(currentUser);
+  }
+
+  @Get('dashboard/branch-performance')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  async getBranchPerformance(@CurrentUser() currentUser: ICurrentUser) {
+    return this.merchantsService.getBranchPerformance(currentUser);
+  }
+
+  @Get('dashboard/offer-performance')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  async getOfferPerformance(@CurrentUser() currentUser: ICurrentUser) {
+    return this.merchantsService.getOfferPerformance(currentUser);
+  }
+
   // ========== Bonus Settings Endpoints (Corporate Only) ==========
 
   @Get('branches/:branchId/bonus-settings')
