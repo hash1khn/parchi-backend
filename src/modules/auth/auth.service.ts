@@ -676,6 +676,7 @@ export class AuthService {
             contact_phone: signupDto.contact || null,
             latitude: latitude !== null ? latitude : undefined,
             longitude: longitude !== null ? longitude : undefined,
+            is_active: isActive,
           },
         });
 

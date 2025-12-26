@@ -74,8 +74,11 @@ export class MerchantsService {
    * Get all corporate merchants
    * Returns merchants where the associated user has role 'merchant_corporate'
    * Supports optional search parameter to filter by business name, email, or phone
+   * If currentUser is a corporate merchant, returns only their own account
+   * If currentUser is admin, returns all corporate merchants
    */
   async getAllCorporateMerchants(
+    currentUser?: CurrentUser,
     search?: string,
   ): Promise<ApiResponse<CorporateMerchantResponse[]>> {
     const whereClause: Prisma.merchantsWhereInput = {
@@ -83,6 +86,11 @@ export class MerchantsService {
         role: 'merchant_corporate',
       },
     };
+
+    // If user is a corporate merchant, only return their own account
+    if (currentUser?.role === ROLES.MERCHANT_CORPORATE) {
+      whereClause.user_id = currentUser.id;
+    }
 
     // Add search filter if provided
     if (search && search.trim()) {
