@@ -24,7 +24,7 @@ import { ApproveRejectBranchDto } from './dto/approve-reject-branch.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
-import { Audit } from '../audit/audit.decorator';
+import { Audit } from '../../decorators/audit.decorator';
 import { createApiResponse } from '../../utils/serializer.util';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 

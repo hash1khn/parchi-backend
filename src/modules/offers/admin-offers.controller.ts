@@ -20,7 +20,7 @@ import { Roles } from '../../decorators/roles.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { ApproveRejectOfferDto } from './dto/approve-reject-offer.dto';
 import { QueryAdminOffersDto } from './dto/query-admin-offers.dto';
-import { Audit } from '../audit/audit.decorator';
+import { Audit } from '../../decorators/audit.decorator';
 import {
   createApiResponse,
   createPaginatedResponse,

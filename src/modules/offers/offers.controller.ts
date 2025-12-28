@@ -27,7 +27,7 @@ import { AssignBranchesDto } from './dto/assign-branches.dto';
 import { QueryMerchantOffersDto } from './dto/query-merchant-offers.dto';
 import { QueryActiveOffersDto } from './dto/query-active-offers.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
-import { Audit } from '../audit/audit.decorator';
+import { Audit } from '../../decorators/audit.decorator';
 import {
   createApiResponse,
   createPaginatedResponse,

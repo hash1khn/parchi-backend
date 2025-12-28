@@ -22,7 +22,7 @@ import { QueryStudentsDto } from './dto/query-students.dto';
 import { QueryPendingStudentsDto } from './dto/query-pending-students.dto';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
-import { Audit } from '../audit/audit.decorator';
+import { Audit } from '../../decorators/audit.decorator';
 import {
   createApiResponse,
   createPaginatedResponse,

@@ -25,7 +25,7 @@ import { ROLES } from '../../constants/app.constants';
 import { createApiResponse } from '../../utils/serializer.util';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { UpdateProfilePictureDto } from './dto/update-profile-picture.dto';
-import { Audit } from '../audit/audit.decorator';
+import { Audit } from '../../decorators/audit.decorator';
 
 @Controller('auth')
 export class AuthController {

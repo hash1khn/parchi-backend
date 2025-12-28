@@ -22,7 +22,7 @@ import { CreateRedemptionDto } from './dto/create-redemption.dto';
 import { UpdateRedemptionDto } from './dto/update-redemption.dto';
 import { QueryRedemptionsDto } from './dto/query-redemptions.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
-import { Audit } from '../audit/audit.decorator';
+import { Audit } from '../../decorators/audit.decorator';
 import {
   createApiResponse,
   createPaginatedResponse,
