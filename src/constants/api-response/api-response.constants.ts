@@ -108,5 +108,10 @@ export const API_RESPONSE_MESSAGES = {
     DUPLICATE_REDEMPTION: 'A redemption for this student and offer was recently created. Please wait a moment.',
     REDEMPTION_ALREADY_REJECTED: 'Redemption has already been rejected',
   },
+  // Common messages
+  COMMON: {
+    NOT_FOUND: 'Resource not found',
+    SUCCESS: 'Operation completed successfully',
+  },
 } as const;
 
