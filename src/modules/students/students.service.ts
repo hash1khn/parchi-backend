@@ -118,7 +118,7 @@ export class StudentsService {
   private readonly LOYALTY_BONUS_TITLE = 'Loyalty Bonus Reward';
   private readonly LOYALTY_BONUS_DESCRIPTION = `Congratulations! You've unlocked a loyalty bonus.`;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Get pending approval students
@@ -175,7 +175,7 @@ export class StudentsService {
    * Admin only
    */
   async getAllStudents(
-    status?:VerificationStatus,
+    status?: VerificationStatus,
     page: number = 1,
     limit: number = 10,
   ): Promise<PaginatedResponse<StudentKycResponse>> {
@@ -507,7 +507,7 @@ export class StudentsService {
     const result = await this.prisma.$transaction(async (tx) => {
       // Get KYC selfie path if available and approving
       const latestKyc = student.student_kyc.length > 0 ? student.student_kyc[0] : null;
-      const selfiePath = 
+      const selfiePath =
         approveRejectDto.action === 'approve' && latestKyc
           ? latestKyc.selfie_image_path
           : undefined;
@@ -644,23 +644,23 @@ export class StudentsService {
       updatedAt: student.updated_at,
       kyc: latestKyc
         ? {
-            id: latestKyc.id,
-            studentIdCardFrontPath: latestKyc.student_id_card_front_path,
-            studentIdCardBackPath: latestKyc.student_id_card_back_path,
-            selfieImagePath: latestKyc.selfie_image_path,
-            submittedAt: latestKyc.submitted_at,
-            reviewedBy: latestKyc.reviewed_by,
-            reviewedAt: latestKyc.reviewed_at,
-            reviewNotes: latestKyc.review_notes,
-            isAnnualRenewal: latestKyc.is_annual_renewal,
-            createdAt: latestKyc.created_at,
-            reviewer: latestKyc.users
-              ? {
-                  id: latestKyc.users.id,
-                  email: latestKyc.users.email,
-                }
-              : null,
-          }
+          id: latestKyc.id,
+          studentIdCardFrontPath: latestKyc.student_id_card_front_path,
+          studentIdCardBackPath: latestKyc.student_id_card_back_path,
+          selfieImagePath: latestKyc.selfie_image_path,
+          submittedAt: latestKyc.submitted_at,
+          reviewedBy: latestKyc.reviewed_by,
+          reviewedAt: latestKyc.reviewed_at,
+          reviewNotes: latestKyc.review_notes,
+          isAnnualRenewal: latestKyc.is_annual_renewal,
+          createdAt: latestKyc.created_at,
+          reviewer: latestKyc.users
+            ? {
+              id: latestKyc.users.id,
+              email: latestKyc.users.email,
+            }
+            : null,
+        }
         : null,
     };
   }
@@ -691,23 +691,23 @@ export class StudentsService {
       updatedAt: student.updated_at,
       kyc: latestKyc
         ? {
-            id: latestKyc.id,
-            studentIdCardFrontPath: latestKyc.student_id_card_front_path,
-            studentIdCardBackPath: latestKyc.student_id_card_back_path,
-            selfieImagePath: latestKyc.selfie_image_path,
-            submittedAt: latestKyc.submitted_at,
-            reviewedBy: latestKyc.reviewed_by,
-            reviewedAt: latestKyc.reviewed_at,
-            reviewNotes: latestKyc.review_notes,
-            isAnnualRenewal: latestKyc.is_annual_renewal,
-            createdAt: latestKyc.created_at,
-            reviewer: latestKyc.users
-              ? {
-                  id: latestKyc.users.id,
-                  email: latestKyc.users.email,
-                }
-              : null,
-          }
+          id: latestKyc.id,
+          studentIdCardFrontPath: latestKyc.student_id_card_front_path,
+          studentIdCardBackPath: latestKyc.student_id_card_back_path,
+          selfieImagePath: latestKyc.selfie_image_path,
+          submittedAt: latestKyc.submitted_at,
+          reviewedBy: latestKyc.reviewed_by,
+          reviewedAt: latestKyc.reviewed_at,
+          reviewNotes: latestKyc.review_notes,
+          isAnnualRenewal: latestKyc.is_annual_renewal,
+          createdAt: latestKyc.created_at,
+          reviewer: latestKyc.users
+            ? {
+              id: latestKyc.users.id,
+              email: latestKyc.users.email,
+            }
+            : null,
+        }
         : null,
     };
   }

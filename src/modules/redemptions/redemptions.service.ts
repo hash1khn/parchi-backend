@@ -1662,9 +1662,27 @@ export class RedemptionsService {
 
     const formattedRedemptions = redemptions.map((redemption) => {
       let discountDetails = '';
+      let offerTitle = redemption.offers.title;
+
       if (redemption.is_bonus_applied) {
-        discountDetails = 'Bonus Reward';
+        // For bonus redemptions, show the actual bonus discount amount
+        const bonusValue = Number(redemption.bonus_discount_applied || 0);
+        if (bonusValue > 0) {
+          // Bonus could be percentage or fixed amount
+          // Assume percentage if value <= 100, otherwise fixed amount
+          if (bonusValue <= 100) {
+            discountDetails = `${bonusValue}% off`;
+            offerTitle = `${bonusValue}% OFF - Loyalty Bonus`;
+          } else {
+            discountDetails = `Rs. ${bonusValue} off`;
+            offerTitle = `Rs. ${bonusValue} OFF - Loyalty Bonus`;
+          }
+        } else {
+          discountDetails = 'Bonus Reward';
+          offerTitle = 'Loyalty Bonus Reward';
+        }
       } else {
+        // Regular redemption - use offer discount
         const value = Number(redemption.offers.discount_value);
         if (redemption.offers.discount_type === 'percentage') {
           discountDetails = `${value}% off`;
@@ -1676,9 +1694,10 @@ export class RedemptionsService {
       return {
         id: redemption.id,
         parchiId: redemption.students.parchi_id,
-        offerTitle: redemption.offers.title,
+        offerTitle,
         discountDetails,
         createdAt: redemption.created_at,
+        isBonusApplied: redemption.is_bonus_applied,
       };
     });
 
