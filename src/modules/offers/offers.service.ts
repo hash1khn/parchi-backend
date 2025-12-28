@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
-import { ApiResponse, PaginatedResponse } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
@@ -17,11 +16,8 @@ import { CurrentUser } from '../../types/global.types';
 import {
   calculatePaginationMeta,
   calculateSkip,
+  PaginationMeta,
 } from '../../utils/pagination.util';
-import {
-  createApiResponse,
-  createPaginatedResponse,
-} from '../../utils/serializer.util';
 
 export interface OfferResponse {
   id: string;
@@ -103,7 +99,7 @@ export class OffersService {
   async createOffer(
     createDto: CreateOfferDto,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<OfferResponse>> {
+  ): Promise<OfferResponse> {
     let merchantId: string;
 
     // Determine merchant ID based on user role
@@ -361,10 +357,7 @@ export class OffersService {
       },
     });
 
-    return createApiResponse(
-      this.formatOfferResponse(offerWithRelations),
-      API_RESPONSE_MESSAGES.OFFER.CREATE_SUCCESS,
-    );
+    return this.formatOfferResponse(offerWithRelations);
   }
 
   /**
@@ -376,7 +369,7 @@ export class OffersService {
     status?: OfferStatus,
     page: number = 1,
     limit: number = 10,
-  ): Promise<PaginatedResponse<OfferResponse>> {
+  ): Promise<{ items: OfferResponse[]; pagination: PaginationMeta }> {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
@@ -431,11 +424,10 @@ export class OffersService {
       this.formatOfferResponse(offer),
     );
 
-    return createPaginatedResponse(
-      formattedOffers,
-      calculatePaginationMeta(total, page, limit),
-      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
-    );
+    return {
+      items: formattedOffers,
+      pagination: calculatePaginationMeta(total, page, limit),
+    };
   }
 
   /**
@@ -445,7 +437,7 @@ export class OffersService {
   async getOfferById(
     id: string,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<OfferResponse>> {
+  ): Promise<OfferResponse> {
     const offer = await this.prisma.offers.findUnique({
       where: { id },
       include: {
@@ -493,10 +485,7 @@ export class OffersService {
       );
     }
 
-    return createApiResponse(
-      this.formatOfferResponse(offer),
-      API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS,
-    );
+    return this.formatOfferResponse(offer);
   }
 
   /**
@@ -507,7 +496,7 @@ export class OffersService {
     id: string,
     updateDto: UpdateOfferDto,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<OfferResponse>> {
+  ): Promise<OfferResponse> {
     // Check if offer exists
     const offer = await this.prisma.offers.findUnique({
       where: { id },
@@ -728,10 +717,7 @@ export class OffersService {
       },
     });
 
-    return createApiResponse(
-      this.formatOfferResponse(updatedOffer),
-      API_RESPONSE_MESSAGES.OFFER.UPDATE_SUCCESS,
-    );
+    return this.formatOfferResponse(updatedOffer);
   }
 
   /**
@@ -741,7 +727,7 @@ export class OffersService {
   async toggleOfferStatus(
     id: string,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<OfferResponse>> {
+  ): Promise<OfferResponse> {
     // Check if offer exists
     const offer = await this.prisma.offers.findUnique({
       where: { id },
@@ -799,10 +785,7 @@ export class OffersService {
       },
     });
 
-    return createApiResponse(
-      this.formatOfferResponse(updatedOffer),
-      API_RESPONSE_MESSAGES.OFFER.TOGGLE_SUCCESS,
-    );
+    return this.formatOfferResponse(updatedOffer);
   }
 
   /**
@@ -812,7 +795,7 @@ export class OffersService {
   async deleteOffer(
     id: string,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<null>> {
+  ): Promise<null> {
     // Check if offer exists
     const offer = await this.prisma.offers.findUnique({
       where: { id },
@@ -845,10 +828,7 @@ export class OffersService {
       where: { id },
     });
 
-    return createApiResponse(
-      null,
-      API_RESPONSE_MESSAGES.OFFER.DELETE_SUCCESS,
-    );
+    return null;
   }
 
   /**
@@ -859,7 +839,7 @@ export class OffersService {
     id: string,
     assignDto: AssignBranchesDto,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<OfferResponse>> {
+  ): Promise<OfferResponse> {
     // Check if offer exists
     const offer = await this.prisma.offers.findUnique({
       where: { id },
@@ -939,10 +919,7 @@ export class OffersService {
       },
     });
 
-    return createApiResponse(
-      this.formatOfferResponse(updatedOffer!),
-      API_RESPONSE_MESSAGES.OFFER.BRANCHES_ASSIGNED_SUCCESS,
-    );
+    return this.formatOfferResponse(updatedOffer!);
   }
 
   /**
@@ -953,7 +930,7 @@ export class OffersService {
     id: string,
     assignDto: AssignBranchesDto,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<OfferResponse>> {
+  ): Promise<OfferResponse> {
     // Check if offer exists
     const offer = await this.prisma.offers.findUnique({
       where: { id },
@@ -1007,10 +984,7 @@ export class OffersService {
       },
     });
 
-    return createApiResponse(
-      this.formatOfferResponse(updatedOffer!),
-      API_RESPONSE_MESSAGES.OFFER.BRANCHES_REMOVED_SUCCESS,
-    );
+    return this.formatOfferResponse(updatedOffer!);
   }
 
   /**
@@ -1020,7 +994,7 @@ export class OffersService {
   async getOfferAnalytics(
     id: string,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<OfferAnalyticsResponse>> {
+  ): Promise<OfferAnalyticsResponse> {
     // Check if offer exists
     const offer = await this.prisma.offers.findUnique({
       where: { id },
@@ -1108,20 +1082,17 @@ export class OffersService {
       ? offer.total_limit - totalRedemptions
       : null;
 
-    return createApiResponse(
-      {
-        totalRedemptions,
-        currentRedemptions: totalRedemptions,
-        remainingRedemptions,
-        redemptionsByBranch: redemptionsByBranch.map((r) => ({
-          branchId: r.branch_id,
-          branchName: branchMap.get(r.branch_id) || 'Unknown',
-          redemptionCount: r._count.id,
-        })),
-        redemptionsByDate,
-      },
-      API_RESPONSE_MESSAGES.OFFER.ANALYTICS_SUCCESS,
-    );
+    return {
+      totalRedemptions,
+      currentRedemptions: totalRedemptions,
+      remainingRedemptions,
+      redemptionsByBranch: redemptionsByBranch.map((r) => ({
+        branchId: r.branch_id,
+        branchName: branchMap.get(r.branch_id) || 'Unknown',
+        redemptionCount: r._count.id,
+      })),
+      redemptionsByDate,
+    };
   }
 
   /**
@@ -1133,7 +1104,7 @@ export class OffersService {
     merchantId?: string,
     page: number = 1,
     limit: number = 10,
-  ): Promise<PaginatedResponse<OfferResponse>> {
+  ): Promise<{ items: OfferResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
 
     const whereClause: Prisma.offersWhereInput = {};
@@ -1183,11 +1154,10 @@ export class OffersService {
       this.formatOfferResponse(offer),
     );
 
-    return createPaginatedResponse(
-      formattedOffers,
-      calculatePaginationMeta(total, page, limit),
-      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
-    );
+    return {
+      items: formattedOffers,
+      pagination: calculatePaginationMeta(total, page, limit),
+    };
   }
 
   /**
@@ -1196,7 +1166,7 @@ export class OffersService {
    */
   async getOfferByIdAdmin(
     id: string,
-  ): Promise<ApiResponse<OfferResponse>> {
+  ): Promise<OfferResponse> {
     const offer = await this.prisma.offers.findUnique({
       where: { id },
       include: {
@@ -1226,10 +1196,7 @@ export class OffersService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.OFFER.NOT_FOUND);
     }
 
-    return createApiResponse(
-      this.formatOfferResponse(offer),
-      API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS,
-    );
+    return this.formatOfferResponse(offer);
   }
 
   /**
@@ -1239,7 +1206,7 @@ export class OffersService {
   async approveRejectOffer(
     id: string,
     approveRejectDto: ApproveRejectOfferDto,
-  ): Promise<ApiResponse<OfferResponse>> {
+  ): Promise<OfferResponse> {
     const offer = await this.prisma.offers.findUnique({
       where: { id },
     });
@@ -1277,19 +1244,14 @@ export class OffersService {
       },
     });
 
-    return createApiResponse(
-      this.formatOfferResponse(updatedOffer),
-      approveRejectDto.action === 'approve'
-        ? API_RESPONSE_MESSAGES.OFFER.APPROVE_SUCCESS
-        : API_RESPONSE_MESSAGES.OFFER.REJECT_SUCCESS,
-    );
+    return this.formatOfferResponse(updatedOffer);
   }
 
   /**
    * Delete offer (Admin)
    * Admin only
    */
-  async deleteOfferAdmin(id: string): Promise<ApiResponse<null>> {
+  async deleteOfferAdmin(id: string): Promise<null> {
     const offer = await this.prisma.offers.findUnique({
       where: { id },
     });
@@ -1303,10 +1265,7 @@ export class OffersService {
       where: { id },
     });
 
-    return createApiResponse(
-      null,
-      API_RESPONSE_MESSAGES.OFFER.DELETE_SUCCESS,
-    );
+    return null;
   }
 
   /**
@@ -1321,7 +1280,7 @@ export class OffersService {
     sort?: 'popularity' | 'proximity' | 'newest',
     page: number = 1,
     limit: number = 10,
-  ): Promise<PaginatedResponse<OfferResponseWithDistance>> {
+  ): Promise<{ items: OfferResponseWithDistance[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
     const now = new Date();
 
@@ -1426,11 +1385,10 @@ export class OffersService {
     const total = formattedOffers.length;
     const paginatedOffers = formattedOffers.slice(skip, skip + limit);
 
-    return createPaginatedResponse(
-      paginatedOffers,
-      calculatePaginationMeta(total, page, limit),
-      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
-    );
+    return {
+      items: paginatedOffers,
+      pagination: calculatePaginationMeta(total, page, limit),
+    };
   }
 
   /**
@@ -1439,7 +1397,7 @@ export class OffersService {
    */
   async getOfferDetailsForStudents(
     id: string,
-  ): Promise<ApiResponse<OfferDetailsResponse>> {
+  ): Promise<OfferDetailsResponse> {
     const now = new Date();
     
     const offer = await this.prisma.offers.findUnique({
@@ -1504,13 +1462,10 @@ export class OffersService {
       isActive: ob.is_active ?? true,
     }));
 
-    return createApiResponse(
-      {
-        ...formatted,
-        branches,
-      },
-      API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS,
-    );
+    return {
+      ...formatted,
+      branches,
+    };
   }
 
   /**
@@ -1519,7 +1474,7 @@ export class OffersService {
    */
   async getOffersByMerchantForStudents(
     merchantId: string,
-  ): Promise<ApiResponse<OfferResponse[]>> {
+  ): Promise<OfferResponse[]> {
     const now = new Date();
 
     // Verify merchant exists
@@ -1572,10 +1527,7 @@ export class OffersService {
       this.formatOfferResponse(offer),
     );
 
-    return createApiResponse(
-      formattedOffers,
-      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
-    );
+    return formattedOffers;
   }
 
   /**

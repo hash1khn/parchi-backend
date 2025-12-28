@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
-import { ApiResponse, PaginatedResponse, CurrentUser } from '../../types/global.types';
+  import { CurrentUser } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { ROLES, VerificationStatus } from '../../constants/app.constants';
 import { ApproveRejectStudentDto } from './dto/approve-reject-student.dto';
@@ -13,10 +13,7 @@ import {
   calculatePaginationMeta,
   calculateSkip,
 } from '../../utils/pagination.util';
-import {
-  createApiResponse,
-  createPaginatedResponse,
-} from '../../utils/serializer.util';
+import { PaginationMeta } from '../../utils/pagination.util';
 
 export interface StudentVerificationResponse {
   parchiId: string;
@@ -128,7 +125,7 @@ export class StudentsService {
   async getPendingApprovalStudents(
     page: number = 1,
     limit: number = 10,
-  ): Promise<PaginatedResponse<StudentListResponse>> {
+  ): Promise<{ items: StudentListResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
 
     const [students, total] = await Promise.all([
@@ -163,11 +160,10 @@ export class StudentsService {
       this.formatStudentListResponse(student),
     );
 
-    return createPaginatedResponse(
-      formattedStudents,
-      calculatePaginationMeta(total, page, limit),
-      API_RESPONSE_MESSAGES.STUDENT.LIST_SUCCESS,
-    );
+    return {
+      items: formattedStudents,
+      pagination: calculatePaginationMeta(total, page, limit),
+    };
   }
 
   /**
@@ -178,7 +174,7 @@ export class StudentsService {
     status?: VerificationStatus,
     page: number = 1,
     limit: number = 10,
-  ): Promise<PaginatedResponse<StudentKycResponse>> {
+  ): Promise<{ items: StudentKycResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
 
     const whereClause: Prisma.studentsWhereInput = {};
@@ -227,11 +223,10 @@ export class StudentsService {
       this.formatStudentResponse(student),
     );
 
-    return createPaginatedResponse(
-      formattedStudents,
-      calculatePaginationMeta(total, page, limit),
-      API_RESPONSE_MESSAGES.STUDENT.LIST_SUCCESS,
-    );
+    return {
+      items: formattedStudents,
+      pagination: calculatePaginationMeta(total, page, limit),
+    };
   }
 
   /**
@@ -242,7 +237,7 @@ export class StudentsService {
   async getStudentByParchiId(
     parchiId: string,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<StudentVerificationResponse>> {
+  ): Promise<StudentVerificationResponse> {
     // Early validation
     if (currentUser.role !== ROLES.MERCHANT_BRANCH || !currentUser.branch?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
@@ -337,18 +332,15 @@ export class StudentsService {
       defaultOffer,
     );
 
-    return createApiResponse(
-      {
-        parchiId: student.parchi_id,
-        firstName: student.first_name,
-        lastName: student.last_name,
-        university: student.university,
-        verificationStatus: student.verification_status || 'pending',
-        verificationSelfie: student.verification_selfie_path,
-        offer: applicableOffer,
-      },
-      API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS,
-    );
+    return {
+      parchiId: student.parchi_id,
+      firstName: student.first_name,
+      lastName: student.last_name,
+      university: student.university,
+      verificationStatus: student.verification_status || 'pending',
+      verificationSelfie: student.verification_selfie_path,
+      offer: applicableOffer,
+    };
   }
 
   /**
@@ -425,7 +417,7 @@ export class StudentsService {
    */
   async getStudentDetailsForReview(
     id: string,
-  ): Promise<ApiResponse<StudentDetailResponse>> {
+  ): Promise<StudentDetailResponse> {
     const student = await this.prisma.students.findUnique({
       where: { id },
       include: {
@@ -457,10 +449,7 @@ export class StudentsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
-    return createApiResponse(
-      this.formatStudentDetailResponse(student),
-      API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS,
-    );
+    return this.formatStudentDetailResponse(student);
   }
 
   /**
@@ -471,7 +460,7 @@ export class StudentsService {
     id: string,
     approveRejectDto: ApproveRejectStudentDto,
     reviewerId: string,
-  ): Promise<ApiResponse<StudentKycResponse>> {
+  ): Promise<StudentKycResponse> {
     const student = await this.prisma.students.findUnique({
       where: { id },
       include: {
@@ -585,12 +574,7 @@ export class StudentsService {
       });
     });
 
-    return createApiResponse(
-      this.formatStudentResponse(result!),
-      approveRejectDto.action === 'approve'
-        ? API_RESPONSE_MESSAGES.STUDENT.APPROVE_SUCCESS
-        : API_RESPONSE_MESSAGES.STUDENT.REJECT_SUCCESS,
-    );
+    return this.formatStudentResponse(result!);
   }
 
   /**

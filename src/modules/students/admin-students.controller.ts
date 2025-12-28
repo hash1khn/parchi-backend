@@ -23,6 +23,11 @@ import { QueryPendingStudentsDto } from './dto/query-pending-students.dto';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { Audit } from '../audit/audit.decorator';
+import {
+  createApiResponse,
+  createPaginatedResponse,
+} from '../../utils/serializer.util';
+import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 
 @Controller('admin/students')
 export class AdminStudentsController {
@@ -37,7 +42,12 @@ export class AdminStudentsController {
   ) {
     const page = queryDto.page ?? 1;
     const limit = queryDto.limit ?? 10;
-    return this.studentsService.getPendingApprovalStudents(page, limit);
+    const result = await this.studentsService.getPendingApprovalStudents(page, limit);
+    return createPaginatedResponse(
+      result.items,
+      result.pagination,
+      API_RESPONSE_MESSAGES.STUDENT.LIST_SUCCESS,
+    );
   }
 
   @Get()
@@ -49,7 +59,12 @@ export class AdminStudentsController {
   ) {
     const page = queryDto.page ?? 1;
     const limit = queryDto.limit ?? 10;
-    return this.studentsService.getAllStudents(queryDto.status, page, limit);
+    const result = await this.studentsService.getAllStudents(queryDto.status, page, limit);
+    return createPaginatedResponse(
+      result.items,
+      result.pagination,
+      API_RESPONSE_MESSAGES.STUDENT.LIST_SUCCESS,
+    );
   }
 
   @Get('by-parchi/:parchiId')
@@ -60,7 +75,8 @@ export class AdminStudentsController {
     @Param('parchiId') parchiId: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.studentsService.getStudentByParchiId(parchiId, currentUser);
+    const data = await this.studentsService.getStudentByParchiId(parchiId, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS);
   }
 
   @Get(':id')
@@ -68,7 +84,8 @@ export class AdminStudentsController {
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getStudentDetailsForReview(@Param('id', ParseUUIDPipe) id: string) {
-    return this.studentsService.getStudentDetailsForReview(id);
+    const data = await this.studentsService.getStudentDetailsForReview(id);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS);
   }
 
   @Put(':id/approve-reject')
@@ -81,10 +98,16 @@ export class AdminStudentsController {
     @Body() approveRejectDto: ApproveRejectStudentDto,
     @CurrentUser() user: ICurrentUser,
   ) {
-    return this.studentsService.approveRejectStudent(
+    const data = await this.studentsService.approveRejectStudent(
       id,
       approveRejectDto,
       user.id,
+    );
+    return createApiResponse(
+      data,
+      approveRejectDto.action === 'approve'
+        ? API_RESPONSE_MESSAGES.STUDENT.APPROVE_SUCCESS
+        : API_RESPONSE_MESSAGES.STUDENT.REJECT_SUCCESS,
     );
   }
 }

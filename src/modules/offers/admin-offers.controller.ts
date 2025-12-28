@@ -21,6 +21,11 @@ import { ROLES } from '../../constants/app.constants';
 import { ApproveRejectOfferDto } from './dto/approve-reject-offer.dto';
 import { QueryAdminOffersDto } from './dto/query-admin-offers.dto';
 import { Audit } from '../audit/audit.decorator';
+import {
+  createApiResponse,
+  createPaginatedResponse,
+} from '../../utils/serializer.util';
+import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 
 @Controller('admin/offers')
 export class AdminOffersController {
@@ -35,11 +40,16 @@ export class AdminOffersController {
   ) {
     const page = queryDto.page ?? 1;
     const limit = queryDto.limit ?? 10;
-    return this.offersService.getAllOffers(
+    const result = await this.offersService.getAllOffers(
       queryDto.status,
       queryDto.merchantId,
       page,
       limit,
+    );
+    return createPaginatedResponse(
+      result.items,
+      result.pagination,
+      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
     );
   }
 
@@ -48,7 +58,8 @@ export class AdminOffersController {
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getOfferByIdAdmin(@Param('id', ParseUUIDPipe) id: string) {
-    return this.offersService.getOfferByIdAdmin(id);
+    const data = await this.offersService.getOfferByIdAdmin(id);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS);
   }
 
   @Put(':id/approve-reject')
@@ -60,7 +71,13 @@ export class AdminOffersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() approveRejectDto: ApproveRejectOfferDto,
   ) {
-    return this.offersService.approveRejectOffer(id, approveRejectDto);
+    const data = await this.offersService.approveRejectOffer(id, approveRejectDto);
+    return createApiResponse(
+      data,
+      approveRejectDto.action === 'approve'
+        ? API_RESPONSE_MESSAGES.OFFER.APPROVE_SUCCESS
+        : API_RESPONSE_MESSAGES.OFFER.REJECT_SUCCESS,
+    );
   }
 
   @Delete(':id')
@@ -69,7 +86,8 @@ export class AdminOffersController {
   @HttpCode(HttpStatus.OK)
   @Audit({ action: 'DELETE_OFFER_ADMIN', tableName: 'offers', recordIdParam: 'id' })
   async deleteOfferAdmin(@Param('id', ParseUUIDPipe) id: string) {
-    return this.offersService.deleteOfferAdmin(id);
+    const data = await this.offersService.deleteOfferAdmin(id);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.DELETE_SUCCESS);
   }
 }
 

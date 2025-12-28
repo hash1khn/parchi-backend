@@ -23,6 +23,11 @@ import { UpdateRedemptionDto } from './dto/update-redemption.dto';
 import { QueryRedemptionsDto } from './dto/query-redemptions.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { Audit } from '../audit/audit.decorator';
+import {
+  createApiResponse,
+  createPaginatedResponse,
+} from '../../utils/serializer.util';
+import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 
 @Controller('admin/redemptions')
 export class AdminRedemptionsController {
@@ -35,7 +40,8 @@ export class AdminRedemptionsController {
   @Roles(ROLES.MERCHANT_BRANCH)
   @HttpCode(HttpStatus.OK)
   async getBranchDailyStats(@CurrentUser() currentUser: ICurrentUser) {
-    return this.redemptionsService.getBranchDailyStats(currentUser);
+    const data = await this.redemptionsService.getBranchDailyStats(currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS);
   }
 
   @Get('stats/daily-details')
@@ -43,7 +49,8 @@ export class AdminRedemptionsController {
   @Roles(ROLES.MERCHANT_BRANCH)
   @HttpCode(HttpStatus.OK)
   async getBranchDailyRedemptionDetails(@CurrentUser() currentUser: ICurrentUser) {
-    return this.redemptionsService.getBranchDailyRedemptionDetails(currentUser);
+    const data = await this.redemptionsService.getBranchDailyRedemptionDetails(currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS);
   }
 
   @Get('stats/aggregated')
@@ -51,7 +58,8 @@ export class AdminRedemptionsController {
   @Roles(ROLES.MERCHANT_BRANCH)
   @HttpCode(HttpStatus.OK)
   async getBranchAggregatedStats(@CurrentUser() currentUser: ICurrentUser) {
-    return this.redemptionsService.getBranchAggregatedStats(currentUser);
+    const data = await this.redemptionsService.getBranchAggregatedStats(currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS);
   }
 
   @Post()
@@ -63,7 +71,8 @@ export class AdminRedemptionsController {
     @Body() createDto: CreateRedemptionDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.redemptionsService.createRedemption(createDto, currentUser);
+    const data = await this.redemptionsService.createRedemption(createDto, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.CREATE_SUCCESS, HttpStatus.CREATED);
   }
 
 
@@ -76,12 +85,19 @@ export class AdminRedemptionsController {
     @CurrentUser() currentUser: ICurrentUser,
     @Query() queryDto: QueryRedemptionsDto,
   ) {
+    let result;
     if (currentUser.role === ROLES.ADMIN) {
-      return this.redemptionsService.getAllRedemptions(queryDto);
+      result = await this.redemptionsService.getAllRedemptions(queryDto);
+    } else {
+      result = await this.redemptionsService.getBranchRedemptions(
+        currentUser,
+        queryDto,
+      );
     }
-    return this.redemptionsService.getBranchRedemptions(
-      currentUser,
-      queryDto,
+    return createPaginatedResponse(
+      result.items,
+      result.pagination,
+      API_RESPONSE_MESSAGES.REDEMPTION.LIST_SUCCESS,
     );
   }
 
@@ -93,10 +109,13 @@ export class AdminRedemptionsController {
     @Param('id') id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
+    let data;
     if (currentUser.role === ROLES.ADMIN) {
-      return this.redemptionsService.getAdminRedemptionById(id);
+      data = await this.redemptionsService.getAdminRedemptionById(id);
+    } else {
+      data = await this.redemptionsService.getBranchRedemptionById(id, currentUser);
     }
-    return this.redemptionsService.getBranchRedemptionById(id, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS);
   }
 
   @Patch(':id')
@@ -109,11 +128,12 @@ export class AdminRedemptionsController {
     @Body() updateDto: UpdateRedemptionDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.redemptionsService.rejectRedemption(
+    const data = await this.redemptionsService.rejectRedemption(
       id,
       updateDto,
       currentUser,
     );
+    return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.REJECT_SUCCESS);
   }
 }
 

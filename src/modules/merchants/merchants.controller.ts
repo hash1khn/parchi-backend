@@ -25,6 +25,8 @@ import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
 import { Audit } from '../audit/audit.decorator';
+import { createApiResponse } from '../../utils/serializer.util';
+import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 
 @Controller('merchants')
 export class MerchantsController {
@@ -40,7 +42,8 @@ export class MerchantsController {
     @CurrentUser() currentUser: ICurrentUser,
     @Query('search') search?: string,
   ) {
-    return this.merchantsService.getAllCorporateMerchants(currentUser, search);
+    const data = await this.merchantsService.getAllCorporateMerchants(currentUser, search);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.MERCHANT.LIST_SUCCESS);
   }
 
   @Get('brands')
@@ -48,7 +51,8 @@ export class MerchantsController {
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getAllBrands() {
-    return this.merchantsService.getAllBrands();
+    const data = await this.merchantsService.getAllBrands();
+    return createApiResponse(data, 'Brands retrieved successfully');
   }
 
   @Get('corporate/:id')
@@ -56,7 +60,8 @@ export class MerchantsController {
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getCorporateAccountById(@Param('id') id: string) {
-    return this.merchantsService.getCorporateAccountById(id);
+    const data = await this.merchantsService.getCorporateAccountById(id);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.MERCHANT.GET_SUCCESS);
   }
 
   @Put('corporate/:id')
@@ -68,7 +73,8 @@ export class MerchantsController {
     @Param('id') id: string,
     @Body() updateDto: UpdateCorporateAccountDto,
   ) {
-    return this.merchantsService.updateCorporateAccount(id, updateDto);
+    const data = await this.merchantsService.updateCorporateAccount(id, updateDto);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.MERCHANT.UPDATE_SUCCESS);
   }
 
   @Patch('corporate/:id/toggle')
@@ -77,7 +83,8 @@ export class MerchantsController {
   @HttpCode(HttpStatus.OK)
   @Audit({ action: 'TOGGLE_MERCHANT_STATUS', tableName: 'merchants', recordIdParam: 'id' })
   async toggleCorporateAccountStatus(@Param('id') id: string) {
-    return this.merchantsService.toggleCorporateAccountStatus(id);
+    const data = await this.merchantsService.toggleCorporateAccountStatus(id);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.MERCHANT.TOGGLE_SUCCESS);
   }
 
   @Delete('corporate/:id')
@@ -86,7 +93,8 @@ export class MerchantsController {
   @HttpCode(HttpStatus.OK)
   @Audit({ action: 'DELETE_MERCHANT', tableName: 'merchants', recordIdParam: 'id' })
   async deleteCorporateAccount(@Param('id') id: string) {
-    return this.merchantsService.deleteCorporateAccount(id);
+    await this.merchantsService.deleteCorporateAccount(id);
+    return createApiResponse(null, API_RESPONSE_MESSAGES.MERCHANT.DELETE_SUCCESS);
   }
 
   // ========== Corporate Dashboard Endpoints ==========
@@ -96,7 +104,8 @@ export class MerchantsController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async getDashboardStats(@CurrentUser() currentUser: ICurrentUser) {
-    return this.merchantsService.getDashboardStats(currentUser);
+    const data = await this.merchantsService.getDashboardStats(currentUser);
+    return createApiResponse(data, 'Dashboard stats retrieved successfully');
   }
 
   @Get('dashboard/analytics')
@@ -104,7 +113,8 @@ export class MerchantsController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async getDashboardAnalytics(@CurrentUser() currentUser: ICurrentUser) {
-    return this.merchantsService.getDashboardAnalytics(currentUser);
+    const data = await this.merchantsService.getDashboardAnalytics(currentUser);
+    return createApiResponse(data, 'Analytics retrieved successfully');
   }
 
   @Get('dashboard/branch-performance')
@@ -112,7 +122,8 @@ export class MerchantsController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async getBranchPerformance(@CurrentUser() currentUser: ICurrentUser) {
-    return this.merchantsService.getBranchPerformance(currentUser);
+    const data = await this.merchantsService.getBranchPerformance(currentUser);
+    return createApiResponse(data, 'Branch performance retrieved successfully');
   }
 
   @Get('dashboard/offer-performance')
@@ -120,7 +131,8 @@ export class MerchantsController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async getOfferPerformance(@CurrentUser() currentUser: ICurrentUser) {
-    return this.merchantsService.getOfferPerformance(currentUser);
+    const data = await this.merchantsService.getOfferPerformance(currentUser);
+    return createApiResponse(data, 'Offer performance retrieved successfully');
   }
 
   // ========== Bonus Settings Endpoints (Corporate Only) ==========
@@ -133,7 +145,8 @@ export class MerchantsController {
     @Param('branchId') branchId: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.merchantsService.getBranchBonusSettings(branchId, currentUser);
+    const data = await this.merchantsService.getBranchBonusSettings(branchId, currentUser);
+    return createApiResponse(data, 'Bonus settings retrieved successfully');
   }
 
   @Put('branches/:branchId/bonus-settings')
@@ -146,7 +159,8 @@ export class MerchantsController {
     @Body() updateDto: UpdateBonusSettingsDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.merchantsService.updateBranchBonusSettings(branchId, updateDto, currentUser);
+    const data = await this.merchantsService.updateBranchBonusSettings(branchId, updateDto, currentUser);
+    return createApiResponse(data, 'Bonus settings updated successfully');
   }
 
   // ========== Branch Endpoints (Admin & Corporate) ==========
@@ -156,7 +170,8 @@ export class MerchantsController {
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async getBranchAssignments(@CurrentUser() currentUser: ICurrentUser) {
-    return this.merchantsService.getBranchAssignments(currentUser);
+    const data = await this.merchantsService.getBranchAssignments(currentUser);
+    return createApiResponse(data, 'Branch assignments retrieved successfully');
   }
 
   @Post('branches/:id/assign')
@@ -168,7 +183,8 @@ export class MerchantsController {
     @Body() assignDto: AssignOffersDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.merchantsService.assignOffersToBranch(id, assignDto, currentUser);
+    const data = await this.merchantsService.assignOffersToBranch(id, assignDto, currentUser);
+    return createApiResponse(data, 'Offers assigned successfully');
   }
 
   @Get('branches')
@@ -181,11 +197,12 @@ export class MerchantsController {
     @Query('corporateAccountId') corporateAccountId?: string,
     @Query('search') search?: string,
   ) {
-    return this.merchantsService.getBranches(
+    const data = await this.merchantsService.getBranches(
       currentUser,
       corporateAccountId,
       search,
     );
+    return createApiResponse(data, API_RESPONSE_MESSAGES.MERCHANT.BRANCH_LIST_SUCCESS);
   }
 
   @Get('branches/:id')
@@ -196,7 +213,8 @@ export class MerchantsController {
     @Param('id') id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.merchantsService.getBranchById(id, currentUser);
+    const data = await this.merchantsService.getBranchById(id, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.MERCHANT.BRANCH_GET_SUCCESS);
   }
 
   @Put('branches/:id')
@@ -209,7 +227,8 @@ export class MerchantsController {
     @Body() updateDto: UpdateBranchDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.merchantsService.updateBranch(id, updateDto, currentUser);
+    const data = await this.merchantsService.updateBranch(id, updateDto, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.MERCHANT.BRANCH_UPDATE_SUCCESS);
   }
 
   @Delete('branches/:id')
@@ -221,7 +240,8 @@ export class MerchantsController {
     @Param('id') id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.merchantsService.deleteBranch(id, currentUser);
+    await this.merchantsService.deleteBranch(id, currentUser);
+    return createApiResponse(null, API_RESPONSE_MESSAGES.MERCHANT.BRANCH_DELETE_SUCCESS);
   }
 
   @Put('branches/:id/approve-reject')
@@ -233,7 +253,13 @@ export class MerchantsController {
     @Param('id') id: string,
     @Body() approveRejectDto: ApproveRejectBranchDto,
   ) {
-    return this.merchantsService.approveRejectBranch(id, approveRejectDto.action);
+    const data = await this.merchantsService.approveRejectBranch(id, approveRejectDto.action);
+    return createApiResponse(
+      data,
+      approveRejectDto.action === 'approved'
+        ? API_RESPONSE_MESSAGES.MERCHANT.BRANCH_APPROVE_SUCCESS
+        : API_RESPONSE_MESSAGES.MERCHANT.BRANCH_REJECT_SUCCESS,
+    );
   }
 }
 

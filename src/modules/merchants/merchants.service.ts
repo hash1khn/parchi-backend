@@ -7,13 +7,11 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
-import { ApiResponse } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { UpdateCorporateAccountDto } from './dto/update-corporate-account.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
 import { ROLES } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
-import { createApiResponse } from '../../utils/serializer.util';
 import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
 
@@ -80,7 +78,7 @@ export class MerchantsService {
   async getAllCorporateMerchants(
     currentUser?: CurrentUser,
     search?: string,
-  ): Promise<ApiResponse<CorporateMerchantResponse[]>> {
+  ): Promise<CorporateMerchantResponse[]> {
     const whereClause: Prisma.merchantsWhereInput = {
       users: {
         role: 'merchant_corporate',
@@ -127,17 +125,14 @@ export class MerchantsService {
       }),
     );
 
-    return createApiResponse(
-      formattedMerchants,
-      API_RESPONSE_MESSAGES.MERCHANT.LIST_SUCCESS,
-    );
+    return formattedMerchants;
   }
 
   /**
    * Get all active brands (corporate merchants)
    * Accessible by students
    */
-  async getAllBrands(): Promise<ApiResponse<Partial<CorporateMerchantResponse>[]>> {
+  async getAllBrands(): Promise<Partial<CorporateMerchantResponse>[]> {
     const brands = await this.prisma.merchants.findMany({
       where: {
         verification_status: 'approved',
@@ -164,10 +159,7 @@ export class MerchantsService {
       category: brand.category,
     }));
 
-    return createApiResponse(
-      formattedBrands,
-      'Brands retrieved successfully',
-    );
+    return formattedBrands;
   }
 
   /**
@@ -176,7 +168,7 @@ export class MerchantsService {
    */
   async getCorporateAccountById(
     id: string,
-  ): Promise<ApiResponse<CorporateMerchantResponse>> {
+  ): Promise<CorporateMerchantResponse> {
     const merchant = await this.prisma.merchants.findUnique({
       where: { id },
       include: {
@@ -209,10 +201,7 @@ export class MerchantsService {
       updatedAt: merchant.updated_at,
     };
 
-    return createApiResponse(
-      formattedMerchant,
-      API_RESPONSE_MESSAGES.MERCHANT.GET_SUCCESS,
-    );
+    return formattedMerchant;
   }
 
   /**
@@ -222,7 +211,7 @@ export class MerchantsService {
   async updateCorporateAccount(
     id: string,
     updateDto: UpdateCorporateAccountDto,
-  ): Promise<ApiResponse<CorporateMerchantResponse>> {
+  ): Promise<CorporateMerchantResponse> {
     // Check if corporate account exists
     const merchant = await this.prisma.merchants.findUnique({
       where: { id },
@@ -342,10 +331,7 @@ export class MerchantsService {
       updatedAt: updatedMerchant.updated_at,
     };
 
-    return createApiResponse(
-      formattedMerchant,
-      API_RESPONSE_MESSAGES.MERCHANT.UPDATE_SUCCESS,
-    );
+    return formattedMerchant;
   }
 
   /**
@@ -355,7 +341,7 @@ export class MerchantsService {
    */
   async toggleCorporateAccountStatus(
     id: string,
-  ): Promise<ApiResponse<CorporateMerchantResponse>> {
+  ): Promise<CorporateMerchantResponse> {
     // Check if corporate account exists
     const merchant = await this.prisma.merchants.findUnique({
       where: { id },
@@ -449,10 +435,7 @@ export class MerchantsService {
       updatedAt: updatedMerchant.updated_at,
     };
 
-    return createApiResponse(
-      formattedMerchant,
-      API_RESPONSE_MESSAGES.MERCHANT.TOGGLE_SUCCESS,
-    );
+    return formattedMerchant;
   }
 
   /**
@@ -460,7 +443,7 @@ export class MerchantsService {
    * Admin only
    * This will cascade delete related branches and other related records
    */
-  async deleteCorporateAccount(id: string): Promise<ApiResponse<null>> {
+  async deleteCorporateAccount(id: string): Promise<null> {
     // Check if corporate account exists
     const merchant = await this.prisma.merchants.findUnique({
       where: { id },
@@ -483,10 +466,7 @@ export class MerchantsService {
       where: { id },
     });
 
-    return createApiResponse(
-      null,
-      API_RESPONSE_MESSAGES.MERCHANT.DELETE_SUCCESS,
-    );
+    return null;
   }
 
   /**
@@ -500,7 +480,7 @@ export class MerchantsService {
     currentUser: CurrentUser,
     corporateAccountId?: string,
     search?: string,
-  ): Promise<ApiResponse<BranchResponse[]>> {
+  ): Promise<BranchResponse[]> {
     let whereClause: Prisma.merchant_branchesWhereInput = {
       merchants: {
         is_active: true, // Only show branches of active corporate accounts
@@ -575,10 +555,7 @@ export class MerchantsService {
       updatedAt: branch.updated_at,
     }));
 
-    return createApiResponse(
-      formattedBranches,
-      API_RESPONSE_MESSAGES.MERCHANT.BRANCH_LIST_SUCCESS,
-    );
+    return formattedBranches;
   }
 
   /**
@@ -589,7 +566,7 @@ export class MerchantsService {
   async getBranchById(
     id: string,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<BranchResponse>> {
+  ): Promise<BranchResponse> {
     const branch = await this.prisma.merchant_branches.findUnique({
       where: { id },
       include: {
@@ -641,10 +618,7 @@ export class MerchantsService {
       updatedAt: branch.updated_at,
     };
 
-    return createApiResponse(
-      formattedBranch,
-      API_RESPONSE_MESSAGES.MERCHANT.BRANCH_GET_SUCCESS,
-    );
+    return formattedBranch;
   }
 
   /**
@@ -656,7 +630,7 @@ export class MerchantsService {
     id: string,
     updateDto: UpdateBranchDto,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<BranchResponse>> {
+  ): Promise<BranchResponse> {
     // Check if branch exists
     const branch = await this.prisma.merchant_branches.findUnique({
       where: { id },
@@ -761,10 +735,7 @@ export class MerchantsService {
       updatedAt: updatedBranch.updated_at,
     };
 
-    return createApiResponse(
-      formattedBranch,
-      API_RESPONSE_MESSAGES.MERCHANT.BRANCH_UPDATE_SUCCESS,
-    );
+    return formattedBranch;
   }
 
   /**
@@ -775,7 +746,7 @@ export class MerchantsService {
   async deleteBranch(
     id: string,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<null>> {
+  ): Promise<null> {
     // Check if branch exists
     const branch = await this.prisma.merchant_branches.findUnique({
       where: { id },
@@ -820,10 +791,7 @@ export class MerchantsService {
       where: { id },
     });
 
-    return createApiResponse(
-      null,
-      API_RESPONSE_MESSAGES.MERCHANT.BRANCH_DELETE_SUCCESS,
-    );
+    return null;
   }
 
   /**
@@ -832,7 +800,7 @@ export class MerchantsService {
    */
   async getBranchAssignments(
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<BranchAssignmentResponse[]>> {
+  ): Promise<BranchAssignmentResponse[]> {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
@@ -871,10 +839,7 @@ export class MerchantsService {
       bonusOfferId: null, // Bonus is now handled via settings, not a separate offer ID
     }));
 
-    return createApiResponse(
-      formatted,
-      'Branch assignments retrieved successfully',
-    );
+    return formatted;
   }
 
   /**
@@ -885,7 +850,7 @@ export class MerchantsService {
     branchId: string,
     dto: AssignOffersDto,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<BranchAssignmentResponse>> {
+  ): Promise<BranchAssignmentResponse> {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
@@ -949,15 +914,12 @@ export class MerchantsService {
       }
     });
 
-    return createApiResponse(
-      {
-        id: branch.id,
-        branchName: branch.branch_name,
-        standardOfferId: dto.standardOfferId,
-        bonusOfferId: null,
-      },
-      'Offers assigned successfully',
-    );
+    return {
+      id: branch.id,
+      branchName: branch.branch_name,
+      standardOfferId: dto.standardOfferId,
+      bonusOfferId: null,
+    };
   }
 
 
@@ -969,7 +931,7 @@ export class MerchantsService {
   async getBranchBonusSettings(
     branchId: string,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<BonusSettingsResponse>> {
+  ): Promise<BonusSettingsResponse> {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
@@ -989,32 +951,26 @@ export class MerchantsService {
 
     if (!settings) {
       // Return default if not found
-      return createApiResponse(
-        {
-          redemptionsRequired: 5,
-          discountType: 'percentage',
-          discountValue: 0,
-          maxDiscountAmount: null,
-          validityDays: 30,
-          isActive: true,
-          imageUrl: null,
-        },
-        'Bonus settings retrieved successfully',
-      );
+      return {
+        redemptionsRequired: 5,
+        discountType: 'percentage',
+        discountValue: 0,
+        maxDiscountAmount: null,
+        validityDays: 30,
+        isActive: true,
+        imageUrl: null,
+      };
     }
 
-    return createApiResponse(
-      {
-        redemptionsRequired: settings.redemptions_required,
-        discountType: settings.discount_type,
-        discountValue: Number(settings.discount_value),
-        maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
-        validityDays: settings.validity_days,
-        isActive: settings.is_active,
-        imageUrl: settings.image_url,
-      },
-      'Bonus settings retrieved successfully',
-    );
+    return {
+      redemptionsRequired: settings.redemptions_required,
+      discountType: settings.discount_type,
+      discountValue: Number(settings.discount_value),
+      maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
+      validityDays: settings.validity_days,
+      isActive: settings.is_active,
+      imageUrl: settings.image_url,
+    };
   }
 
   /**
@@ -1025,7 +981,7 @@ export class MerchantsService {
     branchId: string,
     dto: UpdateBonusSettingsDto,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<BonusSettingsResponse>> {
+  ): Promise<BonusSettingsResponse> {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
@@ -1062,18 +1018,15 @@ export class MerchantsService {
       },
     });
 
-    return createApiResponse(
-      {
-        redemptionsRequired: settings.redemptions_required,
-        discountType: settings.discount_type,
-        discountValue: Number(settings.discount_value),
-        maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
-        validityDays: settings.validity_days,
-        isActive: settings.is_active,
-        imageUrl: settings.image_url,
-      },
-      'Bonus settings updated successfully',
-    );
+    return {
+      redemptionsRequired: settings.redemptions_required,
+      discountType: settings.discount_type,
+      discountValue: Number(settings.discount_value),
+      maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
+      validityDays: settings.validity_days,
+      isActive: settings.is_active,
+      imageUrl: settings.image_url,
+    };
   }
 
   /**
@@ -1084,7 +1037,7 @@ export class MerchantsService {
   async approveRejectBranch(
     id: string,
     action: 'approved' | 'rejected',
-  ): Promise<ApiResponse<BranchResponse>> {
+  ): Promise<BranchResponse> {
     // Check if branch exists
     const branch = await this.prisma.merchant_branches.findUnique({
       where: { id },
@@ -1164,12 +1117,7 @@ export class MerchantsService {
       updatedAt: updatedBranch.updated_at,
     };
 
-    return createApiResponse(
-      formattedBranch,
-      action === 'approved'
-        ? API_RESPONSE_MESSAGES.MERCHANT.BRANCH_APPROVE_SUCCESS
-        : API_RESPONSE_MESSAGES.MERCHANT.BRANCH_REJECT_SUCCESS,
-    );
+    return formattedBranch;
   }
 
   /**
@@ -1196,15 +1144,12 @@ export class MerchantsService {
     const branchIds = branches.map((b) => b.id);
 
     if (branchIds.length === 0) {
-      return createApiResponse(
-        {
-          totalRedemptions: 0,
-          totalDiscountGiven: 0,
-          avgDiscountPerOrder: 0,
-          uniqueStudents: 0,
-        },
-        'Dashboard stats retrieved successfully',
-      );
+      return {
+        totalRedemptions: 0,
+        totalDiscountGiven: 0,
+        avgDiscountPerOrder: 0,
+        uniqueStudents: 0,
+      };
     }
 
     // 2. Aggregate Redemptions
@@ -1239,15 +1184,12 @@ export class MerchantsService {
     const avgDiscountPerOrder =
       totalRedemptions > 0 ? totalDiscountGiven / totalRedemptions : 0;
 
-    return createApiResponse(
-      {
-        totalRedemptions,
-        totalDiscountGiven,
-        avgDiscountPerOrder: Math.round(avgDiscountPerOrder), // Round to nearest integer
-        uniqueStudents: uniqueStudentIds.size,
-      },
-      'Dashboard stats retrieved successfully',
-    );
+    return {
+      totalRedemptions,
+      totalDiscountGiven,
+      avgDiscountPerOrder: Math.round(avgDiscountPerOrder), // Round to nearest integer
+      uniqueStudents: uniqueStudentIds.size,
+    };
   }
 
   /**
@@ -1275,7 +1217,7 @@ export class MerchantsService {
     const branchIds = branches.map((b) => b.id);
 
     if (branchIds.length === 0) {
-      return createApiResponse([], 'Analytics retrieved successfully');
+      return [];
     }
 
     // Get redemptions for the last 30 days to show "Peak Hours" trend
@@ -1313,10 +1255,7 @@ export class MerchantsService {
       value: count, // Standard chart key
     }));
 
-    return createApiResponse(
-      chartData,
-      'Analytics retrieved successfully',
-    );
+    return chartData;
   }
 
   /**
@@ -1363,10 +1302,7 @@ export class MerchantsService {
     // Sort by redemptions desc
     performanceData.sort((a, b) => b.value - a.value);
 
-    return createApiResponse(
-      performanceData,
-      'Branch performance retrieved successfully',
-    );
+    return performanceData;
   }
 
   /**
@@ -1412,9 +1348,6 @@ export class MerchantsService {
       redemptions: o.current_redemptions || 0,
     }));
 
-    return createApiResponse(
-      formattedOffers,
-      'Offer performance retrieved successfully',
-    );
+    return formattedOffers;
   }
 }

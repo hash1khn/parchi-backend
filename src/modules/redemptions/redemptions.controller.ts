@@ -17,6 +17,11 @@ import { CurrentUser } from '../../decorators/current-user.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { QueryRedemptionsDto } from './dto/query-redemptions.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
+import {
+  createApiResponse,
+  createPaginatedResponse,
+} from '../../utils/serializer.util';
+import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 
 @Controller('redemptions')
 export class RedemptionsController {
@@ -32,9 +37,14 @@ export class RedemptionsController {
     @CurrentUser() currentUser: ICurrentUser,
     @Query() queryDto: QueryRedemptionsDto,
   ) {
-    return this.redemptionsService.getStudentRedemptions(
+    const result = await this.redemptionsService.getStudentRedemptions(
       currentUser,
       queryDto,
+    );
+    return createPaginatedResponse(
+      result.items,
+      result.pagination,
+      API_RESPONSE_MESSAGES.REDEMPTION.LIST_SUCCESS,
     );
   }
 
@@ -45,7 +55,8 @@ export class RedemptionsController {
   async getStudentRedemptionStats(
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.redemptionsService.getStudentRedemptionStats(currentUser);
+    const data = await this.redemptionsService.getStudentRedemptionStats(currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.STATS_SUCCESS);
   }
 
   @Get(':id')
@@ -56,7 +67,8 @@ export class RedemptionsController {
     @Param('id') id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.redemptionsService.getRedemptionById(id, currentUser);
+    const data = await this.redemptionsService.getRedemptionById(id, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS);
   }
 }
 

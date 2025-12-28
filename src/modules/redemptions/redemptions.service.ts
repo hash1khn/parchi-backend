@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
-import { ApiResponse, PaginatedResponse } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { CreateRedemptionDto } from './dto/create-redemption.dto';
 import { UpdateRedemptionDto } from './dto/update-redemption.dto';
@@ -16,11 +15,8 @@ import { CurrentUser } from '../../types/global.types';
 import {
   calculatePaginationMeta,
   calculateSkip,
+  PaginationMeta,
 } from '../../utils/pagination.util';
-import {
-  createApiResponse,
-  createPaginatedResponse,
-} from '../../utils/serializer.util';
 
 export interface RedemptionResponse {
   id: string;
@@ -95,7 +91,7 @@ export class RedemptionsService {
   async createRedemption(
     createDto: CreateRedemptionDto,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<RedemptionResponse>> {
+  ): Promise<RedemptionResponse> {
     // Verify branch staff has a branch
     if (currentUser.role !== ROLES.MERCHANT_BRANCH) {
       throw new ForbiddenException(
@@ -541,10 +537,7 @@ export class RedemptionsService {
       },
     );
 
-    return createApiResponse(
-      this.formatRedemptionResponse(redemption),
-      API_RESPONSE_MESSAGES.REDEMPTION.CREATE_SUCCESS,
-    );
+    return this.formatRedemptionResponse(redemption);
   }
 
   /**
@@ -554,7 +547,7 @@ export class RedemptionsService {
   async getStudentRedemptions(
     currentUser: CurrentUser,
     queryDto: QueryRedemptionsDto,
-  ): Promise<PaginatedResponse<RedemptionResponse>> {
+  ): Promise<{ items: RedemptionResponse[]; pagination: PaginationMeta }> {
     if (currentUser.role !== ROLES.STUDENT) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.REDEMPTION.ACCESS_DENIED,
@@ -668,11 +661,10 @@ export class RedemptionsService {
       this.formatRedemptionResponse(r),
     );
 
-    return createPaginatedResponse(
-      formattedRedemptions,
-      calculatePaginationMeta(total, page, limit),
-      API_RESPONSE_MESSAGES.REDEMPTION.LIST_SUCCESS,
-    );
+    return {
+      items: formattedRedemptions,
+      pagination: calculatePaginationMeta(total, page, limit),
+    };
   }
 
   /**
@@ -682,7 +674,7 @@ export class RedemptionsService {
   async getRedemptionById(
     id: string,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<RedemptionResponse>> {
+  ): Promise<RedemptionResponse> {
     if (currentUser.role !== ROLES.STUDENT) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.REDEMPTION.ACCESS_DENIED,
@@ -750,10 +742,7 @@ export class RedemptionsService {
       );
     }
 
-    return createApiResponse(
-      this.formatRedemptionResponse(redemption),
-      API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
-    );
+    return this.formatRedemptionResponse(redemption);
   }
 
   /**
@@ -763,7 +752,7 @@ export class RedemptionsService {
   async getBranchRedemptions(
     currentUser: CurrentUser,
     queryDto: QueryRedemptionsDto,
-  ): Promise<PaginatedResponse<RedemptionResponse>> {
+  ): Promise<{ items: RedemptionResponse[]; pagination: PaginationMeta }> {
     if (currentUser.role !== ROLES.MERCHANT_BRANCH) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.REDEMPTION.ACCESS_DENIED,
@@ -882,11 +871,10 @@ export class RedemptionsService {
       this.formatRedemptionResponse(r),
     );
 
-    return createPaginatedResponse(
-      formattedRedemptions,
-      calculatePaginationMeta(total, page, limit),
-      API_RESPONSE_MESSAGES.REDEMPTION.LIST_SUCCESS,
-    );
+    return {
+      items: formattedRedemptions,
+      pagination: calculatePaginationMeta(total, page, limit),
+    };
   }
 
   /**
@@ -896,7 +884,7 @@ export class RedemptionsService {
   async getBranchRedemptionById(
     id: string,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<RedemptionResponse>> {
+  ): Promise<RedemptionResponse> {
     if (currentUser.role !== ROLES.MERCHANT_BRANCH) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.REDEMPTION.ACCESS_DENIED,
@@ -960,10 +948,7 @@ export class RedemptionsService {
       );
     }
 
-    return createApiResponse(
-      this.formatRedemptionResponse(redemption),
-      API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
-    );
+    return this.formatRedemptionResponse(redemption);
   }
 
   /**
@@ -974,7 +959,7 @@ export class RedemptionsService {
     id: string,
     updateDto: UpdateRedemptionDto,
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<RedemptionResponse>> {
+  ): Promise<RedemptionResponse> {
     if (currentUser.role !== ROLES.MERCHANT_BRANCH) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.REDEMPTION.ACCESS_DENIED,
@@ -1138,10 +1123,7 @@ export class RedemptionsService {
       return updatedRedemption;
     });
 
-    return createApiResponse(
-      this.formatRedemptionResponse(redemption),
-      API_RESPONSE_MESSAGES.REDEMPTION.REJECT_SUCCESS,
-    );
+    return this.formatRedemptionResponse(redemption);
   }
 
   /**
@@ -1150,7 +1132,7 @@ export class RedemptionsService {
    */
   async getAllRedemptions(
     queryDto: QueryRedemptionsDto,
-  ): Promise<PaginatedResponse<RedemptionResponse>> {
+  ): Promise<{ items: RedemptionResponse[]; pagination: PaginationMeta }> {
     const page = queryDto.page || 1;
     const limit = queryDto.limit || 10;
     const skip = calculateSkip(page, limit);
@@ -1262,11 +1244,10 @@ export class RedemptionsService {
       this.formatRedemptionResponse(r),
     );
 
-    return createPaginatedResponse(
-      formattedRedemptions,
-      calculatePaginationMeta(total, page, limit),
-      API_RESPONSE_MESSAGES.REDEMPTION.LIST_SUCCESS,
-    );
+    return {
+      items: formattedRedemptions,
+      pagination: calculatePaginationMeta(total, page, limit),
+    };
   }
 
   /**
@@ -1275,7 +1256,7 @@ export class RedemptionsService {
    */
   async getAdminRedemptionById(
     id: string,
-  ): Promise<ApiResponse<RedemptionResponse>> {
+  ): Promise<RedemptionResponse> {
     const redemption = await this.prisma.redemptions.findUnique({
       where: { id },
       include: {
@@ -1321,10 +1302,7 @@ export class RedemptionsService {
       );
     }
 
-    return createApiResponse(
-      this.formatRedemptionResponse(redemption),
-      API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
-    );
+    return this.formatRedemptionResponse(redemption);
   }
 
   /**
@@ -1333,7 +1311,7 @@ export class RedemptionsService {
    */
   async getStudentRedemptionStats(
     currentUser: CurrentUser,
-  ): Promise<ApiResponse<RedemptionStatsResponse>> {
+  ): Promise<RedemptionStatsResponse> {
     if (currentUser.role !== ROLES.STUDENT) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.REDEMPTION.ACCESS_DENIED,
@@ -1439,32 +1417,29 @@ export class RedemptionsService {
       }),
     ]);
 
-    return createApiResponse(
-      {
-        totalRedemptions,
-        totalSavings: Number(student.total_savings || 0),
-        verifiedRedemptions,
-        pendingRedemptions:
-          totalRedemptions - verifiedRedemptions - rejectedRedemptions,
-        rejectedRedemptions,
-        topMerchants: topMerchants.map((stat) => ({
-          merchantId: stat.merchant_id,
-          merchantName: stat.merchants.business_name,
-          redemptionCount: stat.redemption_count || 0,
-          totalSavings: Number(stat.total_savings || 0),
-        })),
-        topBranches: topBranches.map((stat) => ({
-          branchId: stat.branch_id,
-          branchName: stat.merchant_branches.branch_name,
-          redemptionCount: stat.redemption_count || 0,
-          totalSavings: Number(stat.total_savings || 0),
-        })),
-        recentRedemptions: recentRedemptions.map((r) =>
-          this.formatRedemptionResponse(r),
-        ),
-      },
-      API_RESPONSE_MESSAGES.REDEMPTION.STATS_SUCCESS,
-    );
+    return {
+      totalRedemptions,
+      totalSavings: Number(student.total_savings || 0),
+      verifiedRedemptions,
+      pendingRedemptions:
+        totalRedemptions - verifiedRedemptions - rejectedRedemptions,
+      rejectedRedemptions,
+      topMerchants: topMerchants.map((stat) => ({
+        merchantId: stat.merchant_id,
+        merchantName: stat.merchants.business_name,
+        redemptionCount: stat.redemption_count || 0,
+        totalSavings: Number(stat.total_savings || 0),
+      })),
+      topBranches: topBranches.map((stat) => ({
+        branchId: stat.branch_id,
+        branchName: stat.merchant_branches.branch_name,
+        redemptionCount: stat.redemption_count || 0,
+        totalSavings: Number(stat.total_savings || 0),
+      })),
+      recentRedemptions: recentRedemptions.map((r) =>
+        this.formatRedemptionResponse(r),
+      ),
+    };
   }
 
   /**
@@ -1607,15 +1582,12 @@ export class RedemptionsService {
       trend = 'down';
     }
 
-    return createApiResponse(
-      {
-        todayCount,
-        yesterdayCount,
-        percentageChange: Math.round(percentageChange),
-        trend,
-      },
-      API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
-    );
+    return {
+      todayCount,
+      yesterdayCount,
+      percentageChange: Math.round(percentageChange),
+      trend,
+    };
   }
 
   /**
@@ -1701,10 +1673,7 @@ export class RedemptionsService {
       };
     });
 
-    return createApiResponse(
-      formattedRedemptions,
-      API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
-    );
+    return formattedRedemptions;
   }
 
   /**
@@ -1807,15 +1776,12 @@ export class RedemptionsService {
 
     if (maxCount === 0) peakHourLabel = 'N/A';
 
-    return createApiResponse(
-      {
-        uniqueStudents,
-        bonusDealsCount,
-        peakHour: peakHourLabel,
-        hourlyData,
-      },
-      API_RESPONSE_MESSAGES.REDEMPTION.GET_SUCCESS,
-    );
+    return {
+      uniqueStudents,
+      bonusDealsCount,
+      peakHour: peakHourLabel,
+      hourlyData,
+    };
   }
 }
 

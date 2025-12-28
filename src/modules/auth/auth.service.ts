@@ -16,12 +16,10 @@ import { CorporateSignupDto } from './dto/corporate-signup.dto';
 import { BranchSignupDto } from './dto/branch-signup.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { ApiResponse } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { ROLES, UserRole } from '../../constants/app.constants';
 import { JwtPayload } from '../../types/global.types';
 import { generateParchiId } from '../../utils/parchi-id.util';
-import { createApiResponse } from '../../utils/serializer.util';
 
 @Injectable()
 export class AuthService {
@@ -47,7 +45,7 @@ export class AuthService {
     this.supabase = createClient(supabaseUrl, supabaseAnonKey);
   }
 
-  async signup(signupDto: SignupDto): Promise<ApiResponse<{ user: any; session: any }>> {
+  async signup(signupDto: SignupDto): Promise<{ user: any; session: any }> {
     try {
       // Validate role
       this.validateRole(signupDto.role);
@@ -96,19 +94,15 @@ export class AuthService {
         },
       });
 
-      return createApiResponse(
-        {
-          user: {
-            id: publicUser.id,
-            email: publicUser.email,
-            role: publicUser.role,
-            is_active: publicUser.is_active,
-          },
-          session: authData.session,
+      return {
+        user: {
+          id: publicUser.id,
+          email: publicUser.email,
+          role: publicUser.role,
+          is_active: publicUser.is_active,
         },
-        API_RESPONSE_MESSAGES.AUTH.SIGNUP_SUCCESS,
-        201,
-      );
+        session: authData.session,
+      };
     } catch (error) {
       if (
         error instanceof ConflictException ||
@@ -127,7 +121,7 @@ export class AuthService {
     }
   }
 
-  async login(loginDto: LoginDto): Promise<ApiResponse<{ user: any; session: any }>> {
+  async login(loginDto: LoginDto): Promise<{ user: any; session: any }> {
     try {
       // Authenticate with Supabase
       const { data: authData, error: authError } =
@@ -160,18 +154,15 @@ export class AuthService {
         );
       }
 
-      return createApiResponse(
-        {
-          user: {
-            id: publicUser.id,
-            email: publicUser.email,
-            role: publicUser.role,
-            is_active: publicUser.is_active,
-          },
-          session: authData.session,
+      return {
+        user: {
+          id: publicUser.id,
+          email: publicUser.email,
+          role: publicUser.role,
+          is_active: publicUser.is_active,
         },
-        API_RESPONSE_MESSAGES.AUTH.LOGIN_SUCCESS,
-      );
+        session: authData.session,
+      };
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         throw error;
@@ -284,7 +275,7 @@ export class AuthService {
   }
   // --- UPDATED METHOD END ---
 
-  async logout(accessToken: string): Promise<ApiResponse<null>> {
+  async logout(accessToken: string): Promise<null> {
     try {
       // Create a client with the user's token to sign them out
       const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
@@ -308,10 +299,7 @@ export class AuthService {
         throw new BadRequestException(error.message);
       }
 
-      return createApiResponse(
-        null,
-        API_RESPONSE_MESSAGES.AUTH.LOGOUT_SUCCESS,
-      );
+      return null;
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
@@ -326,7 +314,7 @@ export class AuthService {
 
   async studentSignup(
     signupDto: StudentSignupDto,
-  ): Promise<ApiResponse<any>> {
+  ): Promise<any> {
     try {
       // 1. Check if email already exists
       const existingUser = await this.prisma.public_users.findUnique({
@@ -415,20 +403,16 @@ export class AuthService {
         };
       });
 
-      return createApiResponse(
-        {
-          id: result.student.id,
-          email: result.user.email,
-          firstName: result.student.first_name,
-          lastName: result.student.last_name,
-          university: result.student.university,
-          parchiId: result.student.parchi_id,
-          verificationStatus: result.student.verification_status,
-          createdAt: result.student.created_at,
-        },
-        API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_SUCCESS,
-        201,
-      );
+      return {
+        id: result.student.id,
+        email: result.user.email,
+        firstName: result.student.first_name,
+        lastName: result.student.last_name,
+        university: result.student.university,
+        parchiId: result.student.parchi_id,
+        verificationStatus: result.student.verification_status,
+        createdAt: result.student.created_at,
+      };
     } catch (error) {
       if (
         error instanceof ConflictException ||
@@ -445,7 +429,7 @@ export class AuthService {
 
   async corporateSignup(
     signupDto: CorporateSignupDto,
-  ): Promise<ApiResponse<any>> {
+  ): Promise<any> {
     try {
       // 1. Check if email already exists
       const existingUser = await this.prisma.public_users.findUnique({
@@ -517,20 +501,16 @@ export class AuthService {
         };
       });
 
-      return createApiResponse(
-        {
-          id: result.merchant.id,
-          email: result.user.email,
-          businessName: result.merchant.business_name,
-          emailPrefix: result.merchant.email_prefix,
-          contactEmail: result.merchant.contact_email,
-          category: result.merchant.category,
-          verificationStatus: result.merchant.verification_status,
-          createdAt: result.merchant.created_at,
-        },
-        API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_SUCCESS,
-        201,
-      );
+      return {
+        id: result.merchant.id,
+        email: result.user.email,
+        businessName: result.merchant.business_name,
+        emailPrefix: result.merchant.email_prefix,
+        contactEmail: result.merchant.contact_email,
+        category: result.merchant.category,
+        verificationStatus: result.merchant.verification_status,
+        createdAt: result.merchant.created_at,
+      };
     } catch (error) {
       if (
         error instanceof ConflictException ||
@@ -555,7 +535,7 @@ export class AuthService {
   async branchSignup(
     signupDto: BranchSignupDto,
     currentUser: any,
-  ): Promise<ApiResponse<any>> {
+  ): Promise<any> {
     try {
       // 1. Check if email already exists
       const existingUser = await this.prisma.public_users.findUnique({
@@ -687,29 +667,19 @@ export class AuthService {
       });
 
       // 6. Return response (without sensitive data)
-      // Use different message based on whether account is active or pending
-      const successMessage =
-        isActive
-          ? API_RESPONSE_MESSAGES.AUTH.BRANCH_SIGNUP_SUCCESS_ADMIN
-          : API_RESPONSE_MESSAGES.AUTH.BRANCH_SIGNUP_SUCCESS;
-
-      return createApiResponse(
-        {
-          id: result.branch.id,
-          email: result.user.email,
-          branchName: result.branch.branch_name,
-          address: result.branch.address,
-          city: result.branch.city,
-          contactPhone: result.branch.contact_phone,
-          latitude: result.branch.latitude?.toString() || null,
-          longitude: result.branch.longitude?.toString() || null,
-          linkedCorporate: merchantId,
-          isActive: result.user.is_active,
-          createdAt: result.branch.created_at,
-        },
-        successMessage,
-        201,
-      );
+      return {
+        id: result.branch.id,
+        email: result.user.email,
+        branchName: result.branch.branch_name,
+        address: result.branch.address,
+        city: result.branch.city,
+        contactPhone: result.branch.contact_phone,
+        latitude: result.branch.latitude?.toString() || null,
+        longitude: result.branch.longitude?.toString() || null,
+        linkedCorporate: merchantId,
+        isActive: result.user.is_active,
+        createdAt: result.branch.created_at,
+      };
     } catch (error) {
       if (
         error instanceof ConflictException ||
@@ -730,7 +700,7 @@ export class AuthService {
    */
   async forgotPassword(
     forgotPasswordDto: ForgotPasswordDto,
-  ): Promise<ApiResponse<null>> {
+  ): Promise<null> {
     try {
       // Check if user exists in public.users
       const publicUser = await this.prisma.public_users.findUnique({
@@ -739,11 +709,8 @@ export class AuthService {
 
       if (!publicUser) {
         // Don't reveal if user exists or not for security reasons
-        // Return success message even if user doesn't exist
-        return createApiResponse(
-          null,
-          API_RESPONSE_MESSAGES.AUTH.FORGOT_PASSWORD_SUCCESS,
-        );
+        // Return null even if user doesn't exist
+        return null;
       }
 
       // Use Supabase to send password reset email
@@ -758,10 +725,7 @@ export class AuthService {
         throw new BadRequestException(error.message);
       }
 
-      return createApiResponse(
-        null,
-        API_RESPONSE_MESSAGES.AUTH.FORGOT_PASSWORD_SUCCESS,
-      );
+      return null;
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
@@ -779,7 +743,7 @@ export class AuthService {
   async updateStudentProfilePicture(
     userId: string,
     imageUrl: string,
-  ): Promise<ApiResponse<any>> {
+  ): Promise<any> {
     try {
       // 1. Verify user is a student
       const student = await this.prisma.students.findUnique({
@@ -798,10 +762,7 @@ export class AuthService {
         },
       });
 
-      return createApiResponse(
-        { profilePicture: updatedStudent.profile_picture },
-        'Profile picture updated successfully',
-      );
+      return { profilePicture: updatedStudent.profile_picture };
     } catch (error) {
       throw new BadRequestException('Failed to update profile picture');
     }
@@ -827,7 +788,7 @@ export class AuthService {
     changePasswordDto: ChangePasswordDto,
     accessToken: string,
     userId: string,
-  ): Promise<ApiResponse<null>> {
+  ): Promise<null> {
     try {
       // Step 1: Verify current password by checking if it matches the encrypted password
       // We query auth.users table directly using raw SQL with parameterized queries for security
@@ -854,10 +815,7 @@ export class AuthService {
         WHERE id = ${userId}::uuid
       `;
 
-      return createApiResponse(
-        null,
-        API_RESPONSE_MESSAGES.AUTH.CHANGE_PASSWORD_SUCCESS,
-      );
+      return null;
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||

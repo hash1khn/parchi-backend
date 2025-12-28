@@ -28,6 +28,11 @@ import { QueryMerchantOffersDto } from './dto/query-merchant-offers.dto';
 import { QueryActiveOffersDto } from './dto/query-active-offers.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { Audit } from '../audit/audit.decorator';
+import {
+  createApiResponse,
+  createPaginatedResponse,
+} from '../../utils/serializer.util';
+import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 
 @Controller('offers')
 export class OffersController {
@@ -44,7 +49,8 @@ export class OffersController {
     @Body() createDto: CreateOfferDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.offersService.createOffer(createDto, currentUser);
+    const data = await this.offersService.createOffer(createDto, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.CREATE_SUCCESS, HttpStatus.CREATED);
   }
 
   @Get()
@@ -57,11 +63,16 @@ export class OffersController {
   ) {
     const page = queryDto.page ?? 1;
     const limit = queryDto.limit ?? 10;
-    return this.offersService.getMerchantOffers(
+    const result = await this.offersService.getMerchantOffers(
       currentUser,
       queryDto.status,
       page,
       limit,
+    );
+    return createPaginatedResponse(
+      result.items,
+      result.pagination,
+      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
     );
   }
 
@@ -77,7 +88,7 @@ export class OffersController {
     const radius = queryDto.radius ?? 10;
     const page = queryDto.page ?? 1;
     const limit = queryDto.limit ?? 10;
-    return this.offersService.getActiveOffersForStudents(
+    const result = await this.offersService.getActiveOffersForStudents(
       queryDto.category,
       queryDto.latitude,
       queryDto.longitude,
@@ -86,6 +97,11 @@ export class OffersController {
       page,
       limit,
     );
+    return createPaginatedResponse(
+      result.items,
+      result.pagination,
+      API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS,
+    );
   }
 
   @Get('merchant/:merchantId')
@@ -93,7 +109,8 @@ export class OffersController {
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getOffersByMerchant(@Param('merchantId') merchantId: string) {
-    return this.offersService.getOffersByMerchantForStudents(merchantId);
+    const data = await this.offersService.getOffersByMerchantForStudents(merchantId);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS);
   }
 
   @Get(':id/details')
@@ -101,7 +118,8 @@ export class OffersController {
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getOfferDetails(@Param('id', ParseUUIDPipe) id: string) {
-    return this.offersService.getOfferDetailsForStudents(id);
+    const data = await this.offersService.getOfferDetailsForStudents(id);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS);
   }
 
   // ========== Merchant Corporate Account Endpoints (continued) ==========
@@ -114,7 +132,8 @@ export class OffersController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.offersService.getOfferById(id, currentUser);
+    const data = await this.offersService.getOfferById(id, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.GET_SUCCESS);
   }
 
   @Put(':id')
@@ -127,7 +146,8 @@ export class OffersController {
     @Body() updateDto: UpdateOfferDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.offersService.updateOffer(id, updateDto, currentUser);
+    const data = await this.offersService.updateOffer(id, updateDto, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.UPDATE_SUCCESS);
   }
 
   @Patch(':id/toggle')
@@ -139,7 +159,8 @@ export class OffersController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.offersService.toggleOfferStatus(id, currentUser);
+    const data = await this.offersService.toggleOfferStatus(id, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.TOGGLE_SUCCESS);
   }
 
   @Delete(':id')
@@ -151,7 +172,8 @@ export class OffersController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.offersService.deleteOffer(id, currentUser);
+    const data = await this.offersService.deleteOffer(id, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.DELETE_SUCCESS);
   }
 
   @Post(':id/branches')
@@ -163,7 +185,8 @@ export class OffersController {
     @Body() assignDto: AssignBranchesDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.offersService.assignBranchesToOffer(id, assignDto, currentUser);
+    const data = await this.offersService.assignBranchesToOffer(id, assignDto, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.BRANCHES_ASSIGNED_SUCCESS);
   }
 
   @Delete(':id/branches')
@@ -175,11 +198,12 @@ export class OffersController {
     @Body() assignDto: AssignBranchesDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.offersService.removeBranchesFromOffer(
+    const data = await this.offersService.removeBranchesFromOffer(
       id,
       assignDto,
       currentUser,
     );
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.BRANCHES_REMOVED_SUCCESS);
   }
 
   @Get(':id/analytics')
@@ -190,6 +214,7 @@ export class OffersController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    return this.offersService.getOfferAnalytics(id, currentUser);
+    const data = await this.offersService.getOfferAnalytics(id, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.ANALYTICS_SUCCESS);
   }
 }

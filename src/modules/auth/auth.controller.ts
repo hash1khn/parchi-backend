@@ -23,6 +23,7 @@ import { Roles } from '../../decorators/roles.decorator';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { createApiResponse } from '../../utils/serializer.util';
+import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { UpdateProfilePictureDto } from './dto/update-profile-picture.dto';
 import { Audit } from '../audit/audit.decorator';
 
@@ -33,13 +34,15 @@ export class AuthController {
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
   async signup(@Body() signupDto: SignupDto) {
-    return this.authService.signup(signupDto);
+    const data = await this.authService.signup(signupDto);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.AUTH.SIGNUP_SUCCESS, HttpStatus.CREATED);
   }
 
   @Post('student/signup')
   @HttpCode(HttpStatus.CREATED)
   async studentSignup(@Body() studentSignupDto: StudentSignupDto) {
-    return this.authService.studentSignup(studentSignupDto);
+    const data = await this.authService.studentSignup(studentSignupDto);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_SUCCESS, HttpStatus.CREATED);
   }
 
   @Post('corporate/signup')
@@ -48,7 +51,8 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   @Audit({ action: 'CREATE_CORPORATE_ACCOUNT', tableName: 'merchants' })
   async corporateSignup(@Body() corporateSignupDto: CorporateSignupDto) {
-    return this.authService.corporateSignup(corporateSignupDto);
+    const data = await this.authService.corporateSignup(corporateSignupDto);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_SUCCESS, HttpStatus.CREATED);
   }
 
   @Post('branch/signup')
@@ -60,19 +64,25 @@ export class AuthController {
     @Body() branchSignupDto: BranchSignupDto,
     @CurrentUser() currentUser: any,
   ) {
-    return this.authService.branchSignup(branchSignupDto, currentUser);
+    const data = await this.authService.branchSignup(branchSignupDto, currentUser);
+    const successMessage = data.isActive
+      ? API_RESPONSE_MESSAGES.AUTH.BRANCH_SIGNUP_SUCCESS_ADMIN
+      : API_RESPONSE_MESSAGES.AUTH.BRANCH_SIGNUP_SUCCESS;
+    return createApiResponse(data, successMessage, HttpStatus.CREATED);
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+    const data = await this.authService.login(loginDto);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.AUTH.LOGIN_SUCCESS);
   }
 
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
-    return this.authService.forgotPassword(forgotPasswordDto);
+    await this.authService.forgotPassword(forgotPasswordDto);
+    return createApiResponse(null, API_RESPONSE_MESSAGES.AUTH.FORGOT_PASSWORD_SUCCESS);
   }
 
   @Post('change-password')
@@ -89,11 +99,12 @@ export class AuthController {
     @Request() req,
   ) {
     const token = this.extractTokenFromHeader(req);
-    return this.authService.changePassword(
+    await this.authService.changePassword(
       changePasswordDto,
       token,
       currentUser.id,
     );
+    return createApiResponse(null, API_RESPONSE_MESSAGES.AUTH.CHANGE_PASSWORD_SUCCESS);
   }
 
   @Patch('student/profile-picture')
@@ -109,7 +120,8 @@ export class AuthController {
     @Body() dto: UpdateProfilePictureDto,
     @CurrentUser() user: any,
   ) {
-    return this.authService.updateStudentProfilePicture(user.id, dto.imageUrl);
+    const data = await this.authService.updateStudentProfilePicture(user.id, dto.imageUrl);
+    return createApiResponse(data, 'Profile picture updated successfully');
   }
 
 
@@ -118,7 +130,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async logout(@Request() req) {
     const token = this.extractTokenFromHeader(req);
-    return this.authService.logout(token);
+    await this.authService.logout(token);
+    return createApiResponse(null, API_RESPONSE_MESSAGES.AUTH.LOGOUT_SUCCESS);
   }
 
   @Get('me')
