@@ -24,6 +24,7 @@ import { CurrentUser } from '../../decorators/current-user.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { createApiResponse } from '../../utils/serializer.util';
 import { UpdateProfilePictureDto } from './dto/update-profile-picture.dto';
+import { Audit } from '../audit/audit.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -45,6 +46,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.CREATED)
+  @Audit({ action: 'CREATE_CORPORATE_ACCOUNT', tableName: 'merchants' })
   async corporateSignup(@Body() corporateSignupDto: CorporateSignupDto) {
     return this.authService.corporateSignup(corporateSignupDto);
   }
@@ -53,6 +55,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.CREATED)
+  @Audit({ action: 'CREATE_BRANCH_ACCOUNT', tableName: 'merchant_branches' })
   async branchSignup(
     @Body() branchSignupDto: BranchSignupDto,
     @CurrentUser() currentUser: any,
@@ -75,6 +78,11 @@ export class AuthController {
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
+  @Audit({ 
+    action: 'CHANGE_PASSWORD', 
+    tableName: 'users',
+    getRecordId: (args) => args[3]?.user?.id // Extract user ID from request.user
+  })
   async changePassword(
     @Body() changePasswordDto: ChangePasswordDto,
     @CurrentUser() currentUser: any,
@@ -92,6 +100,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
+  @Audit({ 
+    action: 'UPDATE_PROFILE_PICTURE', 
+    tableName: 'students',
+    getRecordId: (args) => args[3]?.user?.id // Extract user ID from request.user
+  })
   async updateProfilePicture(
     @Body() dto: UpdateProfilePictureDto,
     @CurrentUser() user: any,

@@ -8,11 +8,13 @@ import { MerchantsModule } from './modules/merchants/merchants.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { StudentsModule } from './modules/students/students.module';
 import { RedemptionsModule } from './modules/redemptions/redemptions.module';
+import { AuditModule } from './modules/audit/audit.module';
 
 @Module({
   imports: [
     ConfigModule,
     PrismaModule,
+    AuditModule,
     AuthModule,
     MerchantsModule,
     OffersModule,

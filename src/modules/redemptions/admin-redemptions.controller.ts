@@ -22,6 +22,7 @@ import { CreateRedemptionDto } from './dto/create-redemption.dto';
 import { UpdateRedemptionDto } from './dto/update-redemption.dto';
 import { QueryRedemptionsDto } from './dto/query-redemptions.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
+import { Audit } from '../audit/audit.decorator';
 
 @Controller('admin/redemptions')
 export class AdminRedemptionsController {
@@ -57,6 +58,7 @@ export class AdminRedemptionsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_BRANCH)
   @HttpCode(HttpStatus.CREATED)
+  @Audit({ action: 'CREATE_REDEMPTION', tableName: 'redemptions' })
   async createRedemption(
     @Body() createDto: CreateRedemptionDto,
     @CurrentUser() currentUser: ICurrentUser,
@@ -101,6 +103,7 @@ export class AdminRedemptionsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_BRANCH)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'REJECT_REDEMPTION', tableName: 'redemptions', recordIdParam: 'id' })
   async rejectRedemption(
     @Param('id') id: string,
     @Body() updateDto: UpdateRedemptionDto,

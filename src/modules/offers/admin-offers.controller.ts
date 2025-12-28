@@ -20,6 +20,7 @@ import { Roles } from '../../decorators/roles.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { ApproveRejectOfferDto } from './dto/approve-reject-offer.dto';
 import { QueryAdminOffersDto } from './dto/query-admin-offers.dto';
+import { Audit } from '../audit/audit.decorator';
 
 @Controller('admin/offers')
 export class AdminOffersController {
@@ -54,6 +55,7 @@ export class AdminOffersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'APPROVE_REJECT_OFFER', tableName: 'offers', recordIdParam: 'id' })
   async approveRejectOffer(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() approveRejectDto: ApproveRejectOfferDto,
@@ -65,6 +67,7 @@ export class AdminOffersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'DELETE_OFFER_ADMIN', tableName: 'offers', recordIdParam: 'id' })
   async deleteOfferAdmin(@Param('id', ParseUUIDPipe) id: string) {
     return this.offersService.deleteOfferAdmin(id);
   }

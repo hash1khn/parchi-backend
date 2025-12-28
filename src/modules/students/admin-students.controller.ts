@@ -22,6 +22,7 @@ import { QueryStudentsDto } from './dto/query-students.dto';
 import { QueryPendingStudentsDto } from './dto/query-pending-students.dto';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
+import { Audit } from '../audit/audit.decorator';
 
 @Controller('admin/students')
 export class AdminStudentsController {
@@ -74,6 +75,7 @@ export class AdminStudentsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'APPROVE_REJECT_STUDENT', tableName: 'students', recordIdParam: 'id' })
   async approveRejectStudent(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() approveRejectDto: ApproveRejectStudentDto,

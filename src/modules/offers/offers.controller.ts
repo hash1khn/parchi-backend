@@ -27,6 +27,7 @@ import { AssignBranchesDto } from './dto/assign-branches.dto';
 import { QueryMerchantOffersDto } from './dto/query-merchant-offers.dto';
 import { QueryActiveOffersDto } from './dto/query-active-offers.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
+import { Audit } from '../audit/audit.decorator';
 
 @Controller('offers')
 export class OffersController {
@@ -38,6 +39,7 @@ export class OffersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE, ROLES.ADMIN)
   @HttpCode(HttpStatus.CREATED)
+  @Audit({ action: 'CREATE_OFFER', tableName: 'offers' })
   async createOffer(
     @Body() createDto: CreateOfferDto,
     @CurrentUser() currentUser: ICurrentUser,
@@ -119,6 +121,7 @@ export class OffersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'UPDATE_OFFER', tableName: 'offers', recordIdParam: 'id' })
   async updateOffer(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateOfferDto,
@@ -131,6 +134,7 @@ export class OffersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'TOGGLE_OFFER_STATUS', tableName: 'offers', recordIdParam: 'id' })
   async toggleOfferStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
@@ -142,6 +146,7 @@ export class OffersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'DELETE_OFFER', tableName: 'offers', recordIdParam: 'id' })
   async deleteOffer(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,

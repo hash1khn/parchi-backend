@@ -24,8 +24,7 @@ import { ApproveRejectBranchDto } from './dto/approve-reject-branch.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
-
-// ... (existing imports)
+import { Audit } from '../audit/audit.decorator';
 
 @Controller('merchants')
 export class MerchantsController {
@@ -64,6 +63,7 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'UPDATE_MERCHANT', tableName: 'merchants', recordIdParam: 'id' })
   async updateCorporateAccount(
     @Param('id') id: string,
     @Body() updateDto: UpdateCorporateAccountDto,
@@ -75,6 +75,7 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'TOGGLE_MERCHANT_STATUS', tableName: 'merchants', recordIdParam: 'id' })
   async toggleCorporateAccountStatus(@Param('id') id: string) {
     return this.merchantsService.toggleCorporateAccountStatus(id);
   }
@@ -83,6 +84,7 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'DELETE_MERCHANT', tableName: 'merchants', recordIdParam: 'id' })
   async deleteCorporateAccount(@Param('id') id: string) {
     return this.merchantsService.deleteCorporateAccount(id);
   }
@@ -138,6 +140,7 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'UPDATE_BRANCH_BONUS_SETTINGS', tableName: 'branch_bonus_settings', recordIdParam: 'branchId' })
   async updateBranchBonusSettings(
     @Param('branchId') branchId: string,
     @Body() updateDto: UpdateBonusSettingsDto,
@@ -200,6 +203,7 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'UPDATE_BRANCH', tableName: 'merchant_branches', recordIdParam: 'id' })
   async updateBranch(
     @Param('id') id: string,
     @Body() updateDto: UpdateBranchDto,
@@ -212,6 +216,7 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'DELETE_BRANCH', tableName: 'merchant_branches', recordIdParam: 'id' })
   async deleteBranch(
     @Param('id') id: string,
     @CurrentUser() currentUser: ICurrentUser,
@@ -223,6 +228,7 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'APPROVE_REJECT_BRANCH', tableName: 'merchant_branches', recordIdParam: 'id' })
   async approveRejectBranch(
     @Param('id') id: string,
     @Body() approveRejectDto: ApproveRejectBranchDto,
