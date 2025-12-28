@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsDateString,
   IsInt,
+  IsUUID,
   Min,
   Max,
 } from 'class-validator';
@@ -29,7 +30,7 @@ export class QueryRedemptionsDto {
   endDate?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   studentId?: string;
 
   @IsOptional()
@@ -37,15 +38,15 @@ export class QueryRedemptionsDto {
   parchiId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   merchantId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   branchId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   offerId?: string;
 
   @IsOptional()

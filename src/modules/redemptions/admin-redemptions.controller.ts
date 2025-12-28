@@ -10,6 +10,7 @@ import {
   HttpStatus,
   UseGuards,
   ParseIntPipe,
+  ParseUUIDPipe,
   DefaultValuePipe,
 } from '@nestjs/common';
 import { RedemptionsService } from './redemptions.service';
@@ -106,7 +107,7 @@ export class AdminRedemptionsController {
   @Roles(ROLES.MERCHANT_BRANCH, ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getRedemptionById(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
     let data;
@@ -124,7 +125,7 @@ export class AdminRedemptionsController {
   @HttpCode(HttpStatus.OK)
   @Audit({ action: 'REJECT_REDEMPTION', tableName: 'redemptions', recordIdParam: 'id' })
   async rejectRedemption(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateRedemptionDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {

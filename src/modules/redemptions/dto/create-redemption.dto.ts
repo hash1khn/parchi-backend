@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
 
 export class CreateRedemptionDto {
   @IsNotEmpty()
@@ -6,7 +6,7 @@ export class CreateRedemptionDto {
   parchiId: string;
 
   @IsNotEmpty()
-  @IsString()
+  @IsUUID()
   offerId: string;
 
   @IsOptional()

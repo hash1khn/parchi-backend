@@ -7,6 +7,7 @@ import {
   HttpStatus,
   UseGuards,
   ParseIntPipe,
+  ParseUUIDPipe,
   DefaultValuePipe,
 } from '@nestjs/common';
 import { RedemptionsService } from './redemptions.service';
@@ -64,7 +65,7 @@ export class RedemptionsController {
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getRedemptionById(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
     const data = await this.redemptionsService.getRedemptionById(id, currentUser);

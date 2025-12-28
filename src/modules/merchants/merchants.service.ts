@@ -64,6 +64,42 @@ export interface BonusSettingsResponse {
   imageUrl: string | null;
 }
 
+export interface BranchOffer {
+  id: string;
+  title: string;
+  imageUrl: string | null;
+  discountType: string;
+  discountValue: number;
+  formattedDiscount: string;
+}
+
+export interface BranchWithBonusSettings {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  latitude: number | null;
+  longitude: number | null;
+  contactPhone: string | null;
+  bonusSettings: {
+    redemptionsRequired: number;
+    currentRedemptions?: number;
+    discountDescription: string;
+    isActive: boolean;
+  } | null;
+  offers: BranchOffer[];
+}
+
+export interface MerchantDetailsForStudentsResponse {
+  id: string;
+  businessName: string;
+  logoPath: string | null;
+  bannerUrl: string | null;
+  category: string | null;
+  termsAndConditions: string | null;
+  branches: BranchWithBonusSettings[];
+}
+
 @Injectable()
 export class MerchantsService {
   constructor(private readonly prisma: PrismaService) { }
@@ -1349,5 +1385,212 @@ export class MerchantsService {
     }));
 
     return formattedOffers;
+  }
+
+  /**
+   * Get merchant details for students
+   * Includes branches with bonus settings
+   * Student only
+   */
+  async getMerchantDetailsForStudents(
+    merchantId: string,
+    userId?: string,
+  ): Promise<MerchantDetailsForStudentsResponse> {
+    // Get merchant
+    const merchant = await this.prisma.merchants.findUnique({
+      where: { id: merchantId },
+      include: {
+        users: true,
+      },
+    });
+
+    if (!merchant) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    // Verify it's a corporate account and is active
+    if (merchant.users.role !== ROLES.MERCHANT_CORPORATE) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    if (merchant.verification_status !== 'approved' || !merchant.is_active) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    // Get all active branches for this merchant
+    const branches = await this.prisma.merchant_branches.findMany({
+      where: {
+        merchant_id: merchantId,
+        is_active: true,
+      },
+      include: {
+        branch_bonus_settings: true,
+      },
+      orderBy: {
+        branch_name: 'asc',
+      },
+    });
+
+    // Get student branch stats if userId is provided
+    let studentBranchStats: Map<string, number> = new Map();
+    if (userId) {
+      // Get student record
+      const student = await this.prisma.students.findUnique({
+        where: { user_id: userId },
+        select: { id: true },
+      });
+
+      if (student) {
+        const stats = await this.prisma.student_branch_stats.findMany({
+          where: {
+            student_id: student.id,
+            branch_id: {
+              in: branches.map((b) => b.id),
+            },
+          },
+          select: {
+            branch_id: true,
+            redemption_count: true,
+          },
+        });
+
+        stats.forEach((stat) => {
+          studentBranchStats.set(stat.branch_id, stat.redemption_count || 0);
+        });
+      }
+    }
+
+    // Get active offers for all branches of this merchant
+    // Include both branch-specific offers and global offers (no branch assignments)
+    const now = new Date();
+    const branchIds = branches.map((b) => b.id);
+    
+    const offers = await this.prisma.offers.findMany({
+      where: {
+        merchant_id: merchantId,
+        status: 'active',
+        valid_from: { lte: now },
+        valid_until: { gte: now },
+        OR: [
+          // Offers assigned to specific branches
+          {
+            offer_branches: {
+              some: {
+                branch_id: { in: branchIds },
+                is_active: true,
+              },
+            },
+          },
+          // Global offers (no branch assignments)
+          {
+            offer_branches: {
+              none: {},
+            },
+          },
+        ],
+      },
+      include: {
+        offer_branches: {
+          where: {
+            branch_id: { in: branchIds },
+            is_active: true,
+          },
+          select: {
+            branch_id: true,
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    // Create a map of branch_id -> offers for that branch
+    const branchOffersMap = new Map<string, BranchOffer[]>();
+    
+    // Initialize map with empty arrays for all branches
+    branches.forEach((branch) => {
+      branchOffersMap.set(branch.id, []);
+    });
+
+    // Group offers by branch
+    offers.forEach((offer) => {
+      const formattedDiscount =
+        offer.discount_type === 'percentage'
+          ? `${Number(offer.discount_value)}% OFF`
+          : `Rs. ${Number(offer.discount_value)} OFF`;
+
+      const branchOffer: BranchOffer = {
+        id: offer.id,
+        title: offer.title,
+        imageUrl: offer.image_url,
+        discountType: offer.discount_type,
+        discountValue: Number(offer.discount_value),
+        formattedDiscount,
+      };
+
+      // Check if this is a global offer (no branch assignments)
+      if (offer.offer_branches.length === 0) {
+        // Global offer: add to all branches
+        branches.forEach((branch) => {
+          const existingOffers = branchOffersMap.get(branch.id) || [];
+          existingOffers.push(branchOffer);
+          branchOffersMap.set(branch.id, existingOffers);
+        });
+      } else {
+        // Branch-specific offer: add only to assigned branches
+        offer.offer_branches.forEach((ob) => {
+          const existingOffers = branchOffersMap.get(ob.branch_id) || [];
+          existingOffers.push(branchOffer);
+          branchOffersMap.set(ob.branch_id, existingOffers);
+        });
+      }
+    });
+
+    // Format branches with bonus settings and offers
+    const formattedBranches: BranchWithBonusSettings[] = branches.map((branch) => {
+      const currentRedemptions = studentBranchStats.has(branch.id)
+        ? studentBranchStats.get(branch.id) || 0
+        : undefined;
+
+      let bonusSettings: BranchWithBonusSettings['bonusSettings'] = null;
+
+      if (branch.branch_bonus_settings) {
+        const settings = branch.branch_bonus_settings;
+        const discountDescription =
+          settings.discount_type === 'percentage'
+            ? `${settings.discount_value}% OFF`
+            : `Rs. ${settings.discount_value} OFF`;
+
+        bonusSettings = {
+          redemptionsRequired: settings.redemptions_required,
+          currentRedemptions,
+          discountDescription,
+          isActive: settings.is_active ?? true,
+        };
+      }
+
+      return {
+        id: branch.id,
+        name: branch.branch_name,
+        address: branch.address,
+        city: branch.city,
+        latitude: branch.latitude ? Number(branch.latitude) : null,
+        longitude: branch.longitude ? Number(branch.longitude) : null,
+        contactPhone: branch.contact_phone,
+        bonusSettings,
+        offers: branchOffersMap.get(branch.id) || [],
+      };
+    });
+
+    return {
+      id: merchant.id,
+      businessName: merchant.business_name,
+      logoPath: merchant.logo_path,
+      bannerUrl: merchant.banner_url,
+      category: merchant.category,
+      termsAndConditions: merchant.terms_and_conditions,
+      branches: formattedBranches,
+    };
   }
 }

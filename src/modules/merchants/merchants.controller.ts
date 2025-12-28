@@ -11,6 +11,7 @@ import {
   HttpStatus,
   UseGuards,
   Post,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -53,6 +54,25 @@ export class MerchantsController {
   async getAllBrands() {
     const data = await this.merchantsService.getAllBrands();
     return createApiResponse(data, 'Brands retrieved successfully');
+  }
+
+  // Student endpoint for merchant details - placed before other :id routes
+  @Get(':id/details')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async getMerchantDetailsForStudents(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    const data = await this.merchantsService.getMerchantDetailsForStudents(
+      id,
+      currentUser.id,
+    );
+    return createApiResponse(
+      data,
+      API_RESPONSE_MESSAGES.MERCHANT.GET_SUCCESS,
+    );
   }
 
   @Get('corporate/:id')
