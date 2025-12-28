@@ -77,23 +77,27 @@ export class MerchantsController {
 
   @Get('corporate/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.ADMIN)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
-  async getCorporateAccountById(@Param('id') id: string) {
-    const data = await this.merchantsService.getCorporateAccountById(id);
+  async getCorporateAccountById(
+    @Param('id') id: string,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    const data = await this.merchantsService.getCorporateAccountById(id, currentUser);
     return createApiResponse(data, API_RESPONSE_MESSAGES.MERCHANT.GET_SUCCESS);
   }
 
   @Put('corporate/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.ADMIN)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   @Audit({ action: 'UPDATE_MERCHANT', tableName: 'merchants', recordIdParam: 'id' })
   async updateCorporateAccount(
     @Param('id') id: string,
     @Body() updateDto: UpdateCorporateAccountDto,
+    @CurrentUser() currentUser: ICurrentUser,
   ) {
-    const data = await this.merchantsService.updateCorporateAccount(id, updateDto);
+    const data = await this.merchantsService.updateCorporateAccount(id, updateDto, currentUser);
     return createApiResponse(data, API_RESPONSE_MESSAGES.MERCHANT.UPDATE_SUCCESS);
   }
 

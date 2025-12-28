@@ -45,5 +45,13 @@ export class UpdateCorporateAccountDto {
     message: `Verification status must be one of: ${Object.values(VERIFICATION_STATUS).join(', ')}`,
   })
   verificationStatus?: VerificationStatus;
+
+  @IsOptional()
+  @IsUrl()
+  bannerUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  termsAndConditions?: string;
 }
 

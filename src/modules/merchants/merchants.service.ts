@@ -29,6 +29,8 @@ export interface CorporateMerchantResponse {
   isActive: boolean | null;
   createdAt: Date | null;
   updatedAt: Date | null;
+  bannerUrl: string | null;
+  termsAndConditions: string | null;
 }
 
 export interface BranchResponse {
@@ -158,6 +160,8 @@ export class MerchantsService {
         isActive: merchant.is_active,
         createdAt: merchant.created_at,
         updatedAt: merchant.updated_at,
+        bannerUrl: merchant.banner_url,
+        termsAndConditions: merchant.terms_and_conditions,
       }),
     );
 
@@ -200,10 +204,12 @@ export class MerchantsService {
 
   /**
    * Get corporate account by ID
-   * Admin only
+   * Admin: can view any corporate account
+   * Corporate: can only view their own account
    */
   async getCorporateAccountById(
     id: string,
+    currentUser: CurrentUser,
   ): Promise<CorporateMerchantResponse> {
     const merchant = await this.prisma.merchants.findUnique({
       where: { id },
@@ -219,6 +225,15 @@ export class MerchantsService {
     // Verify it's a corporate account
     if (merchant.users.role !== ROLES.MERCHANT_CORPORATE) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    // Authorization check: merchants can only view their own account
+    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      if (!currentUser.merchant?.id || currentUser.merchant.id !== id) {
+        throw new ForbiddenException(
+          API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
+        );
+      }
     }
 
     const formattedMerchant: CorporateMerchantResponse = {
@@ -235,6 +250,8 @@ export class MerchantsService {
       isActive: merchant.is_active,
       createdAt: merchant.created_at,
       updatedAt: merchant.updated_at,
+      bannerUrl: merchant.banner_url,
+      termsAndConditions: merchant.terms_and_conditions,
     };
 
     return formattedMerchant;
@@ -242,11 +259,13 @@ export class MerchantsService {
 
   /**
    * Update corporate account
-   * Admin only
+   * Admin: can update any corporate account
+   * Corporate: can only update their own account (and cannot update isActive or verificationStatus)
    */
   async updateCorporateAccount(
     id: string,
     updateDto: UpdateCorporateAccountDto,
+    currentUser: CurrentUser,
   ): Promise<CorporateMerchantResponse> {
     // Check if corporate account exists
     const merchant = await this.prisma.merchants.findUnique({
@@ -263,6 +282,21 @@ export class MerchantsService {
     // Verify it's a corporate account
     if (merchant.users.role !== ROLES.MERCHANT_CORPORATE) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    // Authorization check: merchants can only update their own account
+    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      if (!currentUser.merchant?.id || currentUser.merchant.id !== id) {
+        throw new ForbiddenException(
+          API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
+        );
+      }
+      // Merchants cannot update isActive or verificationStatus (admin-only fields)
+      if (updateDto.isActive !== undefined || updateDto.verificationStatus !== undefined) {
+        throw new ForbiddenException(
+          'You do not have permission to update this field',
+        );
+      }
     }
 
     // Prepare update data
@@ -285,8 +319,14 @@ export class MerchantsService {
     if (updateDto.category !== undefined) {
       updateData.category = updateDto.category;
     }
+    if (updateDto.bannerUrl !== undefined) {
+      updateData.banner_url = updateDto.bannerUrl;
+    }
+    if (updateDto.termsAndConditions !== undefined) {
+      updateData.terms_and_conditions = updateDto.termsAndConditions;
+    }
 
-    // Update verification_status if provided
+    // Update verification_status if provided (admin only)
     if (updateDto.verificationStatus !== undefined) {
       updateData.verification_status = updateDto.verificationStatus;
       if (updateDto.verificationStatus === 'approved') {
@@ -365,6 +405,8 @@ export class MerchantsService {
           : updatedMerchant.is_active,
       createdAt: updatedMerchant.created_at,
       updatedAt: updatedMerchant.updated_at,
+      bannerUrl: updatedMerchant.banner_url,
+      termsAndConditions: updatedMerchant.terms_and_conditions,
     };
 
     return formattedMerchant;
@@ -469,6 +511,8 @@ export class MerchantsService {
       isActive: updatedMerchant.is_active,
       createdAt: updatedMerchant.created_at,
       updatedAt: updatedMerchant.updated_at,
+      bannerUrl: updatedMerchant.banner_url,
+      termsAndConditions: updatedMerchant.terms_and_conditions,
     };
 
     return formattedMerchant;
