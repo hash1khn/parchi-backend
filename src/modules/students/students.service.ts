@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
-  import { CurrentUser } from '../../types/global.types';
+import { CurrentUser } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { ROLES, VerificationStatus } from '../../constants/app.constants';
 import { ApproveRejectStudentDto } from './dto/approve-reject-student.dto';
@@ -68,6 +68,11 @@ export interface StudentKycResponse {
   totalRedemptions: number;
   verificationStatus: string;
   verifiedAt: Date | null;
+  verifiedBy: {
+    id: string;
+    email: string;
+    role: string;
+  } | null;
   verificationExpiresAt: Date | null;
   createdAt: Date | null;
   updatedAt: Date | null;
@@ -191,6 +196,13 @@ export class StudentsService {
               id: true,
               email: true,
               phone: true,
+            },
+          },
+          verified_by_user: {
+            select: {
+              id: true,
+              email: true,
+              role: true,
             },
           },
           student_kyc: {
@@ -507,6 +519,8 @@ export class StudentsService {
         data: {
           verification_status: verificationStatus,
           verified_at: now,
+          // Track which admin approved the student
+          verified_by: approveRejectDto.action === 'approve' ? reviewerId : null,
           // Set expiration date to 1 year from now if approved
           verification_expires_at:
             approveRejectDto.action === 'approve'
@@ -623,6 +637,13 @@ export class StudentsService {
       totalRedemptions: student.total_redemptions || 0,
       verificationStatus: student.verification_status,
       verifiedAt: student.verified_at,
+      verifiedBy: student.verified_by_user
+        ? {
+          id: student.verified_by_user.id,
+          email: student.verified_by_user.email,
+          role: student.verified_by_user.role,
+        }
+        : null,
       verificationExpiresAt: student.verification_expires_at,
       createdAt: student.created_at,
       updatedAt: student.updated_at,
@@ -670,6 +691,13 @@ export class StudentsService {
       totalRedemptions: student.total_redemptions || 0,
       verificationStatus: student.verification_status,
       verifiedAt: student.verified_at,
+      verifiedBy: student.verified_by_user
+        ? {
+          id: student.verified_by_user.id,
+          email: student.verified_by_user.email,
+          role: student.verified_by_user.role,
+        }
+        : null,
       verificationExpiresAt: student.verification_expires_at,
       createdAt: student.created_at,
       updatedAt: student.updated_at,

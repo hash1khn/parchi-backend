@@ -31,7 +31,7 @@ import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response
 
 @Controller('admin/students')
 export class AdminStudentsController {
-  constructor(private readonly studentsService: StudentsService) {}
+  constructor(private readonly studentsService: StudentsService) { }
 
   @Get('pending')
   @UseGuards(JwtAuthGuard, RolesGuard)

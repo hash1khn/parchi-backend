@@ -637,15 +637,18 @@ model students {
   updated_at               DateTime?                @default(now()) @db.Timestamptz(6)
   profile_picture          String?
   verification_selfie_path String?
+  verified_by              String?                  @db.Uuid
   redemptions              redemptions[]
   student_branch_stats     student_branch_stats[]
   student_kyc              student_kyc[]
   student_merchant_stats   student_merchant_stats[]
-  users                    public_users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                    public_users             @relation("student_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  verified_by_user         public_users?            @relation("verified_by", fields: [verified_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([parchi_id], map: "idx_students_parchi_id")
   @@index([user_id], map: "idx_students_user")
   @@index([verification_status], map: "idx_students_verification")
+  @@index([verified_by], map: "idx_students_verified_by")
   @@schema("public")
 }
 
@@ -673,7 +676,8 @@ model public_users {
   offers            offers[]
   redemptions       redemptions[]
   student_kyc       student_kyc[]
-  students          students?
+  students          students?          @relation("student_user")
+  verified_students students[]         @relation("verified_by")
   users             auth_users         @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("users")

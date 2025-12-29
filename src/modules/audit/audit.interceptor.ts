@@ -16,7 +16,7 @@ export class AuditInterceptor implements NestInterceptor {
   constructor(
     private readonly auditService: AuditService,
     private readonly reflector: Reflector,
-  ) {}
+  ) { }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
@@ -90,14 +90,29 @@ export class AuditInterceptor implements NestInterceptor {
                 userAgent,
               );
             } else if (isUpdate) {
-              // For approve/reject operations, enhance the logged data with action type and reviewer info
-              let enhancedNewValues = newValues || response?.data || response;
-              if (auditMetadata.action === 'APPROVE_REJECT_STUDENT' || 
-                  auditMetadata.action === 'APPROVE_REJECT_BRANCH' ||
-                  auditMetadata.action === 'APPROVE_REJECT_OFFER') {
+              // For approve/reject operations, enhance the logged data with student/entity details from response
+              let enhancedNewValues = newValues || request.body;
+
+              if (auditMetadata.action === 'APPROVE_REJECT_STUDENT') {
+                // Extract student data from the response
+                const studentData = response?.data || response;
+                enhancedNewValues = {
+                  action: request.body?.action, // 'approve' or 'reject'
+                  reviewerId: user?.id,
+                  reviewerEmail: user?.email,
+                  reviewNotes: request.body?.reviewNotes || null,
+                  // Add student details
+                  parchiId: studentData?.parchiId,
+                  firstName: studentData?.firstName,
+                  lastName: studentData?.lastName,
+                  university: studentData?.university,
+                  verificationStatus: studentData?.verificationStatus,
+                };
+              } else if (auditMetadata.action === 'APPROVE_REJECT_BRANCH' ||
+                auditMetadata.action === 'APPROVE_REJECT_OFFER') {
                 enhancedNewValues = {
                   ...enhancedNewValues,
-                  action: request.body?.action, // 'approve' or 'reject'
+                  action: request.body?.action,
                   reviewerId: user?.id,
                   reviewerEmail: user?.email,
                   reviewNotes: request.body?.reviewNotes || null,
