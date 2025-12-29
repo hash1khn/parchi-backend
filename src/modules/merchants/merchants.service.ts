@@ -204,12 +204,10 @@ export class MerchantsService {
 
   /**
    * Get corporate account by ID
-   * Admin: can view any corporate account
-   * Corporate: can only view their own account
+   * Admin only
    */
   async getCorporateAccountById(
     id: string,
-    currentUser: CurrentUser,
   ): Promise<CorporateMerchantResponse> {
     const merchant = await this.prisma.merchants.findUnique({
       where: { id },
@@ -225,15 +223,6 @@ export class MerchantsService {
     // Verify it's a corporate account
     if (merchant.users.role !== ROLES.MERCHANT_CORPORATE) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
-    }
-
-    // Authorization check: merchants can only view their own account
-    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant?.id || currentUser.merchant.id !== id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
-        );
-      }
     }
 
     const formattedMerchant: CorporateMerchantResponse = {
