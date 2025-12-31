@@ -82,6 +82,7 @@ export const API_RESPONSE_MESSAGES = {
     APPROVE_SUCCESS: 'Student approved successfully',
     REJECT_SUCCESS: 'Student rejected successfully',
     INVALID_ID: 'Invalid student ID',
+    LEADERBOARD_SUCCESS: 'Leaderboard retrieved successfully',
   },
   // Redemption messages
   REDEMPTION: {

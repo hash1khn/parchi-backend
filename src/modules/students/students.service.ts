@@ -723,5 +723,62 @@ export class StudentsService {
         : null,
     };
   }
+
+  /**
+   * Get leaderboard of students ranked by total redemptions
+   * Returns students ordered by total_redemptions descending
+   */
+  async getLeaderboard(
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<{
+    items: Array<{
+      rank: number;
+      name: string;
+      university: string;
+      redemptions: number;
+    }>;
+    pagination: PaginationMeta;
+  }> {
+    const skip = calculateSkip(page, limit);
+
+    // Get total count of verified students
+    const total = await this.prisma.students.count({
+      where: {
+        verification_status: 'approved',
+      },
+    });
+
+    // Get students ordered by total_redemptions descending
+    const students = await this.prisma.students.findMany({
+      where: {
+        verification_status: 'approved',
+      },
+      select: {
+        first_name: true,
+        last_name: true,
+        university: true,
+        total_redemptions: true,
+      },
+      orderBy: {
+        total_redemptions: 'desc',
+      },
+      skip,
+      take: limit,
+    });
+
+    // Calculate rank based on skip + index + 1
+    const items = students.map((student, index) => ({
+      rank: skip + index + 1,
+      name: `${student.first_name} ${student.last_name}`,
+      university: student.university,
+      redemptions: student.total_redemptions || 0,
+    }));
+
+    return {
+      items,
+      pagination: calculatePaginationMeta(total, page, limit),
+    };
+  }
 }
 
