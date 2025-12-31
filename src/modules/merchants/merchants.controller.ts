@@ -77,7 +77,7 @@ export class MerchantsController {
 
   @Get('corporate/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.ADMIN)
+  @Roles(ROLES.ADMIN,ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async getCorporateAccountById(@Param('id') id: string) {
     const data = await this.merchantsService.getCorporateAccountById(id);
