@@ -61,7 +61,6 @@ export interface BonusSettingsResponse {
   discountType: string;
   discountValue: number;
   maxDiscountAmount: number | null;
-  additionalItem: string | null;
   validityDays: number | null;
   isActive: boolean | null;
   imageUrl: string | null;
@@ -88,7 +87,6 @@ export interface BranchWithBonusSettings {
     redemptionsRequired: number;
     currentRedemptions?: number;
     discountDescription: string;
-    additionalItem: string | null;
     isActive: boolean;
   } | null;
   offers: BranchOffer[];
@@ -867,19 +865,28 @@ export class MerchantsService {
 
   /**
    * Get branch assignments (active offers and bonus settings)
-   * Corporate only
+   * Corporate and Admin
    */
   async getBranchAssignments(
     currentUser: CurrentUser,
   ): Promise<BranchAssignmentResponse[]> {
-    if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
+    // Build where clause based on user role
+    let whereClause: Prisma.merchant_branchesWhereInput = {};
+
+    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      if (!currentUser.merchant?.id) {
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+      }
+      whereClause.merchant_id = currentUser.merchant.id;
+    } else if (currentUser.role === ROLES.ADMIN) {
+      // Admin can see all branch assignments
+      // No filter needed - will return all branches
+    } else {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
 
     const branches = await this.prisma.merchant_branches.findMany({
-      where: {
-        merchant_id: currentUser.merchant.id,
-      },
+      where: whereClause,
       select: {
         id: true,
         branch_name: true,
@@ -915,24 +922,29 @@ export class MerchantsService {
 
   /**
    * Assign offers to a branch (Manage offer_branches)
-   * Corporate only
+   * Corporate and Admin
    */
   async assignOffersToBranch(
     branchId: string,
     dto: AssignOffersDto,
     currentUser: CurrentUser,
   ): Promise<BranchAssignmentResponse> {
-    if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
-      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
-    }
-
-    // Verify branch ownership
+    // Verify branch exists
     const branch = await this.prisma.merchant_branches.findUnique({
       where: { id: branchId },
     });
 
-    if (!branch || branch.merchant_id !== currentUser.merchant.id) {
+    if (!branch) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.BRANCH_NOT_FOUND);
+    }
+
+    // Authorization check
+    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      if (!currentUser.merchant?.id || branch.merchant_id !== currentUser.merchant.id) {
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+      }
+    } else if (currentUser.role !== ROLES.ADMIN) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
 
     // Verify offers exist and belong to merchant
@@ -940,15 +952,30 @@ export class MerchantsService {
     // If bonusOfferId was passed, we ignore it or treat it as another active offer if intended.
     // For now, we only focus on standardOfferId as the primary active offer.
 
-    const count = await this.prisma.offers.count({
-      where: {
-        id: { in: offerIds },
-        merchant_id: currentUser.merchant.id,
-      },
-    });
+    // For admin, verify offer exists. For corporate, verify it belongs to them.
+    let count: number;
+    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      count = await this.prisma.offers.count({
+        where: {
+          id: { in: offerIds },
+          merchant_id: currentUser.merchant!.id, // Safe because we checked above
+        },
+      });
+    } else {
+      // Admin - just verify offer exists and belongs to same merchant as branch
+      count = await this.prisma.offers.count({
+        where: {
+          id: { in: offerIds },
+          merchant_id: branch.merchant_id,
+        },
+      });
+    }
 
     if (count !== offerIds.length) {
-      throw new BadRequestException('One or more offers not found or do not belong to you');
+      const message = currentUser.role === ROLES.ADMIN
+        ? 'One or more offers not found or do not belong to this merchant'
+        : 'One or more offers not found or do not belong to you';
+      throw new BadRequestException(message);
     }
 
     // Transaction to update offer_branches
@@ -997,23 +1024,28 @@ export class MerchantsService {
 
   /**
    * Get bonus settings for a branch
-   * Corporate only
+   * Corporate and Admin
    */
   async getBranchBonusSettings(
     branchId: string,
     currentUser: CurrentUser,
   ): Promise<BonusSettingsResponse> {
-    if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
-      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
-    }
-
-    // Verify branch ownership
+    // Verify branch exists
     const branch = await this.prisma.merchant_branches.findUnique({
       where: { id: branchId },
     });
 
-    if (!branch || branch.merchant_id !== currentUser.merchant.id) {
+    if (!branch) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.BRANCH_NOT_FOUND);
+    }
+
+    // Authorization check
+    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      if (!currentUser.merchant?.id || branch.merchant_id !== currentUser.merchant.id) {
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+      }
+    } else if (currentUser.role !== ROLES.ADMIN) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
 
     const settings = await this.prisma.branch_bonus_settings.findUnique({
@@ -1027,7 +1059,6 @@ export class MerchantsService {
         discountType: 'percentage',
         discountValue: 0,
         maxDiscountAmount: null,
-        additionalItem: null,
         validityDays: 30,
         isActive: true,
         imageUrl: null,
@@ -1039,7 +1070,6 @@ export class MerchantsService {
       discountType: settings.discount_type,
       discountValue: Number(settings.discount_value),
       maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
-      additionalItem: settings.additional_item,
       validityDays: settings.validity_days,
       isActive: settings.is_active,
       imageUrl: settings.image_url,
@@ -1048,24 +1078,29 @@ export class MerchantsService {
 
   /**
    * Update bonus settings for a branch
-   * Corporate only
+   * Corporate and Admin
    */
   async updateBranchBonusSettings(
     branchId: string,
     dto: UpdateBonusSettingsDto,
     currentUser: CurrentUser,
   ): Promise<BonusSettingsResponse> {
-    if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant?.id) {
-      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
-    }
-
-    // Verify branch ownership
+    // Verify branch exists
     const branch = await this.prisma.merchant_branches.findUnique({
       where: { id: branchId },
     });
 
-    if (!branch || branch.merchant_id !== currentUser.merchant.id) {
+    if (!branch) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.BRANCH_NOT_FOUND);
+    }
+
+    // Authorization check
+    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      if (!currentUser.merchant?.id || branch.merchant_id !== currentUser.merchant.id) {
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+      }
+    } else if (currentUser.role !== ROLES.ADMIN) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
 
     // If discount type is 'item', set discount_value to 0
@@ -1080,7 +1115,6 @@ export class MerchantsService {
         discount_type: dto.discountType,
         discount_value: discountValue,
         max_discount_amount: maxDiscountAmount,
-        additional_item: dto.additionalItem,
         validity_days: dto.validityDays,
         is_active: dto.isActive,
         image_url: dto.imageUrl,
@@ -1091,7 +1125,6 @@ export class MerchantsService {
         discount_type: dto.discountType,
         discount_value: discountValue,
         max_discount_amount: maxDiscountAmount,
-        additional_item: dto.additionalItem,
         validity_days: dto.validityDays,
         is_active: dto.isActive,
         image_url: dto.imageUrl,
@@ -1103,7 +1136,6 @@ export class MerchantsService {
       discountType: settings.discount_type,
       discountValue: Number(settings.discount_value),
       maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
-      additionalItem: settings.additional_item,
       validityDays: settings.validity_days,
       isActive: settings.is_active,
       imageUrl: settings.image_url,
@@ -1509,7 +1541,7 @@ export class MerchantsService {
     // Include both branch-specific offers and global offers (no branch assignments)
     const now = new Date();
     const branchIds = branches.map((b) => b.id);
-    
+
     const offers = await this.prisma.offers.findMany({
       where: {
         merchant_id: merchantId,
@@ -1552,7 +1584,7 @@ export class MerchantsService {
 
     // Create a map of branch_id -> offers for that branch
     const branchOffersMap = new Map<string, BranchOffer[]>();
-    
+
     // Initialize map with empty arrays for all branches
     branches.forEach((branch) => {
       branchOffersMap.set(branch.id, []);
@@ -1607,9 +1639,6 @@ export class MerchantsService {
           discountDescription = `${settings.discount_value}% OFF`;
         } else if (settings.discount_type === 'fixed') {
           discountDescription = `Rs. ${settings.discount_value} OFF`;
-        } else if (settings.discount_type === 'item') {
-          // Item type - show additional item instead of discount
-          discountDescription = settings.additional_item || 'Additional Item';
         } else {
           discountDescription = 'Bonus Reward';
         }
@@ -1618,7 +1647,6 @@ export class MerchantsService {
           redemptionsRequired: settings.redemptions_required,
           currentRedemptions,
           discountDescription,
-          additionalItem: settings.additional_item,
           isActive: settings.is_active ?? true,
         };
       }

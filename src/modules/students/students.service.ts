@@ -29,7 +29,6 @@ export interface StudentVerificationResponse {
     discountType: string;
     discountValue: number;
     maxDiscountAmount: number | null;
-    additionalItem: string | null;
     isBonus: boolean;
   } | null;
 }
@@ -308,7 +307,6 @@ export class StudentsService {
           discount_type: true,
           discount_value: true,
           max_discount_amount: true,
-          additional_item: true,
         },
       }),
       // 3. Get active default offer for the branch
@@ -369,7 +367,6 @@ export class StudentsService {
       discount_type: string;
       discount_value: any; // Prisma Decimal type
       max_discount_amount: any | null; // Prisma Decimal type
-      additional_item: string | null;
     } | null,
     defaultOffer: {
       id: string;
@@ -386,7 +383,6 @@ export class StudentsService {
     discountType: string;
     discountValue: number;
     maxDiscountAmount: number | null;
-    additionalItem: string | null;
     isBonus: boolean;
   } | null {
     if (!defaultOffer) {
@@ -409,7 +405,6 @@ export class StudentsService {
         maxDiscountAmount: bonusSettings.max_discount_amount
           ? Number(bonusSettings.max_discount_amount)
           : null,
-        additionalItem: bonusSettings.additional_item,
         isBonus: true,
       };
     }
@@ -424,7 +419,6 @@ export class StudentsService {
       maxDiscountAmount: defaultOffer.max_discount_amount
         ? Number(defaultOffer.max_discount_amount)
         : null,
-      additionalItem: null, // Default offers don't have additional items
       isBonus: false,
     };
   }

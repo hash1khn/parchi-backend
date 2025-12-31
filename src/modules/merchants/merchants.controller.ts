@@ -160,7 +160,7 @@ export class MerchantsController {
 
   @Get('branches/:branchId/bonus-settings')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.MERCHANT_CORPORATE)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async getBranchBonusSettings(
     @Param('branchId') branchId: string,
@@ -172,7 +172,7 @@ export class MerchantsController {
 
   @Put('branches/:branchId/bonus-settings')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.MERCHANT_CORPORATE)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   @Audit({ action: 'UPDATE_BRANCH_BONUS_SETTINGS', tableName: 'branch_bonus_settings', recordIdParam: 'branchId' })
   async updateBranchBonusSettings(
@@ -188,7 +188,7 @@ export class MerchantsController {
 
   @Get('branches/assignments')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.MERCHANT_CORPORATE)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async getBranchAssignments(@CurrentUser() currentUser: ICurrentUser) {
     const data = await this.merchantsService.getBranchAssignments(currentUser);
@@ -197,7 +197,7 @@ export class MerchantsController {
 
   @Post('branches/:id/assign')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.MERCHANT_CORPORATE)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async assignOffersToBranch(
     @Param('id') id: string,
