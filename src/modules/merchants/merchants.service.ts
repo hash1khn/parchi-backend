@@ -1068,13 +1068,18 @@ export class MerchantsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.BRANCH_NOT_FOUND);
     }
 
+    // If discount type is 'item', set discount_value to 0
+    const discountValue = dto.discountType === 'item' ? 0 : dto.discountValue;
+    // If discount type is 'item', set max_discount_amount to null
+    const maxDiscountAmount = dto.discountType === 'item' ? null : dto.maxDiscountAmount;
+
     const settings = await this.prisma.branch_bonus_settings.upsert({
       where: { branch_id: branchId },
       update: {
         redemptions_required: dto.redemptionsRequired,
         discount_type: dto.discountType,
-        discount_value: dto.discountValue,
-        max_discount_amount: dto.maxDiscountAmount,
+        discount_value: discountValue,
+        max_discount_amount: maxDiscountAmount,
         additional_item: dto.additionalItem,
         validity_days: dto.validityDays,
         is_active: dto.isActive,
@@ -1084,8 +1089,8 @@ export class MerchantsService {
         branch_id: branchId,
         redemptions_required: dto.redemptionsRequired,
         discount_type: dto.discountType,
-        discount_value: dto.discountValue,
-        max_discount_amount: dto.maxDiscountAmount,
+        discount_value: discountValue,
+        max_discount_amount: maxDiscountAmount,
         additional_item: dto.additionalItem,
         validity_days: dto.validityDays,
         is_active: dto.isActive,
