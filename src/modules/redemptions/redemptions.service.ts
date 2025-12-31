@@ -58,23 +58,8 @@ export interface RedemptionResponse {
 
 export interface RedemptionStatsResponse {
   totalRedemptions: number;
-  totalSavings: number;
-  verifiedRedemptions: number;
-  pendingRedemptions: number;
-  rejectedRedemptions: number;
-  topMerchants: Array<{
-    merchantId: string;
-    merchantName: string;
-    redemptionCount: number;
-    totalSavings: number;
-  }>;
-  topBranches: Array<{
-    branchId: string;
-    branchName: string;
-    redemptionCount: number;
-    totalSavings: number;
-  }>;
-  recentRedemptions: RedemptionResponse[];
+  bonusesUnlocked: number;
+  leaderboardPosition: number;
 }
 
 @Injectable()
@@ -1331,117 +1316,31 @@ export class RedemptionsService {
       );
     }
 
-    const [
-      totalRedemptions,
-      verifiedRedemptions,
-      rejectedRedemptions,
-      topMerchants,
-      topBranches,
-      recentRedemptions,
-    ] = await Promise.all([
-      this.prisma.redemptions.count({
-        where: { student_id: student.id },
-      }),
-      this.prisma.redemptions.count({
-        where: {
-          student_id: student.id,
-          verified_by: { not: null },
+    // 1. Total Redemptions
+    const totalRedemptions = student.total_redemptions || 0;
+
+    // 2. Bonuses Unlocked
+    const bonusesUnlocked = await this.prisma.redemptions.count({
+      where: {
+        student_id: student.id,
+        is_bonus_applied: true,
+      },
+    });
+
+    // 3. Leaderboard Position (Rank based on total_savings)
+    const higherSavingsCount = await this.prisma.students.count({
+      where: {
+        total_savings: {
+          gt: student.total_savings || 0,
         },
-      }),
-      this.prisma.redemptions.count({
-        where: {
-          student_id: student.id,
-          notes: { contains: 'REJECTED', mode: 'insensitive' },
-        },
-      }),
-      this.prisma.student_merchant_stats.findMany({
-        where: { student_id: student.id },
-        include: {
-          merchants: {
-            select: {
-              id: true,
-              business_name: true,
-            },
-          },
-        },
-        orderBy: {
-          redemption_count: 'desc',
-        },
-        take: 5,
-      }),
-      this.prisma.student_branch_stats.findMany({
-        where: { student_id: student.id },
-        include: {
-          merchant_branches: {
-            select: {
-              id: true,
-              branch_name: true,
-            },
-          },
-        },
-        orderBy: {
-          redemption_count: 'desc',
-        },
-        take: 5,
-      }),
-      this.prisma.redemptions.findMany({
-        where: { student_id: student.id },
-        include: {
-          offers: {
-            select: {
-              id: true,
-              title: true,
-              discount_type: true,
-              discount_value: true,
-              image_url: true,
-            },
-          },
-          merchant_branches: {
-            select: {
-              id: true,
-              branch_name: true,
-              address: true,
-              city: true,
-              merchants: {
-                select: {
-                  id: true,
-                  business_name: true,
-                  logo_path: true,
-                  category: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: {
-          created_at: 'desc',
-        },
-        take: 5,
-      }),
-    ]);
+      },
+    });
+    const leaderboardPosition = higherSavingsCount + 1;
 
     return {
       totalRedemptions,
-      totalSavings: Number(student.total_savings || 0),
-      verifiedRedemptions,
-      pendingRedemptions:
-        totalRedemptions - verifiedRedemptions - rejectedRedemptions,
-      rejectedRedemptions,
-      topMerchants: topMerchants.map((stat) => ({
-        merchantId: stat.merchant_id,
-        merchantName: stat.merchants.business_name,
-        redemptionCount: stat.redemption_count || 0,
-        totalSavings: Number(stat.total_savings || 0),
-      })),
-      topBranches: topBranches.map((stat) => ({
-        branchId: stat.branch_id,
-        branchName: stat.merchant_branches.branch_name,
-        redemptionCount: stat.redemption_count || 0,
-        totalSavings: Number(stat.total_savings || 0),
-      })),
-      recentRedemptions: recentRedemptions.map((r) =>
-        this.formatRedemptionResponse(r),
-      ),
+      bonusesUnlocked,
+      leaderboardPosition,
     };
   }
 
