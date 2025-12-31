@@ -61,6 +61,7 @@ export interface BonusSettingsResponse {
   discountType: string;
   discountValue: number;
   maxDiscountAmount: number | null;
+  additionalItem: string | null;
   validityDays: number | null;
   isActive: boolean | null;
   imageUrl: string | null;
@@ -87,6 +88,7 @@ export interface BranchWithBonusSettings {
     redemptionsRequired: number;
     currentRedemptions?: number;
     discountDescription: string;
+    additionalItem: string | null;
     isActive: boolean;
   } | null;
   offers: BranchOffer[];
@@ -1025,6 +1027,7 @@ export class MerchantsService {
         discountType: 'percentage',
         discountValue: 0,
         maxDiscountAmount: null,
+        additionalItem: null,
         validityDays: 30,
         isActive: true,
         imageUrl: null,
@@ -1036,6 +1039,7 @@ export class MerchantsService {
       discountType: settings.discount_type,
       discountValue: Number(settings.discount_value),
       maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
+      additionalItem: settings.additional_item,
       validityDays: settings.validity_days,
       isActive: settings.is_active,
       imageUrl: settings.image_url,
@@ -1071,6 +1075,7 @@ export class MerchantsService {
         discount_type: dto.discountType,
         discount_value: dto.discountValue,
         max_discount_amount: dto.maxDiscountAmount,
+        additional_item: dto.additionalItem,
         validity_days: dto.validityDays,
         is_active: dto.isActive,
         image_url: dto.imageUrl,
@@ -1081,6 +1086,7 @@ export class MerchantsService {
         discount_type: dto.discountType,
         discount_value: dto.discountValue,
         max_discount_amount: dto.maxDiscountAmount,
+        additional_item: dto.additionalItem,
         validity_days: dto.validityDays,
         is_active: dto.isActive,
         image_url: dto.imageUrl,
@@ -1092,6 +1098,7 @@ export class MerchantsService {
       discountType: settings.discount_type,
       discountValue: Number(settings.discount_value),
       maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
+      additionalItem: settings.additional_item,
       validityDays: settings.validity_days,
       isActive: settings.is_active,
       imageUrl: settings.image_url,
@@ -1590,15 +1597,23 @@ export class MerchantsService {
 
       if (branch.branch_bonus_settings) {
         const settings = branch.branch_bonus_settings;
-        const discountDescription =
-          settings.discount_type === 'percentage'
-            ? `${settings.discount_value}% OFF`
-            : `Rs. ${settings.discount_value} OFF`;
+        let discountDescription: string;
+        if (settings.discount_type === 'percentage') {
+          discountDescription = `${settings.discount_value}% OFF`;
+        } else if (settings.discount_type === 'fixed') {
+          discountDescription = `Rs. ${settings.discount_value} OFF`;
+        } else if (settings.discount_type === 'item') {
+          // Item type - show additional item instead of discount
+          discountDescription = settings.additional_item || 'Additional Item';
+        } else {
+          discountDescription = 'Bonus Reward';
+        }
 
         bonusSettings = {
           redemptionsRequired: settings.redemptions_required,
           currentRedemptions,
           discountDescription,
+          additionalItem: settings.additional_item,
           isActive: settings.is_active ?? true,
         };
       }

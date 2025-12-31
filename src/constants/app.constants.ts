@@ -27,6 +27,7 @@ export type OfferStatus = typeof OFFER_STATUS[keyof typeof OFFER_STATUS];
 export const DISCOUNT_TYPE = {
   PERCENTAGE: 'percentage',
   FIXED: 'fixed',
+  ITEM: 'item',
 } as const;
 
 export type DiscountType = typeof DISCOUNT_TYPE[keyof typeof DISCOUNT_TYPE];

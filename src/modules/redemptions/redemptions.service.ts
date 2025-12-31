@@ -378,9 +378,12 @@ export class RedemptionsService {
                   Number(bonusSettings.max_discount_amount),
                 );
               }
-            } else {
+            } else if (bonusSettings.discount_type === 'fixed') {
               // Fixed amount
               bonusDiscountApplied = Number(bonusSettings.discount_value);
+            } else if (bonusSettings.discount_type === 'item') {
+              // Item type - no discount, just additional item
+              bonusDiscountApplied = 0;
             }
           }
         }

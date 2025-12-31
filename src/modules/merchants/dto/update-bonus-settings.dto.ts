@@ -6,7 +6,7 @@ export class UpdateBonusSettingsDto {
   redemptionsRequired: number;
 
   @IsString()
-  @IsIn(['percentage', 'fixed'])
+  @IsIn(['percentage', 'fixed', 'item'])
   discountType: string;
 
   @IsNumber()
@@ -30,4 +30,8 @@ export class UpdateBonusSettingsDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  additionalItem?: string;
 }
