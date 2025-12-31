@@ -9,6 +9,7 @@ import { OffersModule } from './modules/offers/offers.module';
 import { StudentsModule } from './modules/students/students.module';
 import { RedemptionsModule } from './modules/redemptions/redemptions.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module';
 
 @Module({
   imports: [
@@ -20,8 +21,9 @@ import { AuditModule } from './modules/audit/audit.module';
     OffersModule,
     StudentsModule,
     RedemptionsModule,
+    AdminDashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }
