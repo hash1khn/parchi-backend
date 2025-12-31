@@ -77,7 +77,7 @@ export class MerchantsController {
 
   @Get('corporate/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.ADMIN,ROLES.MERCHANT_CORPORATE)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
   async getCorporateAccountById(@Param('id') id: string) {
     const data = await this.merchantsService.getCorporateAccountById(id);
@@ -156,7 +156,7 @@ export class MerchantsController {
     return createApiResponse(data, 'Offer performance retrieved successfully');
   }
 
-  // ========== Bonus Settings Endpoints (Corporate Only) ==========
+  // ========== Bonus Settings Endpoints (Corporate & Admin) ==========
 
   @Get('branches/:branchId/bonus-settings')
   @UseGuards(JwtAuthGuard, RolesGuard)
