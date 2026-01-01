@@ -61,7 +61,6 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
-  @Audit({ action: 'SET_FEATURED_BRANDS', tableName: 'merchants' })
   async setFeaturedBrands(@Body() setFeaturedBrandsDto: SetFeaturedBrandsDto) {
     const data = await this.merchantsService.setFeaturedBrands(setFeaturedBrandsDto);
     return createApiResponse(data, 'Featured brands updated successfully');
