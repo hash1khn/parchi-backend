@@ -111,7 +111,7 @@ export class AdminDashboardService {
         // Total redemptions
         const totalRedemptions = await this.prisma.redemptions.count();
 
-        
+
 
         return {
             totalActiveStudents,
@@ -150,11 +150,11 @@ export class AdminDashboardService {
         };
     }
 
-    
+
 
     private async getTopMerchants() {
-        // Get top 10 merchants by redemption count
-        const topMerchants = await this.prisma.merchants.findMany({
+        // Get all approved merchants with their branch redemptions
+        const merchants = await this.prisma.merchants.findMany({
             where: {
                 verification_status: 'approved',
             },
@@ -165,6 +165,8 @@ export class AdminDashboardService {
                 logo_path: true,
                 merchant_branches: {
                     select: {
+                        id: true,
+                        branch_name: true,
                         redemptions: {
                             select: {
                                 id: true,
@@ -175,23 +177,31 @@ export class AdminDashboardService {
             },
         });
 
-        // Calculate redemption counts and sort
-        const merchantsWithCounts = topMerchants
+        // Calculate redemption counts and format response
+        const merchantsWithCounts = merchants
             .map((merchant) => {
-                const redemptionCount = merchant.merchant_branches.reduce(
-                    (total, branch) => total + branch.redemptions.length,
+                const branches = merchant.merchant_branches.map((branch) => ({
+                    id: branch.id,
+                    branchName: branch.branch_name,
+                    redemptionCount: branch.redemptions.length,
+                })).sort((a, b) => b.redemptionCount - a.redemptionCount);
+
+                const redemptionCount = branches.reduce(
+                    (total, branch) => total + branch.redemptionCount,
                     0,
                 );
+
                 return {
                     id: merchant.id,
                     businessName: merchant.business_name,
                     redemptionCount,
                     category: merchant.category,
                     logoPath: merchant.logo_path,
+                    branches,
                 };
             })
-            .sort((a, b) => b.redemptionCount - a.redemptionCount)
-            .slice(0, 10);
+            .sort((a, b) => b.redemptionCount - a.redemptionCount);
+        // Limit removed to show all merchants as requested
 
         return merchantsWithCounts;
     }
