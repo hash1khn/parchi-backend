@@ -14,6 +14,7 @@ import { ROLES } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
 import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
+import { SetFeaturedBrandsDto } from './dto/set-featured-brands.dto';
 
 export interface CorporateMerchantResponse {
   id: string;
@@ -171,6 +172,7 @@ export class MerchantsService {
   /**
    * Get all active brands (corporate merchants)
    * Accessible by students
+   * Featured brands (with featured_order 1-6) are shown first, then others alphabetically
    */
   async getAllBrands(): Promise<Partial<CorporateMerchantResponse>[]> {
     const brands = await this.prisma.merchants.findMany({
@@ -186,10 +188,26 @@ export class MerchantsService {
         business_name: true,
         logo_path: true,
         category: true,
+        featured_order: true,
       },
-      orderBy: {
-        business_name: 'asc',
-      },
+    });
+
+    // Sort: featured brands first (by featured_order 1-6), then others alphabetically
+    brands.sort((a, b) => {
+      // If both have featured_order, sort by featured_order
+      if (a.featured_order !== null && b.featured_order !== null) {
+        return a.featured_order - b.featured_order;
+      }
+      // If only a has featured_order, a comes first
+      if (a.featured_order !== null) {
+        return -1;
+      }
+      // If only b has featured_order, b comes first
+      if (b.featured_order !== null) {
+        return 1;
+      }
+      // Neither has featured_order, sort alphabetically
+      return a.business_name.localeCompare(b.business_name);
     });
 
     const formattedBrands = brands.map((brand) => ({
@@ -197,6 +215,7 @@ export class MerchantsService {
       businessName: brand.business_name,
       logoPath: brand.logo_path,
       category: brand.category,
+      featuredOrder: brand.featured_order,
     }));
 
     return formattedBrands;
@@ -1673,5 +1692,58 @@ export class MerchantsService {
       termsAndConditions: merchant.terms_and_conditions,
       branches: formattedBranches,
     };
+  }
+
+  /**
+   * Set featured brands (top 6 brands)
+   * Admin only
+   * Sets featured_order (1-6) for specified brands and clears it for others
+   */
+  async setFeaturedBrands(dto: SetFeaturedBrandsDto): Promise<{ message: string }> {
+    // Validate that all brand IDs exist and are corporate merchants
+    const brandIds = dto.brands.map((b) => b.brandId);
+    const existingBrands = await this.prisma.merchants.findMany({
+      where: {
+        id: { in: brandIds },
+        users: {
+          role: 'merchant_corporate',
+        },
+      },
+      select: { id: true },
+    });
+
+    if (existingBrands.length !== brandIds.length) {
+      throw new NotFoundException('One or more brands not found');
+    }
+
+    // Validate that orders are unique and within 1-6 range
+    const orders = dto.brands.map((b) => b.order);
+    const uniqueOrders = new Set(orders);
+    if (uniqueOrders.size !== orders.length) {
+      throw new BadRequestException('Featured orders must be unique (1-6)');
+    }
+
+    // Use transaction to update all brands
+    await this.prisma.$transaction(async (tx) => {
+      // First, clear all existing featured orders
+      await tx.merchants.updateMany({
+        where: {
+          featured_order: { not: null },
+        },
+        data: {
+          featured_order: null,
+        },
+      });
+
+      // Then, set the new featured orders
+      for (const brand of dto.brands) {
+        await tx.merchants.update({
+          where: { id: brand.brandId },
+          data: { featured_order: brand.order },
+        });
+      }
+    });
+
+    return { message: 'Featured brands updated successfully' };
   }
 }

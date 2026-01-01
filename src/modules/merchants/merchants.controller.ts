@@ -25,6 +25,7 @@ import { ApproveRejectBranchDto } from './dto/approve-reject-branch.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
+import { SetFeaturedBrandsDto } from './dto/set-featured-brands.dto';
 import { Audit } from '../../decorators/audit.decorator';
 import { createApiResponse } from '../../utils/serializer.util';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
@@ -49,11 +50,21 @@ export class MerchantsController {
 
   @Get('brands')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.STUDENT)
+  @Roles(ROLES.STUDENT, ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getAllBrands() {
     const data = await this.merchantsService.getAllBrands();
     return createApiResponse(data, 'Brands retrieved successfully');
+  }
+
+  @Put('brands/featured')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'SET_FEATURED_BRANDS', tableName: 'merchants' })
+  async setFeaturedBrands(@Body() setFeaturedBrandsDto: SetFeaturedBrandsDto) {
+    const data = await this.merchantsService.setFeaturedBrands(setFeaturedBrandsDto);
+    return createApiResponse(data, 'Featured brands updated successfully');
   }
 
   // Student endpoint for merchant details - placed before other :id routes
