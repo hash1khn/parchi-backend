@@ -6,7 +6,7 @@ import { AdminDashboardStatsResponse } from './dto/dashboard-stats-response.dto'
 export class AdminDashboardService {
     constructor(private readonly prisma: PrismaService) { }
 
-    async getDashboardStats(): Promise<AdminDashboardStatsResponse> {
+    async getDashboardStats(startDate?: Date, endDate?: Date): Promise<AdminDashboardStatsResponse> {
         // Run all queries in parallel for performance
         const [
             platformOverview,
@@ -16,9 +16,9 @@ export class AdminDashboardService {
             leaderboard,
             foundersClub,
         ] = await Promise.all([
-            this.getPlatformOverview(),
+            this.getPlatformOverview(startDate, endDate),
             this.getUserManagement(),
-            this.getTopMerchants(),
+            this.getTopMerchants(startDate, endDate),
             this.getUniversityDistribution(),
             this.getLeaderboardCount(),
             this.getFoundersClubCount(),
@@ -34,7 +34,7 @@ export class AdminDashboardService {
         };
     }
 
-    private async getPlatformOverview() {
+    private async getPlatformOverview(startDate?: Date, endDate?: Date) {
         const now = new Date();
         const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -108,10 +108,8 @@ export class AdminDashboardService {
                 ? ((thisMonthMerchants - lastMonthMerchants) / lastMonthMerchants) * 100
                 : 0;
 
-        // Total redemptions
+        // Total redemptions (All Time)
         const totalRedemptions = await this.prisma.redemptions.count();
-
-
 
         return {
             totalActiveStudents,
@@ -150,9 +148,15 @@ export class AdminDashboardService {
         };
     }
 
+    async getTopMerchants(startDate?: Date, endDate?: Date) {
+        // Prepare redemption filter
+        const redemptionWhere: any = {};
+        if (startDate || endDate) {
+            redemptionWhere.created_at = {};
+            if (startDate) redemptionWhere.created_at.gte = startDate;
+            if (endDate) redemptionWhere.created_at.lte = endDate;
+        }
 
-
-    private async getTopMerchants() {
         // Get all approved merchants with their branch redemptions
         const merchants = await this.prisma.merchants.findMany({
             where: {
@@ -168,6 +172,7 @@ export class AdminDashboardService {
                         id: true,
                         branch_name: true,
                         redemptions: {
+                            where: redemptionWhere,
                             select: {
                                 id: true,
                             },

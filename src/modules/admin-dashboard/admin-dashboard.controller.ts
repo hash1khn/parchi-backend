@@ -4,6 +4,7 @@ import {
     HttpCode,
     HttpStatus,
     UseGuards,
+    Query,
 } from '@nestjs/common';
 import { AdminDashboardService } from './admin-dashboard.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -20,11 +21,35 @@ export class AdminDashboardController {
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(ROLES.ADMIN)
     @HttpCode(HttpStatus.OK)
-    async getDashboardStats() {
-        const data = await this.adminDashboardService.getDashboardStats();
+    async getDashboardStats(
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+    ) {
+        const data = await this.adminDashboardService.getDashboardStats(
+            startDate ? new Date(startDate) : undefined,
+            endDate ? new Date(endDate) : undefined,
+        );
         return createApiResponse(
             data,
             'Dashboard statistics retrieved successfully',
+        );
+    }
+
+    @Get('top-merchants')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async getTopMerchants(
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+    ) {
+        const data = await this.adminDashboardService.getTopMerchants(
+            startDate ? new Date(startDate) : undefined,
+            endDate ? new Date(endDate) : undefined,
+        );
+        return createApiResponse(
+            data,
+            'Top merchants retrieved successfully',
         );
     }
 }
