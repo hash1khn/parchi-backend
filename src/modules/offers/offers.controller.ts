@@ -26,6 +26,7 @@ import { UpdateOfferDto } from './dto/update-offer.dto';
 import { AssignBranchesDto } from './dto/assign-branches.dto';
 import { QueryMerchantOffersDto } from './dto/query-merchant-offers.dto';
 import { QueryActiveOffersDto } from './dto/query-active-offers.dto';
+import { SetFeaturedOffersDto } from './dto/set-featured-offers.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { Audit } from '../../decorators/audit.decorator';
 import {
@@ -50,7 +51,11 @@ export class OffersController {
     @CurrentUser() currentUser: ICurrentUser,
   ) {
     const data = await this.offersService.createOffer(createDto, currentUser);
-    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.CREATE_SUCCESS, HttpStatus.CREATED);
+    return createApiResponse(
+      data,
+      API_RESPONSE_MESSAGES.OFFER.CREATE_SUCCESS,
+      HttpStatus.CREATED,
+    );
   }
 
   @Get()
@@ -82,9 +87,7 @@ export class OffersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
-  async getActiveOffers(
-    @Query() queryDto: QueryActiveOffersDto,
-  ) {
+  async getActiveOffers(@Query() queryDto: QueryActiveOffersDto) {
     const radius = queryDto.radius ?? 10;
     const page = queryDto.page ?? 1;
     const limit = queryDto.limit ?? 10;
@@ -109,7 +112,8 @@ export class OffersController {
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getOffersByMerchant(@Param('merchantId') merchantId: string) {
-    const data = await this.offersService.getOffersByMerchantForStudents(merchantId);
+    const data =
+      await this.offersService.getOffersByMerchantForStudents(merchantId);
     return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.LIST_SUCCESS);
   }
 
@@ -123,6 +127,25 @@ export class OffersController {
   }
 
   // ========== Merchant Corporate Account Endpoints (continued) ==========
+
+  @Get('featured')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT, ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async getFeaturedOffers() {
+    const data = await this.offersService.getFeaturedOffers();
+    return createApiResponse(data, 'Featured offers retrieved successfully');
+  }
+
+  @Put('featured')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async setFeaturedOffers(@Body() setFeaturedOffersDto: SetFeaturedOffersDto) {
+    const data =
+      await this.offersService.setFeaturedOffers(setFeaturedOffersDto);
+    return createApiResponse(data, 'Featured offers updated successfully');
+  }
 
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -146,7 +169,11 @@ export class OffersController {
     @Body() updateDto: UpdateOfferDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    const data = await this.offersService.updateOffer(id, updateDto, currentUser);
+    const data = await this.offersService.updateOffer(
+      id,
+      updateDto,
+      currentUser,
+    );
     return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.UPDATE_SUCCESS);
   }
 
@@ -154,7 +181,11 @@ export class OffersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
-  @Audit({ action: 'TOGGLE_OFFER_STATUS', tableName: 'offers', recordIdParam: 'id' })
+  @Audit({
+    action: 'TOGGLE_OFFER_STATUS',
+    tableName: 'offers',
+    recordIdParam: 'id',
+  })
   async toggleOfferStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
@@ -185,8 +216,15 @@ export class OffersController {
     @Body() assignDto: AssignBranchesDto,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
-    const data = await this.offersService.assignBranchesToOffer(id, assignDto, currentUser);
-    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.BRANCHES_ASSIGNED_SUCCESS);
+    const data = await this.offersService.assignBranchesToOffer(
+      id,
+      assignDto,
+      currentUser,
+    );
+    return createApiResponse(
+      data,
+      API_RESPONSE_MESSAGES.OFFER.BRANCHES_ASSIGNED_SUCCESS,
+    );
   }
 
   @Delete(':id/branches')
@@ -203,7 +241,10 @@ export class OffersController {
       assignDto,
       currentUser,
     );
-    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.BRANCHES_REMOVED_SUCCESS);
+    return createApiResponse(
+      data,
+      API_RESPONSE_MESSAGES.OFFER.BRANCHES_REMOVED_SUCCESS,
+    );
   }
 
   @Get(':id/analytics')
@@ -215,6 +256,9 @@ export class OffersController {
     @CurrentUser() currentUser: ICurrentUser,
   ) {
     const data = await this.offersService.getOfferAnalytics(id, currentUser);
-    return createApiResponse(data, API_RESPONSE_MESSAGES.OFFER.ANALYTICS_SUCCESS);
+    return createApiResponse(
+      data,
+      API_RESPONSE_MESSAGES.OFFER.ANALYTICS_SUCCESS,
+    );
   }
 }

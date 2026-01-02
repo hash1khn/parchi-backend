@@ -18,6 +18,7 @@ import {
   calculateSkip,
   PaginationMeta,
 } from '../../utils/pagination.util';
+import { SetFeaturedOffersDto } from './dto/set-featured-offers.dto';
 
 export interface OfferResponse {
   id: string;
@@ -54,6 +55,7 @@ export interface OfferResponse {
     logoPath: string | null;
     category: string | null;
   };
+  featuredOrder?: number | null;
 }
 
 export interface OfferAnalyticsResponse {
@@ -137,9 +139,7 @@ export class OffersService {
     } else if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       // Merchant corporate uses their own merchant ID
       if (!currentUser.merchant?.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
 
       // Merchant corporate should not provide merchantId
@@ -151,9 +151,7 @@ export class OffersService {
 
       merchantId = currentUser.merchant.id;
     } else {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
     // Validate date range
@@ -177,7 +175,7 @@ export class OffersService {
 
     // Validate branches if provided
     let targetBranchIds: string[] = [];
-    
+
     // Always get all merchant branches (ignoring createDto.branchIds as per new requirement)
     const allBranches = await this.prisma.merchant_branches.findMany({
       where: {
@@ -261,9 +259,7 @@ export class OffersService {
         const endTotal = endHours * 60 + endMinutes;
 
         if (endTotal <= startTotal) {
-          throw new BadRequestException(
-            'endTime must be after startTime',
-          );
+          throw new BadRequestException('endTime must be after startTime');
         }
       } else if (createDto.startTime || createDto.endTime) {
         throw new BadRequestException(
@@ -371,15 +367,11 @@ export class OffersService {
     limit: number = 10,
   ): Promise<{ items: OfferResponse[]; pagination: PaginationMeta }> {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
     if (!currentUser.merchant?.id) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
     const merchantId = currentUser.merchant.id;
@@ -470,19 +462,13 @@ export class OffersService {
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       if (!currentUser.merchant?.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
     } else if (currentUser.role !== ROLES.ADMIN) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
     return this.formatOfferResponse(offer);
@@ -512,19 +498,13 @@ export class OffersService {
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       if (!currentUser.merchant?.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
     } else if (currentUser.role !== ROLES.ADMIN) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
     // Validate date range if both dates are provided
@@ -570,7 +550,7 @@ export class OffersService {
     // Validate schedule fields if provided
     const offerScheduleType = offer.schedule_type ?? 'always';
     const newScheduleType = updateDto.scheduleType ?? offerScheduleType;
-    
+
     // If changing to 'custom', validate required fields
     if (newScheduleType === 'custom') {
       // Validate allowed days if provided
@@ -585,12 +565,18 @@ export class OffersService {
       }
 
       // If changing to custom or updating times, validate
-      const isChangingToCustom = updateDto.scheduleType === 'custom' && offerScheduleType !== 'custom';
-      const isUpdatingTimes = updateDto.startTime !== undefined || updateDto.endTime !== undefined;
-      
+      const isChangingToCustom =
+        updateDto.scheduleType === 'custom' && offerScheduleType !== 'custom';
+      const isUpdatingTimes =
+        updateDto.startTime !== undefined || updateDto.endTime !== undefined;
+
       if (isChangingToCustom || isUpdatingTimes) {
-        const startTime = updateDto.startTime ?? (offer.start_time ? this.formatTimeFromDate(offer.start_time) : null);
-        const endTime = updateDto.endTime ?? (offer.end_time ? this.formatTimeFromDate(offer.end_time) : null);
+        const startTime =
+          updateDto.startTime ??
+          (offer.start_time ? this.formatTimeFromDate(offer.start_time) : null);
+        const endTime =
+          updateDto.endTime ??
+          (offer.end_time ? this.formatTimeFromDate(offer.end_time) : null);
 
         if (!startTime || !endTime) {
           throw new BadRequestException(
@@ -604,9 +590,7 @@ export class OffersService {
         const endTotal = endHours * 60 + endMinutes;
 
         if (endTotal <= startTotal) {
-          throw new BadRequestException(
-            'endTime must be after startTime',
-          );
+          throw new BadRequestException('endTime must be after startTime');
         }
       }
     }
@@ -740,19 +724,13 @@ export class OffersService {
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       if (!currentUser.merchant?.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
     } else if (currentUser.role !== ROLES.ADMIN) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
     // Toggle status
@@ -792,10 +770,7 @@ export class OffersService {
    * Delete offer
    * Merchant Corporate only (their own offers)
    */
-  async deleteOffer(
-    id: string,
-    currentUser: CurrentUser,
-  ): Promise<null> {
+  async deleteOffer(id: string, currentUser: CurrentUser): Promise<null> {
     // Check if offer exists
     const offer = await this.prisma.offers.findUnique({
       where: { id },
@@ -808,19 +783,13 @@ export class OffersService {
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       if (!currentUser.merchant?.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
     } else if (currentUser.role !== ROLES.ADMIN) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
     // Delete offer (cascade will handle related records)
@@ -852,19 +821,13 @@ export class OffersService {
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       if (!currentUser.merchant?.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
     } else if (currentUser.role !== ROLES.ADMIN) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
     // Validate branches belong to the merchant
@@ -943,19 +906,13 @@ export class OffersService {
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       if (!currentUser.merchant?.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
     } else if (currentUser.role !== ROLES.ADMIN) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
     // Remove branch assignments
@@ -1007,19 +964,13 @@ export class OffersService {
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       if (!currentUser.merchant?.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant.id) {
-        throw new ForbiddenException(
-          API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-        );
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
     } else if (currentUser.role !== ROLES.ADMIN) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED,
-      );
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
     // Get redemptions by branch
@@ -1045,9 +996,7 @@ export class OffersService {
       },
     });
 
-    const branchMap = new Map(
-      branches.map((b) => [b.id, b.branch_name]),
-    );
+    const branchMap = new Map(branches.map((b) => [b.id, b.branch_name]));
 
     // Get redemptions by date (last 30 days)
     const thirtyDaysAgo = new Date();
@@ -1164,9 +1113,7 @@ export class OffersService {
    * Get offer by ID (Admin)
    * Admin only
    */
-  async getOfferByIdAdmin(
-    id: string,
-  ): Promise<OfferResponse> {
+  async getOfferByIdAdmin(id: string): Promise<OfferResponse> {
     const offer = await this.prisma.offers.findUnique({
       where: { id },
       include: {
@@ -1216,7 +1163,8 @@ export class OffersService {
     }
 
     // Update offer status
-    const status = approveRejectDto.action === 'approve' ? 'active' : 'inactive';
+    const status =
+      approveRejectDto.action === 'approve' ? 'active' : 'inactive';
 
     const updatedOffer = await this.prisma.offers.update({
       where: { id },
@@ -1280,7 +1228,10 @@ export class OffersService {
     sort?: 'popularity' | 'proximity' | 'newest',
     page: number = 1,
     limit: number = 10,
-  ): Promise<{ items: OfferResponseWithDistance[]; pagination: PaginationMeta }> {
+  ): Promise<{
+    items: OfferResponseWithDistance[];
+    pagination: PaginationMeta;
+  }> {
     const skip = calculateSkip(page, limit);
     const now = new Date();
 
@@ -1334,11 +1285,14 @@ export class OffersService {
     // Format offers and calculate distances if coordinates provided
     let formattedOffers: OfferResponseWithDistance[] = offers.map((offer) => {
       const formatted = this.formatOfferResponse(offer);
-      
+
       // Calculate minimum distance to any branch if coordinates provided
       if (latitude !== undefined && longitude !== undefined) {
         const distances = offer.offer_branches
-          .filter((ob) => ob.merchant_branches.latitude && ob.merchant_branches.longitude)
+          .filter(
+            (ob) =>
+              ob.merchant_branches.latitude && ob.merchant_branches.longitude,
+          )
           .map((ob) => {
             const branchLat = Number(ob.merchant_branches.latitude);
             const branchLng = Number(ob.merchant_branches.longitude);
@@ -1349,11 +1303,15 @@ export class OffersService {
               branchLng,
             );
           });
-        
-        const minDistance = distances.length > 0 ? Math.min(...distances) : undefined;
-        return { ...formatted, distance: minDistance } as OfferResponseWithDistance;
+
+        const minDistance =
+          distances.length > 0 ? Math.min(...distances) : undefined;
+        return {
+          ...formatted,
+          distance: minDistance,
+        } as OfferResponseWithDistance;
       }
-      
+
       return formatted as OfferResponseWithDistance;
     });
 
@@ -1366,8 +1324,14 @@ export class OffersService {
 
     // Sort offers
     if (sort === 'popularity') {
-      formattedOffers.sort((a, b) => b.currentRedemptions - a.currentRedemptions);
-    } else if (sort === 'proximity' && latitude !== undefined && longitude !== undefined) {
+      formattedOffers.sort(
+        (a, b) => b.currentRedemptions - a.currentRedemptions,
+      );
+    } else if (
+      sort === 'proximity' &&
+      latitude !== undefined &&
+      longitude !== undefined
+    ) {
       formattedOffers.sort((a, b) => {
         const distA = a.distance ?? Infinity;
         const distB = b.distance ?? Infinity;
@@ -1395,11 +1359,9 @@ export class OffersService {
    * Get offer details for students
    * Student only
    */
-  async getOfferDetailsForStudents(
-    id: string,
-  ): Promise<OfferDetailsResponse> {
+  async getOfferDetailsForStudents(id: string): Promise<OfferDetailsResponse> {
     const now = new Date();
-    
+
     const offer = await this.prisma.offers.findUnique({
       where: { id },
       include: {
@@ -1446,7 +1408,7 @@ export class OffersService {
     }
 
     const formatted = this.formatOfferResponse(offer);
-    
+
     // Format branches with full details
     const branches = offer.offer_branches.map((ob) => ({
       branchId: ob.merchant_branches.id,
@@ -1610,8 +1572,10 @@ export class OffersService {
       updatedAt: offer.updated_at,
       scheduleType: offer.schedule_type || 'always',
       allowedDays: offer.allowed_days || [],
-      startTime: formatTime(offer.start_time),
-      endTime: formatTime(offer.end_time),
+      startTime: offer.start_time
+        ? this.formatTimeFromDate(offer.start_time)
+        : null,
+      endTime: offer.end_time ? this.formatTimeFromDate(offer.end_time) : null,
       branches: offer.offer_branches
         ? offer.offer_branches.map((ob: any) => ({
             branchId: ob.merchant_branches.id,
@@ -1627,7 +1591,103 @@ export class OffersService {
             category: offer.merchants.category,
           }
         : undefined,
+      featuredOrder: offer.featured_order,
     };
   }
-}
 
+  /**
+   * Get all active featured offers
+   * Public / Student
+   * Returns top 6 featured offers sorted by order
+   */
+  async getFeaturedOffers(): Promise<OfferResponse[]> {
+    const offers = await this.prisma.offers.findMany({
+      where: {
+        status: 'active',
+        featured_order: { not: null },
+        valid_from: { lte: new Date() },
+        valid_until: { gte: new Date() },
+      },
+      include: {
+        offer_branches: {
+          include: {
+            merchant_branches: {
+              select: {
+                id: true,
+                branch_name: true,
+                is_active: true,
+              },
+            },
+          },
+        },
+        merchants: {
+          select: {
+            id: true,
+            business_name: true,
+            logo_path: true,
+            category: true,
+          },
+        },
+      },
+      orderBy: {
+        featured_order: 'asc',
+      },
+    });
+
+    return offers.map((offer) => this.formatOfferResponse(offer));
+  }
+
+  /**
+   * Set featured offers (top 6)
+   * Admin only
+   */
+  async setFeaturedOffers(
+    dto: SetFeaturedOffersDto,
+  ): Promise<{ message: string }> {
+    // Validate that all offer IDs exist and are active
+    const offerIds = dto.offers.map((o) => o.offerId);
+    const existingOffers = await this.prisma.offers.findMany({
+      where: {
+        id: { in: offerIds },
+        status: 'active',
+      },
+      select: { id: true },
+    });
+
+    if (existingOffers.length !== offerIds.length) {
+      throw new BadRequestException(
+        'One or more offers not found or are not active',
+      );
+    }
+
+    // Validate that orders are unique and within 1-6 range
+    const orders = dto.offers.map((o) => o.order);
+    const uniqueOrders = new Set(orders);
+    if (uniqueOrders.size !== orders.length) {
+      throw new BadRequestException('Featured orders must be unique (1-6)');
+    }
+
+    // Use transaction to update all offers
+    await this.prisma.$transaction(async (tx) => {
+      // First, clear all existing featured orders
+      await tx.offers.updateMany({
+        where: {
+          featured_order: { not: null },
+        },
+        data: {
+          featured_order: null,
+        },
+      });
+
+      // Then, set the new featured orders
+      for (const offer of dto.offers) {
+        await tx.offers.update({
+          where: { id: offer.offerId },
+          data: { featured_order: offer.order },
+        });
+      }
+    });
+
+    return { message: 'Featured offers updated successfully' };
+  }
+}
