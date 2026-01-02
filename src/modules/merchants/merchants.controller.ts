@@ -12,6 +12,8 @@ import {
   UseGuards,
   Post,
   ParseUUIDPipe,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -27,7 +29,7 @@ import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
 import { SetFeaturedBrandsDto } from './dto/set-featured-brands.dto';
 import { Audit } from '../../decorators/audit.decorator';
-import { createApiResponse } from '../../utils/serializer.util';
+import { createApiResponse, createPaginatedResponse } from '../../utils/serializer.util';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 
 @Controller('merchants')
@@ -64,6 +66,27 @@ export class MerchantsController {
   async setFeaturedBrands(@Body() setFeaturedBrandsDto: SetFeaturedBrandsDto) {
     const data = await this.merchantsService.setFeaturedBrands(setFeaturedBrandsDto);
     return createApiResponse(data, 'Featured brands updated successfully');
+  }
+
+  @Get('student/list')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async getMerchantsListForStudents(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('month') month?: string,
+  ) {
+    const data = await this.merchantsService.getAllMerchantsForStudents(
+      page,
+      limit,
+      month,
+    );
+    return createPaginatedResponse(
+      data.items,
+      data.pagination,
+      'Merchant list retrieved successfully',
+    );
   }
 
   // Student endpoint for merchant details - placed before other :id routes

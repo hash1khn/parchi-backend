@@ -15,6 +15,12 @@ import { CurrentUser } from '../../types/global.types';
 import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
 import { SetFeaturedBrandsDto } from './dto/set-featured-brands.dto';
+import {
+  calculatePaginationMeta,
+  normalizePaginationParams,
+  PaginationMeta,
+} from '../../utils/pagination.util';
+
 
 export interface CorporateMerchantResponse {
   id: string;
@@ -219,6 +225,115 @@ export class MerchantsService {
     }));
 
     return formattedBrands;
+  }
+
+  /**
+   * Get all merchants for students
+   * Returns a paginated list of merchants sorted by total redemptions for a specific month
+   */
+  async getAllMerchantsForStudents(
+    page: number = 1,
+    limit: number = 10,
+    month?: string,
+  ): Promise<{ items: any[]; pagination: PaginationMeta }> {
+    const { page: normalizedPage, limit: normalizedLimit } =
+      normalizePaginationParams(page, limit);
+
+    // Determine date range for redemption calculation
+    let targetDate = new Date();
+    if (month) {
+      // Assuming month is passed as YYYY-MM or YYYY-MM-DD
+      const parsedDate = new Date(month);
+      if (!isNaN(parsedDate.getTime())) {
+        targetDate = parsedDate;
+      }
+    }
+
+    // Start of month
+    const startDate = new Date(
+      targetDate.getFullYear(),
+      targetDate.getMonth(),
+      1,
+    );
+    // End of month
+    const endDate = new Date(
+      targetDate.getFullYear(),
+      targetDate.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
+
+    const merchants = await this.prisma.merchants.findMany({
+      where: {
+        verification_status: 'approved',
+        is_active: true,
+        users: {
+          role: 'merchant_corporate',
+        },
+      },
+      select: {
+        id: true,
+        business_name: true,
+        banner_url: true,
+        category: true,
+        offers: {
+          select: {
+            redemptions: {
+              where: {
+                created_at: {
+                  gte: startDate,
+                  lte: endDate,
+                },
+              },
+              select: {
+                id: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Calculate total redemptions for the period and sort
+    const merchantsWithRedemptions = merchants.map((merchant) => {
+      const totalRedemptions = merchant.offers.reduce(
+        (sum, offer) => sum + (offer.redemptions?.length || 0),
+        0,
+      );
+      return {
+        id: merchant.id,
+        businessName: merchant.business_name,
+        bannerUrl: merchant.banner_url,
+        category: merchant.category,
+        totalRedemptions,
+      };
+    });
+
+    // Sort by total redemptions (descending)
+    merchantsWithRedemptions.sort(
+      (a, b) => b.totalRedemptions - a.totalRedemptions,
+    );
+
+    // Manual Pagination
+    const totalItems = merchantsWithRedemptions.length;
+    const startIndex = (normalizedPage - 1) * normalizedLimit;
+    const endIndex = Math.min(startIndex + normalizedLimit, totalItems);
+
+    const paginatedItems = merchantsWithRedemptions.slice(startIndex, endIndex);
+
+    const pagination = calculatePaginationMeta(
+      totalItems,
+      normalizedPage,
+      normalizedLimit,
+    );
+
+    return {
+      items: paginatedItems,
+      pagination,
+    };
   }
 
   /**
