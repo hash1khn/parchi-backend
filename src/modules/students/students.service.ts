@@ -254,17 +254,13 @@ export class StudentsService {
     if (currentUser.role !== ROLES.MERCHANT_BRANCH || !currentUser.branch?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
-
     const branchId = currentUser.branch.id;
     const merchantId = currentUser.branch.merchant_id;
-
     if (!merchantId) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
-
     // Normalize parchi ID (uppercase, trim)
     const normalizedParchiId = parchiId.trim().toUpperCase();
-
     // Get student first (required for subsequent queries)
     const student = await this.prisma.students.findUnique({
       where: { parchi_id: normalizedParchiId },
@@ -278,11 +274,9 @@ export class StudentsService {
         verification_selfie_path: true,
       },
     });
-
     if (!student) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
-
     // Parallelize independent queries for better performance
     const now = new Date();
     const [studentStats, bonusSettings, defaultOffer] = await Promise.all([
@@ -307,6 +301,7 @@ export class StudentsService {
           discount_type: true,
           discount_value: true,
           max_discount_amount: true,
+          additional_item: true, // <--- ADDED THIS
         },
       }),
       // 3. Get active default offer for the branch
@@ -336,14 +331,12 @@ export class StudentsService {
         },
       }),
     ]);
-
     // Determine applicable offer
     const applicableOffer = this.determineApplicableOffer(
       studentStats,
       bonusSettings,
       defaultOffer,
     );
-
     return {
       parchiId: student.parchi_id,
       firstName: student.first_name,
@@ -354,7 +347,6 @@ export class StudentsService {
       offer: applicableOffer,
     };
   }
-
   /**
    * Determine the applicable offer based on student stats, bonus settings, and default offer
    * Returns bonus offer if eligible, otherwise default offer
@@ -367,6 +359,7 @@ export class StudentsService {
       discount_type: string;
       discount_value: any; // Prisma Decimal type
       max_discount_amount: any | null; // Prisma Decimal type
+      additional_item: string | null; // <--- ADDED THIS
     } | null,
     defaultOffer: {
       id: string;
@@ -383,17 +376,16 @@ export class StudentsService {
     discountType: string;
     discountValue: number;
     maxDiscountAmount: number | null;
+    additionalItem?: string | null; // <--- ADDED THIS
     isBonus: boolean;
   } | null {
     if (!defaultOffer) {
       return null;
     }
-
     const currentRedemptions = studentStats?.redemption_count ?? 0;
     const isBonusEligible =
       bonusSettings?.is_active === true &&
       (currentRedemptions + 1) % bonusSettings.redemptions_required === 0;
-
     if (isBonusEligible && bonusSettings) {
       // Construct bonus offer using bonus settings and default offer's validity
       return {
@@ -405,10 +397,10 @@ export class StudentsService {
         maxDiscountAmount: bonusSettings.max_discount_amount
           ? Number(bonusSettings.max_discount_amount)
           : null,
+        additionalItem: bonusSettings.additional_item, // <--- ADDED THIS
         isBonus: true,
       };
     }
-
     // Use default offer
     return {
       id: defaultOffer.id,
