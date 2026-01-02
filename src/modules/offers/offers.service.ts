@@ -54,6 +54,7 @@ export interface OfferResponse {
     businessName: string;
     logoPath: string | null;
     category: string | null;
+    bannerUrl: string | null;
   };
   featuredOrder?: number | null;
 }
@@ -92,7 +93,7 @@ export interface OfferDetailsResponse extends OfferResponse {
 
 @Injectable()
 export class OffersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Create a new offer
@@ -450,6 +451,7 @@ export class OffersService {
             business_name: true,
             logo_path: true,
             category: true,
+            banner_url: true,
           },
         },
       },
@@ -758,6 +760,7 @@ export class OffersService {
             business_name: true,
             logo_path: true,
             category: true,
+            banner_url: true,
           },
         },
       },
@@ -1085,6 +1088,7 @@ export class OffersService {
               business_name: true,
               logo_path: true,
               category: true,
+              banner_url: true,
             },
           },
         },
@@ -1134,6 +1138,7 @@ export class OffersService {
             business_name: true,
             logo_path: true,
             category: true,
+            banner_url: true,
           },
         },
       },
@@ -1187,6 +1192,7 @@ export class OffersService {
             business_name: true,
             logo_path: true,
             category: true,
+            banner_url: true,
           },
         },
       },
@@ -1277,6 +1283,7 @@ export class OffersService {
             business_name: true,
             logo_path: true,
             category: true,
+            banner_url: true,
           },
         },
       },
@@ -1389,6 +1396,7 @@ export class OffersService {
             business_name: true,
             logo_path: true,
             category: true,
+            banner_url: true,
           },
         },
       },
@@ -1477,6 +1485,7 @@ export class OffersService {
             business_name: true,
             logo_path: true,
             category: true,
+            banner_url: true,
           },
         },
       },
@@ -1508,9 +1517,9 @@ export class OffersService {
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(this.toRadians(lat1)) *
-        Math.cos(this.toRadians(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
+      Math.cos(this.toRadians(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   }
@@ -1578,18 +1587,19 @@ export class OffersService {
       endTime: offer.end_time ? this.formatTimeFromDate(offer.end_time) : null,
       branches: offer.offer_branches
         ? offer.offer_branches.map((ob: any) => ({
-            branchId: ob.merchant_branches.id,
-            branchName: ob.merchant_branches.branch_name,
-            isActive: ob.is_active,
-          }))
+          branchId: ob.merchant_branches.id,
+          branchName: ob.merchant_branches.branch_name,
+          isActive: ob.is_active,
+        }))
         : undefined,
       merchant: offer.merchants
         ? {
-            id: offer.merchants.id,
-            businessName: offer.merchants.business_name,
-            logoPath: offer.merchants.logo_path,
-            category: offer.merchants.category,
-          }
+          id: offer.merchants.id,
+          businessName: offer.merchants.business_name,
+          logoPath: offer.merchants.logo_path,
+          category: offer.merchants.category,
+          bannerUrl: offer.merchants.banner_url,
+        }
         : undefined,
       featuredOrder: offer.featured_order,
     };
@@ -1626,6 +1636,7 @@ export class OffersService {
             business_name: true,
             logo_path: true,
             category: true,
+            banner_url: true,
           },
         },
       },
