@@ -68,6 +68,7 @@ export interface BonusSettingsResponse {
   discountType: string;
   discountValue: number;
   maxDiscountAmount: number | null;
+  additionalItem: string | null;
   validityDays: number | null;
   isActive: boolean | null;
   imageUrl: string | null;
@@ -1193,6 +1194,7 @@ export class MerchantsService {
         discountType: 'percentage',
         discountValue: 0,
         maxDiscountAmount: null,
+        additionalItem: null,
         validityDays: 30,
         isActive: true,
         imageUrl: null,
@@ -1204,6 +1206,7 @@ export class MerchantsService {
       discountType: settings.discount_type,
       discountValue: Number(settings.discount_value),
       maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
+      additionalItem: settings.additional_item,
       validityDays: settings.validity_days,
       isActive: settings.is_active,
       imageUrl: settings.image_url,
@@ -1249,6 +1252,7 @@ export class MerchantsService {
         discount_type: dto.discountType,
         discount_value: discountValue,
         max_discount_amount: maxDiscountAmount,
+        additional_item: dto.additionalItem,
         validity_days: dto.validityDays,
         is_active: dto.isActive,
         image_url: dto.imageUrl,
@@ -1259,6 +1263,7 @@ export class MerchantsService {
         discount_type: dto.discountType,
         discount_value: discountValue,
         max_discount_amount: maxDiscountAmount,
+        additional_item: dto.additionalItem,
         validity_days: dto.validityDays,
         is_active: dto.isActive,
         image_url: dto.imageUrl,
@@ -1270,6 +1275,7 @@ export class MerchantsService {
       discountType: settings.discount_type,
       discountValue: Number(settings.discount_value),
       maxDiscountAmount: settings.max_discount_amount ? Number(settings.max_discount_amount) : null,
+      additionalItem: settings.additional_item,
       validityDays: settings.validity_days,
       isActive: settings.is_active,
       imageUrl: settings.image_url,
@@ -1773,6 +1779,8 @@ export class MerchantsService {
           discountDescription = `${settings.discount_value}% OFF`;
         } else if (settings.discount_type === 'fixed') {
           discountDescription = `Rs. ${settings.discount_value} OFF`;
+        } else if (settings.additional_item) {
+          discountDescription = settings.additional_item;
         } else {
           discountDescription = 'Bonus Reward';
         }
