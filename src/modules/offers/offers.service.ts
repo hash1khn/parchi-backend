@@ -19,6 +19,7 @@ import {
   PaginationMeta,
 } from '../../utils/pagination.util';
 import { SetFeaturedOffersDto } from './dto/set-featured-offers.dto';
+import { Logger } from '@nestjs/common';
 
 export interface OfferResponse {
   id: string;
@@ -94,6 +95,7 @@ export interface OfferDetailsResponse extends OfferResponse {
 @Injectable()
 export class OffersService {
   constructor(private readonly prisma: PrismaService) { }
+  private readonly logger = new Logger(OffersService.name);
 
   /**
    * Create a new offer
@@ -103,6 +105,7 @@ export class OffersService {
     createDto: CreateOfferDto,
     currentUser: CurrentUser,
   ): Promise<OfferResponse> {
+    this.logger.log(`Creating offer: ${JSON.stringify(createDto)} for user: ${currentUser.id}`);
     let merchantId: string;
 
     // Determine merchant ID based on user role
@@ -159,6 +162,7 @@ export class OffersService {
     const validFrom = new Date(createDto.validFrom);
     const validUntil = new Date(createDto.validUntil);
     if (validUntil <= validFrom) {
+      this.logger.warn(`Invalid date range: From ${validFrom} to ${validUntil}`);
       throw new BadRequestException(
         API_RESPONSE_MESSAGES.OFFER.INVALID_DATE_RANGE,
       );
@@ -169,6 +173,7 @@ export class OffersService {
       createDto.discountType === 'percentage' &&
       createDto.discountValue > 100
     ) {
+      this.logger.warn(`Invalid discount value: ${createDto.discountValue}`);
       throw new BadRequestException(
         API_RESPONSE_MESSAGES.OFFER.INVALID_DISCOUNT_VALUE,
       );
@@ -177,24 +182,37 @@ export class OffersService {
     // Validate branches if provided
     let targetBranchIds: string[] = [];
 
-    // Always get all merchant branches (ignoring createDto.branchIds as per new requirement)
-    const allBranches = await this.prisma.merchant_branches.findMany({
-      where: {
-        merchant_id: merchantId,
-        is_active: true,
-      },
-    });
-    targetBranchIds = allBranches.map((branch) => branch.id);
+    // If branchIds are provided, only target those branches
+    if (createDto.branchIds && createDto.branchIds.length > 0) {
+      // Validate that these branches belong to the merchant
+      const branches = await this.prisma.merchant_branches.findMany({
+        where: {
+          id: { in: createDto.branchIds },
+          merchant_id: merchantId,
+          is_active: true, // Should we allow inactive? Probably not for new offers.
+        },
+      });
+
+      if (branches.length !== createDto.branchIds.length) {
+        throw new BadRequestException('One or more invalid branch IDs provided');
+      }
+      targetBranchIds = branches.map((b) => b.id);
+      targetBranchIds = branches.map((b) => b.id);
+    } else {
+      // If no branches selected (e.g. from UI popup that says "Assign later"),
+      // we create the offer as INACTIVE and unassigned.
+      // This prevents "Global Conflict" with existing active offers.
+      targetBranchIds = [];
+    }
 
     // Check for "One Active Offer" rule - verify branches don't already have active offers
-    const now = new Date();
     if (targetBranchIds.length > 0) {
       const activeOffers = await this.prisma.offers.findMany({
         where: {
           merchant_id: merchantId,
           status: 'active',
-          valid_from: { lte: now },
-          valid_until: { gte: now },
+          valid_from: { lte: validUntil },
+          valid_until: { gte: validFrom },
         },
         include: {
           offer_branches: {
@@ -229,9 +247,10 @@ export class OffersService {
 
       if (busyBranches.length > 0) {
         const branchNames = busyBranches.map((b) => b.name).join(', ');
-        throw new BadRequestException(
-          `Cannot create offer: The following branches already have active offers: ${branchNames}. Only one active offer per branch is allowed.`,
-        );
+        const errorMsg = `Cannot create offer: The following branches already have active offers: ${branchNames}. Only one active offer per branch is allowed.`;
+        this.logger.warn(errorMsg);
+        this.logger.warn(`Conflicting Active Offers: ${JSON.stringify(activeOffers.map(o => ({ id: o.id, validFrom: o.valid_from, validUntil: o.valid_until })))}`);
+        throw new BadRequestException(errorMsg);
       }
     }
 
@@ -296,6 +315,9 @@ export class OffersService {
           daily_limit: createDto.dailyLimit || null,
           total_limit: createDto.totalLimit || null,
           current_redemptions: 0,
+          // Always create as 'active', even if unassigned.
+          // Unassigned offers (no branches) won't cause conflicts.
+          // They need to be active to appear in the "Branch Assignment" dropdowns.
           status: 'active',
           created_by: currentUser.id,
           schedule_type: scheduleType,
@@ -314,18 +336,19 @@ export class OffersService {
         },
       });
 
-      // Assign branches if provided
-      // Assign to all merchant branches (ignoring createDto.branchIds)
-      const allBranches = await tx.merchant_branches.findMany({
+      // Assign to target branches (calculated above)
+      // Use targetBranchIds which already contains either specific selection or all active branches
+      const branchesToAssign = await tx.merchant_branches.findMany({
         where: {
+          id: { in: targetBranchIds },
           merchant_id: merchantId,
           is_active: true,
         },
       });
 
-      if (allBranches.length > 0) {
+      if (branchesToAssign.length > 0) {
         await tx.offer_branches.createMany({
-          data: allBranches.map((branch) => ({
+          data: branchesToAssign.map((branch) => ({
             offer_id: newOffer.id,
             branch_id: branch.id,
             is_active: true,
@@ -796,9 +819,21 @@ export class OffersService {
     }
 
     // Delete offer (cascade will handle related records)
-    await this.prisma.offers.delete({
-      where: { id },
-    });
+    try {
+      await this.prisma.offers.delete({
+        where: { id },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2003'
+      ) {
+        throw new BadRequestException(
+          'Cannot delete this offer because it has already been redeemed. Please deactivate it instead.',
+        );
+      }
+      throw error;
+    }
 
     return null;
   }

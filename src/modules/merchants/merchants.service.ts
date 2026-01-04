@@ -4,11 +4,14 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Logger,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { UpdateCorporateAccountDto } from './dto/update-corporate-account.dto';
+import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
 import { ROLES } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
@@ -113,6 +116,7 @@ export interface MerchantDetailsForStudentsResponse {
 @Injectable()
 export class MerchantsService {
   constructor(private readonly prisma: PrismaService) { }
+  private readonly logger = new Logger(MerchantsService.name);
 
   /**
    * Get all corporate merchants
@@ -942,6 +946,75 @@ export class MerchantsService {
     return formattedBranch;
   }
 
+  /*
+   * Create branch
+   * Admin: can create branch for any merchant (must provide merchantId) -- simpler to just restrict to corporate for now or imply from context if needed, but per requirement typically Corporate creates their own.
+   * Corporate: can create branch for themselves
+   */
+  async createBranch(
+    createDto: CreateBranchDto,
+    currentUser: CurrentUser,
+  ): Promise<BranchResponse> {
+    if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
+      throw new ForbiddenException(
+        API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
+      );
+    }
+
+    if (!currentUser.merchant?.id) {
+      throw new ForbiddenException(
+        API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
+      );
+    }
+
+    const merchantId = currentUser.merchant.id;
+
+    // Check if corporate account is active
+    if (!currentUser.merchant.is_active) {
+      throw new ForbiddenException(
+        'Cannot create branches for an inactive corporate account',
+      );
+    }
+
+    const branch = await this.prisma.merchant_branches.create({
+      data: {
+        merchant_id: merchantId,
+        branch_name: createDto.branchName,
+        address: createDto.address,
+        city: createDto.city,
+        contact_phone: createDto.contactPhone,
+        latitude: createDto.latitude,
+        longitude: createDto.longitude,
+        is_active: createDto.isActive ?? true,
+      },
+      include: {
+        merchants: {
+          select: {
+            business_name: true,
+          },
+        },
+      },
+    });
+
+    const formattedBranch: BranchResponse = {
+      id: branch.id,
+      merchantId: branch.merchant_id,
+      merchantName: branch.merchants.business_name,
+      userId: branch.user_id,
+      branchName: branch.branch_name,
+      address: branch.address,
+      city: branch.city,
+      latitude: branch.latitude ? Number(branch.latitude) : null,
+      longitude: branch.longitude ? Number(branch.longitude) : null,
+      contactPhone: branch.contact_phone,
+      isActive: branch.is_active,
+      createdAt: branch.created_at,
+      updatedAt: branch.updated_at,
+    };
+
+    return formattedBranch;
+  }
+
   /**
    * Delete branch
    * Admin: can delete any branch
@@ -990,10 +1063,22 @@ export class MerchantsService {
       );
     }
 
-    // Delete branch (cascade will handle related records)
-    await this.prisma.merchant_branches.delete({
-      where: { id },
-    });
+    try {
+      // Delete branch (cascade will handle related records)
+      await this.prisma.merchant_branches.delete({
+        where: { id },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2003') {
+          // Foreign key constraint violation
+          throw new BadRequestException(
+            'Cannot delete this branch because it has associated records (e.g., Redemptions). Please contact support or deactivate the branch instead.',
+          );
+        }
+      }
+      throw error;
+    }
 
     return null;
   }
@@ -1532,6 +1617,7 @@ export class MerchantsService {
     const branches = await this.prisma.merchant_branches.findMany({
       where: {
         merchant_id: merchantId,
+        is_active: true, // Only show active branches
         merchants: { is_active: true }, // Consistency with getBranches
       },
       include: {
@@ -1540,6 +1626,10 @@ export class MerchantsService {
         },
       },
     });
+
+    this.logger.log(
+      `Branch Performance - Merchant: ${merchantId}, Found ${branches.length} branches`,
+    );
 
     // Sort by redemptions desc
     // Format with standard chart keys for maximum compatibility
@@ -1596,7 +1686,7 @@ export class MerchantsService {
       discount:
         o.discount_type === 'percentage'
           ? `${o.discount_value}% OFF`
-          : `Rs. ${o.discount_value} OFF`,
+          : `Rs.${o.discount_value} OFF`,
       status: o.status,
       redemptions: o.current_redemptions || 0,
     }));
@@ -1735,7 +1825,7 @@ export class MerchantsService {
       const formattedDiscount =
         offer.discount_type === 'percentage'
           ? `${Number(offer.discount_value)}% OFF`
-          : `Rs. ${Number(offer.discount_value)} OFF`;
+          : `Rs.${Number(offer.discount_value)} OFF`;
 
       const branchOffer: BranchOffer = {
         id: offer.id,
@@ -1778,7 +1868,7 @@ export class MerchantsService {
         if (settings.discount_type === 'percentage') {
           discountDescription = `${settings.discount_value}% OFF`;
         } else if (settings.discount_type === 'fixed') {
-          discountDescription = `Rs. ${settings.discount_value} OFF`;
+          discountDescription = `Rs.${settings.discount_value} OFF`;
         } else if (settings.additional_item) {
           discountDescription = settings.additional_item;
         } else {

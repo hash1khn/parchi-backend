@@ -22,6 +22,7 @@ import { Roles } from '../../decorators/roles.decorator';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { UpdateCorporateAccountDto } from './dto/update-corporate-account.dto';
+import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
 import { ApproveRejectBranchDto } from './dto/approve-reject-branch.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
@@ -239,6 +240,19 @@ export class MerchantsController {
   ) {
     const data = await this.merchantsService.assignOffersToBranch(id, assignDto, currentUser);
     return createApiResponse(data, 'Offers assigned successfully');
+  }
+
+  @Post('branches')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.CREATED)
+  @Audit({ action: 'CREATE_BRANCH', tableName: 'merchant_branches' })
+  async createBranch(
+    @Body() createDto: CreateBranchDto,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    const data = await this.merchantsService.createBranch(createDto, currentUser);
+    return createApiResponse(data, 'Branch created successfully');
   }
 
   @Get('branches')

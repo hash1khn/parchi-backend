@@ -47,6 +47,7 @@ export interface CurrentUser {
     business_name: string;
     email_prefix: string | null;
     category: string | null;
+    is_active: boolean;
   } | null;
   branch?: {
     id: string;
