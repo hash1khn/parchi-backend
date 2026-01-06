@@ -497,7 +497,7 @@ export class StudentsService {
     const now = new Date();
 
     // Use transaction to ensure all updates happen atomically
-    const result = await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       // Get KYC selfie path if available and approving
       const latestKyc = student.student_kyc.length > 0 ? student.student_kyc[0] : null;
       const selfiePath =
@@ -506,7 +506,7 @@ export class StudentsService {
           : undefined;
 
       // 1. Update student verification status and save selfie if approving
-      const updatedStudent = await tx.students.update({
+      await tx.students.update({
         where: { id },
         data: {
           verification_status: verificationStatus,
@@ -550,34 +550,36 @@ export class StudentsService {
           });
         }
       }
+    }, {
+      timeout: 20000, // Increase timeout to 20 seconds
+    });
 
-      // Return updated student with relations
-      return await tx.students.findUnique({
-        where: { id },
-        include: {
-          users: {
-            select: {
-              id: true,
-              email: true,
-              phone: true,
-            },
+    // Return updated student with relations (fetched outside transaction)
+    const result = await this.prisma.students.findUnique({
+      where: { id },
+      include: {
+        users: {
+          select: {
+            id: true,
+            email: true,
+            phone: true,
           },
-          student_kyc: {
-            orderBy: {
-              submitted_at: 'desc',
-            },
-            take: 1,
-            include: {
-              users: {
-                select: {
-                  id: true,
-                  email: true,
-                },
+        },
+        student_kyc: {
+          orderBy: {
+            submitted_at: 'desc',
+          },
+          take: 1,
+          include: {
+            users: {
+              select: {
+                id: true,
+                email: true,
               },
             },
           },
         },
-      });
+      },
     });
 
     return this.formatStudentResponse(result!);

@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
   UnprocessableEntityException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -149,6 +150,24 @@ export class AuthService {
 
       // Check if account is active
       if (!publicUser.is_active) {
+        // Check specifically for students who are rejected
+        if (publicUser.role === ROLES.STUDENT) {
+          const student = await this.prisma.students.findUnique({
+            where: { user_id: publicUser.id },
+            include: {
+              student_kyc: {
+                orderBy: { submitted_at: 'desc' },
+                take: 1
+              }
+            }
+          });
+
+          if (student && student.verification_status === 'rejected') {
+            const reason = student.student_kyc[0]?.review_notes || 'No reason provided';
+            throw new ForbiddenException(`Your account has been rejected. Reason: ${reason}`);
+          }
+        }
+
         throw new UnauthorizedException(
           API_RESPONSE_MESSAGES.AUTH.ACCOUNT_PENDING,
         );
@@ -164,7 +183,10 @@ export class AuthService {
         session: authData.session,
       };
     } catch (error) {
-      if (error instanceof UnauthorizedException) {
+      if (
+        error instanceof UnauthorizedException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new UnauthorizedException(
@@ -372,7 +394,7 @@ export class AuthService {
             email: signupDto.email,
             phone: signupDto.phone || null,
             role: ROLES.STUDENT,
-            is_active: false, 
+            is_active: false,
           },
         });
 
