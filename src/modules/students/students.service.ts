@@ -14,6 +14,7 @@ import {
   calculateSkip,
 } from '../../utils/pagination.util';
 import { PaginationMeta } from '../../utils/pagination.util';
+import { SohoStrategy } from '../redemptions/strategies/soho.strategy';
 
 export interface StudentVerificationResponse {
   parchiId: string;
@@ -120,7 +121,10 @@ export class StudentsService {
   private readonly LOYALTY_BONUS_TITLE = 'Loyalty Bonus Reward';
   private readonly LOYALTY_BONUS_DESCRIPTION = `Congratulations! You've unlocked a loyalty bonus.`;
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sohoStrategy: SohoStrategy,
+  ) { }
 
   /**
    * Get pending approval students
@@ -325,17 +329,35 @@ export class StudentsService {
           discount_type: true,
           discount_value: true,
           max_discount_amount: true,
+          redemption_strategy: true,
         },
         orderBy: {
           created_at: 'desc',
         },
       }),
     ]);
+    // Check for custom strategy
+    let strategyDiscount: number | null = null;
+    let strategyNote: string | null = null;
+
+    if (defaultOffer?.redemption_strategy === 'soho_hierarchical') {
+      const result = await this.sohoStrategy.calculateDiscount({
+        studentId: student.id,
+        merchantId: merchantId,
+        offerId: defaultOffer.id,
+        tx: this.prisma,
+      });
+      strategyDiscount = result.discountValue;
+      strategyNote = result.note ?? null;
+    }
+
     // Determine applicable offer
     const applicableOffer = this.determineApplicableOffer(
       studentStats,
       bonusSettings,
       defaultOffer,
+      strategyDiscount,
+      strategyNote,
     );
     return {
       parchiId: student.parchi_id,
@@ -369,6 +391,8 @@ export class StudentsService {
       discount_value: any; // Prisma Decimal type
       max_discount_amount: any | null; // Prisma Decimal type
     } | null,
+    strategyDiscount?: number | null,
+    strategyNote?: string | null,
   ): {
     id: string;
     title: string;
@@ -381,6 +405,21 @@ export class StudentsService {
   } | null {
     if (!defaultOffer) {
       return null;
+    }
+
+    // Strategy Override (Highest Priority)
+    if (strategyDiscount !== null && strategyDiscount !== undefined) {
+      return {
+        id: defaultOffer.id,
+        title: defaultOffer.title,
+        description: strategyNote || defaultOffer.description,
+        discountType: defaultOffer.discount_type,
+        discountValue: strategyDiscount,
+        maxDiscountAmount: defaultOffer.max_discount_amount
+          ? Number(defaultOffer.max_discount_amount)
+          : null,
+        isBonus: true,
+      };
     }
     const currentRedemptions = studentStats?.redemption_count ?? 0;
     const isBonusEligible =

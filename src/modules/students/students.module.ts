@@ -5,11 +5,13 @@ import { StudentsService } from './students.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 
+import { SohoStrategy } from '../redemptions/strategies/soho.strategy';
+
 @Module({
   imports: [PrismaModule, AuthModule],
   controllers: [AdminStudentsController, StudentsController],
-  providers: [StudentsService],
+  providers: [StudentsService, SohoStrategy],
   exports: [StudentsService],
 })
-export class StudentsModule {}
+export class StudentsModule { }
 

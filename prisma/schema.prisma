@@ -508,6 +508,7 @@ model offers {
   merchant_id         String           @db.Uuid
   title               String           @db.VarChar(255)
   description         String?
+  redemption_strategy String?
   image_url           String?
   discount_type       String           @db.VarChar(20)
   discount_value      Decimal          @db.Decimal(10, 2)

@@ -17,6 +17,7 @@ import {
   calculateSkip,
   PaginationMeta,
 } from '../../utils/pagination.util';
+import { SohoStrategy } from './strategies/soho.strategy';
 
 export interface RedemptionResponse {
   id: string;
@@ -54,6 +55,7 @@ export interface RedemptionResponse {
     firstName: string;
     lastName: string;
   };
+  discountDetails?: string;
 }
 
 export interface RedemptionStatsResponse {
@@ -67,7 +69,10 @@ export class RedemptionsService {
   // Time window to prevent duplicate redemptions (5 seconds)
   private readonly DUPLICATE_PREVENTION_WINDOW_MS = 5000;
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sohoStrategy: SohoStrategy,
+  ) {}
 
   /**
    * Create redemption
@@ -218,9 +223,17 @@ export class RedemptionsService {
           if (allowedDays.length > 0) {
             const today = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
             if (!allowedDays.includes(today)) {
-              const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+              const dayNames = [
+                'Sunday',
+                'Monday',
+                'Tuesday',
+                'Wednesday',
+                'Thursday',
+                'Friday',
+                'Saturday',
+              ];
               throw new BadRequestException(
-                `This offer is not available on ${dayNames[today]}. It is only available on: ${allowedDays.map(d => dayNames[d]).join(', ')}`,
+                `This offer is not available on ${dayNames[today]}. It is only available on: ${allowedDays.map((d) => dayNames[d]).join(', ')}`,
               );
             }
           }
@@ -245,17 +258,22 @@ export class RedemptionsService {
             let isWithinWindow = false;
             if (startMinutes <= endMinutes) {
               // Normal time window (e.g., 09:00 - 17:00)
-              isWithinWindow = currentTime >= startMinutes && currentTime <= endMinutes;
+              isWithinWindow =
+                currentTime >= startMinutes && currentTime <= endMinutes;
             } else {
               // Time window spans midnight (e.g., 22:00 - 02:00)
-              isWithinWindow = currentTime >= startMinutes || currentTime <= endMinutes;
+              isWithinWindow =
+                currentTime >= startMinutes || currentTime <= endMinutes;
             }
 
             if (!isWithinWindow) {
               const formatTimeString = (time: Date): string => {
                 const date = new Date(time);
                 const hours = date.getUTCHours().toString().padStart(2, '0');
-                const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+                const minutes = date
+                  .getUTCMinutes()
+                  .toString()
+                  .padStart(2, '0');
                 return `${hours}:${minutes}`;
               };
 
@@ -329,15 +347,40 @@ export class RedemptionsService {
         // const studentTodayRedemptions = await tx.redemptions.count({ ... });
         // if (studentTodayRedemptions > 0) { ... }
 
-        // 11. Calculate bonus discount
+        // 11. Calculate bonus discount OR Strategy Discount
         let isBonusApplied = false;
         let bonusDiscountApplied: number | null = null;
+        let strategyNote: string | null = null;
+        let calculatedStrategyDiscount: number | undefined;
+
+        // CHECK FOR STRATEGY FIRST
+        if ((offer as any).redemption_strategy === 'soho_hierarchical') {
+          const strategyResult = await this.sohoStrategy.calculateDiscount({
+            studentId: student.id,
+            merchantId: branch.merchant_id,
+            offerId: createDto.offerId,
+            tx,
+          });
+
+          // Strategy Result Overrides Standard Logic
+          calculatedStrategyDiscount = strategyResult.discountValue;
+          strategyNote = strategyResult.note || null;
+
+          // Treat Strategy overrides as "Bonus" for storage purposes so the value persists
+          // This ensures historical redemptions show the correct % (e.g. 30%, 40%) instead of the static offer % (20%)
+          bonusDiscountApplied = calculatedStrategyDiscount;
+          isBonusApplied = true;
+        }
 
         const bonusSettings = await tx.branch_bonus_settings.findUnique({
           where: { branch_id: branchId },
         });
 
-        if (bonusSettings && bonusSettings.is_active) {
+        if (
+          !(offer as any).redemption_strategy &&
+          bonusSettings &&
+          bonusSettings.is_active
+        ) {
           const studentBranchStats = await tx.student_branch_stats.findUnique({
             where: {
               student_id_branch_id: {
@@ -347,12 +390,14 @@ export class RedemptionsService {
             },
           });
 
-          const redemptionCount =
-            studentBranchStats?.redemption_count || 0;
+          const redemptionCount = studentBranchStats?.redemption_count || 0;
 
           // Check if this redemption qualifies for bonus (e.g. 5th redemption)
           // Logic: (current_count + 1) % required === 0
-          if ((redemptionCount + 1) % bonusSettings.redemptions_required === 0) {
+          if (
+            (redemptionCount + 1) % bonusSettings.redemptions_required ===
+            0
+          ) {
             isBonusApplied = true;
 
             if (bonusSettings.discount_type === 'percentage') {
@@ -364,7 +409,6 @@ export class RedemptionsService {
                 );
               }
             } else if (bonusSettings.discount_type === 'fixed') {
-              // Fixed amount
               bonusDiscountApplied = Number(bonusSettings.discount_value);
             } else if (bonusSettings.discount_type === 'item') {
               // Item type - no discount, just additional item
@@ -374,10 +418,16 @@ export class RedemptionsService {
         }
 
         // 12. Calculate savings (offer discount + bonus)
-        const offerDiscount = Number(offer.discount_value);
-        const totalSavings = isBonusApplied
-          ? offerDiscount + (bonusDiscountApplied || 0)
-          : offerDiscount;
+        let totalSavings = 0;
+
+        if (typeof calculatedStrategyDiscount !== 'undefined') {
+          totalSavings = calculatedStrategyDiscount;
+        } else {
+          const offerDiscount = Number(offer.discount_value);
+          totalSavings = isBonusApplied
+            ? offerDiscount + (bonusDiscountApplied || 0)
+            : offerDiscount;
+        }
 
         // 13. Create redemption record
         const newRedemption = await tx.redemptions.create({
@@ -390,7 +440,11 @@ export class RedemptionsService {
               ? bonusDiscountApplied
               : null,
             verified_by: currentUser.id, // Auto-verified by branch staff
-            notes: createDto.notes || null,
+            notes: strategyNote
+              ? createDto.notes
+                ? `${strategyNote} | ${createDto.notes}`
+                : strategyNote
+              : createDto.notes || null,
           },
         });
 
@@ -418,12 +472,14 @@ export class RedemptionsService {
         });
 
         // 16. Update student_merchant_stats
-        const existingMerchantStats = await tx.student_merchant_stats.findFirst({
-          where: {
-            student_id: student.id,
-            merchant_id: branch.merchant_id,
+        const existingMerchantStats = await tx.student_merchant_stats.findFirst(
+          {
+            where: {
+              student_id: student.id,
+              merchant_id: branch.merchant_id,
+            },
           },
-        });
+        );
 
         if (existingMerchantStats) {
           await tx.student_merchant_stats.update({
@@ -548,9 +604,7 @@ export class RedemptionsService {
     });
 
     if (!student) {
-      throw new NotFoundException(
-        API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND,
-      );
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
     const page = queryDto.page || 1;
@@ -571,7 +625,7 @@ export class RedemptionsService {
         whereClause.verified_by = null;
         whereClause.notes = {
           contains: 'REJECTED',
-          mode: 'insensitive'
+          mode: 'insensitive',
         } as Prisma.StringNullableFilter;
       } else if (queryDto.status === 'pending') {
         whereClause.verified_by = null;
@@ -579,7 +633,7 @@ export class RedemptionsService {
         // Use OR to handle null notes or notes without REJECTED
         whereClause.OR = [
           { notes: null },
-          { notes: { not: { contains: 'REJECTED' } } }
+          { notes: { not: { contains: 'REJECTED' } } },
         ];
       }
     }
@@ -674,9 +728,7 @@ export class RedemptionsService {
     });
 
     if (!student) {
-      throw new NotFoundException(
-        API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND,
-      );
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
     const redemption = await this.prisma.redemptions.findUnique({
@@ -719,9 +771,7 @@ export class RedemptionsService {
     });
 
     if (!redemption) {
-      throw new NotFoundException(
-        API_RESPONSE_MESSAGES.REDEMPTION.NOT_FOUND,
-      );
+      throw new NotFoundException(API_RESPONSE_MESSAGES.REDEMPTION.NOT_FOUND);
     }
 
     if (redemption.student_id !== student.id) {
@@ -768,14 +818,17 @@ export class RedemptionsService {
         whereClause.verified_by = { not: null };
       } else if (queryDto.status === 'rejected') {
         whereClause.verified_by = null;
-        whereClause.notes = { contains: 'REJECTED', mode: 'insensitive' } as Prisma.StringNullableFilter;
+        whereClause.notes = {
+          contains: 'REJECTED',
+          mode: 'insensitive',
+        } as Prisma.StringNullableFilter;
       } else if (queryDto.status === 'pending') {
         whereClause.verified_by = null;
         // For pending, notes should not contain REJECTED (case-insensitive)
         // Use OR to handle null notes or notes without REJECTED
         whereClause.OR = [
           { notes: null },
-          { notes: { not: { contains: 'REJECTED' } } }
+          { notes: { not: { contains: 'REJECTED' } } },
         ];
       }
     }
@@ -925,9 +978,7 @@ export class RedemptionsService {
     });
 
     if (!redemption) {
-      throw new NotFoundException(
-        API_RESPONSE_MESSAGES.REDEMPTION.NOT_FOUND,
-      );
+      throw new NotFoundException(API_RESPONSE_MESSAGES.REDEMPTION.NOT_FOUND);
     }
 
     if (redemption.branch_id !== currentUser.branch.id) {
@@ -975,9 +1026,7 @@ export class RedemptionsService {
       });
 
       if (!existingRedemption) {
-        throw new NotFoundException(
-          API_RESPONSE_MESSAGES.REDEMPTION.NOT_FOUND,
-        );
+        throw new NotFoundException(API_RESPONSE_MESSAGES.REDEMPTION.NOT_FOUND);
       }
 
       if (existingRedemption.branch_id !== currentUser.branch!.id) {
@@ -1133,14 +1182,17 @@ export class RedemptionsService {
         whereClause.verified_by = { not: null };
       } else if (queryDto.status === 'rejected') {
         whereClause.verified_by = null;
-        whereClause.notes = { contains: 'REJECTED', mode: 'insensitive' } as Prisma.StringNullableFilter;
+        whereClause.notes = {
+          contains: 'REJECTED',
+          mode: 'insensitive',
+        } as Prisma.StringNullableFilter;
       } else if (queryDto.status === 'pending') {
         whereClause.verified_by = null;
         // For pending, notes should not contain REJECTED (case-insensitive)
         // Use OR to handle null notes or notes without REJECTED
         whereClause.OR = [
           { notes: null },
-          { notes: { not: { contains: 'REJECTED' } } }
+          { notes: { not: { contains: 'REJECTED' } } },
         ];
       }
     }
@@ -1242,9 +1294,7 @@ export class RedemptionsService {
    * Get redemption by ID (Admin)
    * Admin only
    */
-  async getAdminRedemptionById(
-    id: string,
-  ): Promise<RedemptionResponse> {
+  async getAdminRedemptionById(id: string): Promise<RedemptionResponse> {
     const redemption = await this.prisma.redemptions.findUnique({
       where: { id },
       include: {
@@ -1285,9 +1335,7 @@ export class RedemptionsService {
     });
 
     if (!redemption) {
-      throw new NotFoundException(
-        API_RESPONSE_MESSAGES.REDEMPTION.NOT_FOUND,
-      );
+      throw new NotFoundException(API_RESPONSE_MESSAGES.REDEMPTION.NOT_FOUND);
     }
 
     return this.formatRedemptionResponse(redemption);
@@ -1311,9 +1359,7 @@ export class RedemptionsService {
     });
 
     if (!student) {
-      throw new NotFoundException(
-        API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND,
-      );
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
     // 1. Total Redemptions
@@ -1348,12 +1394,12 @@ export class RedemptionsService {
    * Format redemption response
    */
   private formatRedemptionResponse(redemption: any): RedemptionResponse {
-    const status = redemption.notes &&
-      redemption.notes.toUpperCase().includes('REJECTED')
-      ? 'rejected'
-      : redemption.verified_by
-        ? 'verified'
-        : 'pending';
+    const status =
+      redemption.notes && redemption.notes.toUpperCase().includes('REJECTED')
+        ? 'rejected'
+        : redemption.verified_by
+          ? 'verified'
+          : 'pending';
 
     return {
       id: redemption.id,
@@ -1370,46 +1416,50 @@ export class RedemptionsService {
       status,
       offer: redemption.offers
         ? {
-          id: redemption.offers.id,
-          title: redemption.offers.title,
-          discountType: redemption.offers.discount_type,
-          discountValue: Number(redemption.offers.discount_value),
-          imageUrl: redemption.offers.image_url,
-        }
+            id: redemption.offers.id,
+            title: redemption.offers.title,
+            discountType: redemption.offers.discount_type,
+            discountValue: redemption.bonus_discount_applied
+              ? Number(redemption.bonus_discount_applied)
+              : Number(redemption.offers.discount_value),
+            imageUrl: redemption.offers.image_url,
+          }
         : undefined,
       branch: redemption.merchant_branches
         ? {
-          id: redemption.merchant_branches.id,
-          branchName: redemption.merchant_branches.branch_name,
-          address: redemption.merchant_branches.address,
-          city: redemption.merchant_branches.city,
-        }
+            id: redemption.merchant_branches.id,
+            branchName: redemption.merchant_branches.branch_name,
+            address: redemption.merchant_branches.address,
+            city: redemption.merchant_branches.city,
+          }
         : undefined,
       merchant: redemption.merchant_branches?.merchants
         ? {
-          id: redemption.merchant_branches.merchants.id,
-          businessName: redemption.merchant_branches.merchants.business_name,
-          logoPath: redemption.merchant_branches.merchants.logo_path,
-          category: redemption.merchant_branches.merchants.category,
-        }
+            id: redemption.merchant_branches.merchants.id,
+            businessName: redemption.merchant_branches.merchants.business_name,
+            logoPath: redemption.merchant_branches.merchants.logo_path,
+            category: redemption.merchant_branches.merchants.category,
+          }
         : undefined,
       student: redemption.students
         ? {
-          id: redemption.students.id,
-          parchiId: redemption.students.parchi_id,
-          firstName: redemption.students.first_name,
-          lastName: redemption.students.last_name,
-        }
+            id: redemption.students.id,
+            parchiId: redemption.students.parchi_id,
+            firstName: redemption.students.first_name,
+            lastName: redemption.students.last_name,
+          }
         : undefined,
+      discountDetails:
+        redemption.is_bonus_applied && redemption.bonus_discount_applied
+          ? `(${Number(redemption.bonus_discount_applied)}% OFF)`
+          : undefined,
     };
   }
 
   /**
    * Get order by clause for sorting
    */
-  private getOrderBy(
-    sort: string,
-  ): any {
+  private getOrderBy(sort: string): any {
     switch (sort) {
       case 'oldest':
         return { created_at: 'asc' };
@@ -1637,19 +1687,22 @@ export class RedemptionsService {
     ]);
 
     // --- Process Summary Metrics ---
-    const uniqueStudents = new Set(todayRedemptions.map(r => r.student_id)).size;
-    const bonusDealsCount = todayRedemptions.filter(r => r.is_bonus_applied).length;
+    const uniqueStudents = new Set(todayRedemptions.map((r) => r.student_id))
+      .size;
+    const bonusDealsCount = todayRedemptions.filter(
+      (r) => r.is_bonus_applied,
+    ).length;
 
     // --- Process Hourly Data ---
     // Initialize buckets for 6am to 2am (20 hours)
     // Map keys: 6, 7, ..., 23, 0, 1
     const hourlyMap = new Map<number, number>();
     const hours = [
-      6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1
+      6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1,
     ];
-    hours.forEach(h => hourlyMap.set(h, 0));
+    hours.forEach((h) => hourlyMap.set(h, 0));
 
-    chartRedemptions.forEach(r => {
+    chartRedemptions.forEach((r) => {
       if (r.created_at) {
         const h = new Date(r.created_at).getHours();
         if (hourlyMap.has(h)) {
@@ -1659,17 +1712,24 @@ export class RedemptionsService {
     });
 
     // Format for response
-    const hourlyData = hours.map(h => ({
+    const hourlyData = hours.map((h) => ({
       hour: h,
       count: hourlyMap.get(h) || 0,
-      label: h === 0 ? '12 AM' : h === 12 ? '12 PM' : h > 12 ? `${h - 12} PM` : `${h} AM`
+      label:
+        h === 0
+          ? '12 AM'
+          : h === 12
+            ? '12 PM'
+            : h > 12
+              ? `${h - 12} PM`
+              : `${h} AM`,
     }));
 
     // --- Calculate Peak Hour ---
     let maxCount = -1;
     let peakHourLabel = 'N/A';
 
-    hourlyData.forEach(d => {
+    hourlyData.forEach((d) => {
       if (d.count > maxCount) {
         maxCount = d.count;
         peakHourLabel = d.label;
@@ -1686,4 +1746,3 @@ export class RedemptionsService {
     };
   }
 }
-
