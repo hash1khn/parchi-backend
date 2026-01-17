@@ -161,7 +161,7 @@ export class OffersController {
 
   @Put(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.MERCHANT_CORPORATE)
+  @Roles(ROLES.MERCHANT_CORPORATE,ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   @Audit({ action: 'UPDATE_OFFER', tableName: 'offers', recordIdParam: 'id' })
   async updateOffer(
