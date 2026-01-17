@@ -10,6 +10,7 @@ import { StudentsModule } from './modules/students/students.module';
 import { RedemptionsModule } from './modules/redemptions/redemptions.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module';
+import { MailModule } from './modules/mail/mail.module';
 
 
 @Module({
@@ -23,6 +24,7 @@ import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.
     StudentsModule,
     RedemptionsModule,
     AdminDashboardModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

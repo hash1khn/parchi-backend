@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as jwt from 'jsonwebtoken';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { StudentSignupDto } from './dto/student-signup.dto';
@@ -30,6 +31,7 @@ export class AuthService {
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
   ) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
     const supabaseAnonKey = this.configService.get<string>('SUPABASE_ANON_KEY');
@@ -425,7 +427,7 @@ export class AuthService {
         };
       });
 
-      return {
+      const response = {
         id: result.student.id,
         email: result.user.email,
         firstName: result.student.first_name,
@@ -435,6 +437,11 @@ export class AuthService {
         verificationStatus: result.student.verification_status,
         createdAt: result.student.created_at,
       };
+
+      // Send application received email (non-blocking)
+      this.mailService.sendStudentAppliedEmail(signupDto.email, signupDto.firstName);
+
+      return response;
     } catch (error) {
       if (
         error instanceof ConflictException ||

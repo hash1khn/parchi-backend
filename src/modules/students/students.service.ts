@@ -4,6 +4,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { Prisma } from '@prisma/client';
 import { CurrentUser } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
@@ -124,6 +125,7 @@ export class StudentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sohoStrategy: SohoStrategy,
+    private readonly mailService: MailService,
   ) { }
 
   /**
@@ -620,6 +622,21 @@ export class StudentsService {
         },
       },
     });
+
+    if (result) {
+      if (approveRejectDto.action === 'approve') {
+        this.mailService.sendStudentApprovedEmail(
+          result.users.email,
+          result.first_name,
+        );
+      } else {
+        this.mailService.sendStudentRejectedEmail(
+          result.users.email,
+          result.first_name,
+          approveRejectDto.reviewNotes || 'Does not meet requirements',
+        );
+      }
+    }
 
     return this.formatStudentResponse(result!);
   }
