@@ -26,6 +26,7 @@ import { generateParchiId } from '../../utils/parchi-id.util';
 @Injectable()
 export class AuthService {
   private supabase: SupabaseClient;
+  private adminSupabase: SupabaseClient;
   private jwtSecret: string;
 
   constructor(
@@ -35,6 +36,7 @@ export class AuthService {
   ) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
     const supabaseAnonKey = this.configService.get<string>('SUPABASE_ANON_KEY');
+    const supabaseServiceKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
     this.jwtSecret = this.configService.get<string>('SUPABASE_JWT_SECRET') || '';
 
     if (!supabaseUrl || !supabaseAnonKey) {
@@ -46,6 +48,16 @@ export class AuthService {
     }
 
     this.supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+    // Create admin client with service role key for admin operations
+    if (supabaseServiceKey) {
+      this.adminSupabase = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      });
+    }
   }
 
   async signup(signupDto: SignupDto): Promise<{ user: any; session: any }> {
@@ -336,6 +348,13 @@ export class AuthService {
     return this.supabase;
   }
 
+  getAdminSupabaseClient(): SupabaseClient {
+    if (!this.adminSupabase) {
+      throw new Error('Admin Supabase client not initialized. SUPABASE_SERVICE_ROLE_KEY is required.');
+    }
+    return this.adminSupabase;
+  }
+
   async studentSignup(
     signupDto: StudentSignupDto,
   ): Promise<any> {
@@ -372,6 +391,7 @@ export class AuthService {
             data: {
               role: ROLES.STUDENT,
               phone: signupDto.phone || null,
+              first_name: signupDto.firstName,
             },
             emailRedirectTo: undefined,
           },
@@ -427,7 +447,7 @@ export class AuthService {
         };
       });
 
-      const response = {
+      return {
         id: result.student.id,
         email: result.user.email,
         firstName: result.student.first_name,
@@ -437,11 +457,6 @@ export class AuthService {
         verificationStatus: result.student.verification_status,
         createdAt: result.student.created_at,
       };
-
-      // Send application received email (non-blocking)
-      this.mailService.sendStudentAppliedEmail(signupDto.email, signupDto.firstName);
-
-      return response;
     } catch (error) {
       if (
         error instanceof ConflictException ||

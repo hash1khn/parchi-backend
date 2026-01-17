@@ -2,9 +2,12 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { AuthService } from '../auth/auth.service';
 import { Prisma } from '@prisma/client';
 import { CurrentUser } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
@@ -42,6 +45,7 @@ export interface StudentListResponse {
   firstName: string;
   lastName: string;
   email: string;
+  emailConfirmed: boolean;
   phone: string | null;
   university: string;
   graduationYear: number | null;
@@ -62,6 +66,7 @@ export interface StudentKycResponse {
   firstName: string;
   lastName: string;
   email: string;
+  emailConfirmed: boolean;
   phone: string | null;
   university: string;
   graduationYear: number | null;
@@ -126,6 +131,8 @@ export class StudentsService {
     private readonly prisma: PrismaService,
     private readonly sohoStrategy: SohoStrategy,
     private readonly mailService: MailService,
+    @Inject(forwardRef(() => AuthService))
+    private readonly authService: AuthService,
   ) { }
 
   /**
@@ -167,8 +174,8 @@ export class StudentsService {
       }),
     ]);
 
-    const formattedStudents = students.map((student) =>
-      this.formatStudentListResponse(student),
+    const formattedStudents = await Promise.all(
+      students.map((student) => this.formatStudentListResponse(student)),
     );
 
     return {
@@ -237,8 +244,8 @@ export class StudentsService {
       }),
     ]);
 
-    const formattedStudents = students.map((student) =>
-      this.formatStudentResponse(student),
+    const formattedStudents = await Promise.all(
+      students.map((student) => this.formatStudentResponse(student)),
     );
 
     return {
@@ -644,7 +651,7 @@ export class StudentsService {
   /**
    * Format student list response (without KYC data)
    */
-  private formatStudentListResponse(student: any): StudentListResponse {
+  private async formatStudentListResponse(student: any): Promise<StudentListResponse> {
     return {
       id: student.id,
       userId: student.user_id,
@@ -663,13 +670,14 @@ export class StudentsService {
       verificationExpiresAt: student.verification_expires_at,
       createdAt: student.created_at,
       updatedAt: student.updated_at,
+      emailConfirmed: await this.getEmailConfirmedStatus(student.user_id),
     };
   }
 
   /**
    * Format student response with KYC data
    */
-  private formatStudentResponse(student: any): StudentKycResponse {
+  private async formatStudentResponse(student: any): Promise<StudentKycResponse> {
     const latestKyc = student.student_kyc?.[0] || null;
 
     return {
@@ -717,13 +725,14 @@ export class StudentsService {
             : null,
         }
         : null,
+      emailConfirmed: await this.getEmailConfirmedStatus(student.user_id),
     };
   }
 
   /**
    * Format student detail response
    */
-  private formatStudentDetailResponse(student: any): StudentDetailResponse {
+  private async formatStudentDetailResponse(student: any): Promise<StudentDetailResponse> {
     const latestKyc = student.student_kyc?.[0] || null;
 
     return {
@@ -771,7 +780,33 @@ export class StudentsService {
             : null,
         }
         : null,
+      emailConfirmed: await this.getEmailConfirmedStatus(student.user_id),
     };
+  }
+
+  /**
+   * Helper method to get email confirmation status from Supabase
+   */
+  private async getEmailConfirmedStatus(userId: string): Promise<boolean> {
+    try {
+      const adminSupabase = this.authService.getAdminSupabaseClient();
+      const { data, error } = await adminSupabase.auth.admin.getUserById(userId);
+
+      if (error) {
+        console.error('Supabase getUserById error:', error);
+        return false;
+      }
+
+      if (!data.user) {
+        return false;
+      }
+
+      // Check if email_confirmed_at exists and is not null/undefined
+      return !!data.user.email_confirmed_at;
+    } catch (error) {
+      console.error('Error fetching email confirmation status:', error);
+      return false;
+    }
   }
 
   /**
