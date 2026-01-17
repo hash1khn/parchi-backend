@@ -41,7 +41,7 @@ export class AdminStudentsController {
     @Query() queryDto: QueryPendingStudentsDto,
   ) {
     const page = queryDto.page ?? 1;
-    const limit = queryDto.limit ?? 10;
+    const limit = queryDto.limit ?? 12;
     const result = await this.studentsService.getPendingApprovalStudents(page, limit);
     return createPaginatedResponse(
       result.items,
@@ -58,7 +58,7 @@ export class AdminStudentsController {
     @Query() queryDto: QueryStudentsDto,
   ) {
     const page = queryDto.page ?? 1;
-    const limit = queryDto.limit ?? 10;
+    const limit = queryDto.limit ?? 12;
     const result = await this.studentsService.getAllStudents(queryDto.status, page, limit);
     return createPaginatedResponse(
       result.items,

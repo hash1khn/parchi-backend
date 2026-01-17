@@ -142,7 +142,7 @@ export class StudentsService {
    */
   async getPendingApprovalStudents(
     page: number = 1,
-    limit: number = 10,
+    limit: number = 12,
   ): Promise<{ items: StudentListResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
 
@@ -191,7 +191,7 @@ export class StudentsService {
   async getAllStudents(
     status?: VerificationStatus,
     page: number = 1,
-    limit: number = 10,
+    limit: number = 12,
   ): Promise<{ items: StudentKycResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
 
