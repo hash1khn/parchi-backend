@@ -494,16 +494,14 @@ export class AuthService {
       }
 
       const { data: authData, error: authError } =
-        await this.supabase.auth.signUp({
+        await this.adminSupabase.auth.admin.createUser({
           email: signupDto.email,
           password: signupDto.password,
-          options: {
-            data: {
-              role: ROLES.MERCHANT_CORPORATE,
-              phone: signupDto.contact || null,
-            },
-            emailRedirectTo: undefined,
-          },
+          email_confirm: true,
+          user_metadata: {
+            role: ROLES.MERCHANT_CORPORATE,
+            phone: signupDto.contact || null,
+          }
         });
 
       if (authError || !authData.user) {
@@ -634,16 +632,14 @@ export class AuthService {
 
       // 3. Create user in Supabase Auth with password from frontend
       const { data: authData, error: authError } =
-        await this.supabase.auth.signUp({
+        await this.adminSupabase.auth.admin.createUser({
           email: signupDto.email,
           password: signupDto.password,
-          options: {
-            data: {
-              role: ROLES.MERCHANT_BRANCH,
-              phone: signupDto.contact || null,
-            },
-            emailRedirectTo: undefined, // No email confirmation for now
-          },
+          email_confirm: true,
+          user_metadata: {
+            role: ROLES.MERCHANT_BRANCH,
+            phone: signupDto.contact || null,
+          }
         });
 
       if (authError || !authData.user) {
