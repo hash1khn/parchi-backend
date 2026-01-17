@@ -114,7 +114,7 @@ export interface MerchantDetailsForStudentsResponse {
 
 @Injectable()
 export class MerchantsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
   private readonly logger = new Logger(MerchantsService.name);
 
   /**
@@ -1486,7 +1486,11 @@ export class MerchantsService {
    * Get corporate dashboard stats (Overview cards)
    * Corporate only
    */
-  async getDashboardStats(currentUser: CurrentUser) {
+  async getDashboardStats(
+    currentUser: CurrentUser,
+    startDate?: Date,
+    endDate?: Date,
+  ) {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
@@ -1518,6 +1522,10 @@ export class MerchantsService {
     const redemptions = await this.prisma.redemptions.findMany({
       where: {
         branch_id: { in: branchIds },
+        created_at: {
+          gte: startDate,
+          lte: endDate,
+        },
       },
       include: {
         offers: {
@@ -1559,7 +1567,11 @@ export class MerchantsService {
    * Corporate only
    */
 
-  async getDashboardAnalytics(currentUser: CurrentUser) {
+  async getDashboardAnalytics(
+    currentUser: CurrentUser,
+    startDate?: Date,
+    endDate?: Date,
+  ) {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
@@ -1582,16 +1594,20 @@ export class MerchantsService {
       return [];
     }
 
-    // Get redemptions for the last 30 days to show "Peak Hours" trend
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
-    startDate.setHours(0, 0, 0, 0);
+    // Default to last 30 days if no dates provided
+    let effectiveStartDate = startDate;
+    if (!effectiveStartDate) {
+      effectiveStartDate = new Date();
+      effectiveStartDate.setDate(effectiveStartDate.getDate() - 30);
+      effectiveStartDate.setHours(0, 0, 0, 0);
+    }
 
     const redemptions = await this.prisma.redemptions.findMany({
       where: {
         branch_id: { in: branchIds },
         created_at: {
-          gte: startDate,
+          gte: effectiveStartDate,
+          lte: endDate,
         },
       },
       select: {
@@ -1624,7 +1640,11 @@ export class MerchantsService {
    * Get branch performance (Bar chart & Pie chart)
    * Corporate only
    */
-  async getBranchPerformance(currentUser: CurrentUser) {
+  async getBranchPerformance(
+    currentUser: CurrentUser,
+    startDate?: Date,
+    endDate?: Date,
+  ) {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
@@ -1646,7 +1666,16 @@ export class MerchantsService {
       },
       include: {
         _count: {
-          select: { redemptions: true },
+          select: {
+            redemptions: {
+              where: {
+                created_at: {
+                  gte: startDate,
+                  lte: endDate,
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -1676,7 +1705,11 @@ export class MerchantsService {
    * Get offer performance (Top/Least performing)
    * Corporate only
    */
-  async getOfferPerformance(currentUser: CurrentUser) {
+  async getOfferPerformance(
+    currentUser: CurrentUser,
+    startDate?: Date,
+    endDate?: Date,
+  ) {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
@@ -1688,7 +1721,7 @@ export class MerchantsService {
 
     const merchantId = currentUser.merchant.id;
 
-    // Get offers for this merchant
+    // Get offers for this merchant with dynamic redemption count
     const offers = await this.prisma.offers.findMany({
       where: { merchant_id: merchantId },
       select: {
@@ -1698,10 +1731,19 @@ export class MerchantsService {
         discount_type: true,
         status: true,
         redemption_strategy: true,
-        current_redemptions: true, // This is a counter on the offer table itself
-      },
-      orderBy: {
-        current_redemptions: 'desc',
+        _count: {
+          select: {
+            redemptions: {
+              where: {
+                created_at: {
+                  gte: startDate,
+                  lte: endDate,
+                },
+              },
+            },
+          },
+        },
+        current_redemptions: true, // Keep for fallback or total
       },
     });
 
@@ -1713,8 +1755,13 @@ export class MerchantsService {
           ? `${o.discount_value}% OFF`
           : `Rs.${o.discount_value} OFF`,
       status: o.status,
-      redemptions: o.current_redemptions || 0,
+      // Use dynamic count from _count if dates are used, otherwise we can still use _count which works for all time too
+      // if no dates provided, _count.redemptions will be total.
+      currentRedemptions: o._count.redemptions,
     }));
+
+    // Sort by redemptions desc
+    formattedOffers.sort((a, b) => b.currentRedemptions - a.currentRedemptions);
 
     return formattedOffers;
   }

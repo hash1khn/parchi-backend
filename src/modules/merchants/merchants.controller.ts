@@ -158,8 +158,16 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
-  async getDashboardStats(@CurrentUser() currentUser: ICurrentUser) {
-    const data = await this.merchantsService.getDashboardStats(currentUser);
+  async getDashboardStats(
+    @CurrentUser() currentUser: ICurrentUser,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const data = await this.merchantsService.getDashboardStats(
+      currentUser,
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
     return createApiResponse(data, 'Dashboard stats retrieved successfully');
   }
 
@@ -167,8 +175,16 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
-  async getDashboardAnalytics(@CurrentUser() currentUser: ICurrentUser) {
-    const data = await this.merchantsService.getDashboardAnalytics(currentUser);
+  async getDashboardAnalytics(
+    @CurrentUser() currentUser: ICurrentUser,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const data = await this.merchantsService.getDashboardAnalytics(
+      currentUser,
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
     return createApiResponse(data, 'Analytics retrieved successfully');
   }
 
@@ -176,8 +192,16 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
-  async getBranchPerformance(@CurrentUser() currentUser: ICurrentUser) {
-    const data = await this.merchantsService.getBranchPerformance(currentUser);
+  async getBranchPerformance(
+    @CurrentUser() currentUser: ICurrentUser,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const data = await this.merchantsService.getBranchPerformance(
+      currentUser,
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
     return createApiResponse(data, 'Branch performance retrieved successfully');
   }
 
@@ -185,8 +209,16 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_CORPORATE)
   @HttpCode(HttpStatus.OK)
-  async getOfferPerformance(@CurrentUser() currentUser: ICurrentUser) {
-    const data = await this.merchantsService.getOfferPerformance(currentUser);
+  async getOfferPerformance(
+    @CurrentUser() currentUser: ICurrentUser,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const data = await this.merchantsService.getOfferPerformance(
+      currentUser,
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
     return createApiResponse(data, 'Offer performance retrieved successfully');
   }
 
