@@ -72,7 +72,7 @@ export class RedemptionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sohoStrategy: SohoStrategy,
-  ) {}
+  ) { }
 
   /**
    * Create redemption
@@ -174,7 +174,6 @@ export class RedemptionsService {
             offer_branches: {
               where: {
                 branch_id: branchId,
-                is_active: true,
               },
             },
             merchants: {
@@ -1416,38 +1415,38 @@ export class RedemptionsService {
       status,
       offer: redemption.offers
         ? {
-            id: redemption.offers.id,
-            title: redemption.offers.title,
-            discountType: redemption.offers.discount_type,
-            discountValue: redemption.bonus_discount_applied
-              ? Number(redemption.bonus_discount_applied)
-              : Number(redemption.offers.discount_value),
-            imageUrl: redemption.offers.image_url,
-          }
+          id: redemption.offers.id,
+          title: redemption.offers.title,
+          discountType: redemption.offers.discount_type,
+          discountValue: redemption.bonus_discount_applied
+            ? Number(redemption.bonus_discount_applied)
+            : Number(redemption.offers.discount_value),
+          imageUrl: redemption.offers.image_url,
+        }
         : undefined,
       branch: redemption.merchant_branches
         ? {
-            id: redemption.merchant_branches.id,
-            branchName: redemption.merchant_branches.branch_name,
-            address: redemption.merchant_branches.address,
-            city: redemption.merchant_branches.city,
-          }
+          id: redemption.merchant_branches.id,
+          branchName: redemption.merchant_branches.branch_name,
+          address: redemption.merchant_branches.address,
+          city: redemption.merchant_branches.city,
+        }
         : undefined,
       merchant: redemption.merchant_branches?.merchants
         ? {
-            id: redemption.merchant_branches.merchants.id,
-            businessName: redemption.merchant_branches.merchants.business_name,
-            logoPath: redemption.merchant_branches.merchants.logo_path,
-            category: redemption.merchant_branches.merchants.category,
-          }
+          id: redemption.merchant_branches.merchants.id,
+          businessName: redemption.merchant_branches.merchants.business_name,
+          logoPath: redemption.merchant_branches.merchants.logo_path,
+          category: redemption.merchant_branches.merchants.category,
+        }
         : undefined,
       student: redemption.students
         ? {
-            id: redemption.students.id,
-            parchiId: redemption.students.parchi_id,
-            firstName: redemption.students.first_name,
-            lastName: redemption.students.last_name,
-          }
+          id: redemption.students.id,
+          parchiId: redemption.students.parchi_id,
+          firstName: redemption.students.first_name,
+          lastName: redemption.students.last_name,
+        }
         : undefined,
       discountDetails:
         redemption.is_bonus_applied && redemption.bonus_discount_applied

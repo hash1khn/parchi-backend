@@ -1113,7 +1113,6 @@ export class MerchantsService {
         id: true,
         branch_name: true,
         offer_branches: {
-          where: { is_active: true },
           select: {
             offer_id: true,
           },
@@ -1209,36 +1208,18 @@ export class MerchantsService {
 
     // Transaction to update offer_branches
     await this.prisma.$transaction(async (tx) => {
-      // Deactivate all existing offers for this branch
-      await tx.offer_branches.updateMany({
+      // Remove all existing offers for this branch (enforce one offer per branch)
+      await tx.offer_branches.deleteMany({
         where: { branch_id: branchId },
-        data: { is_active: false },
       });
 
-      // Activate/Create the selected offer
-      const existingLink = await tx.offer_branches.findUnique({
-        where: {
-          offer_id_branch_id: {
-            offer_id: dto.standardOfferId,
-            branch_id: branchId,
-          },
+      // Create the selected offer assignment
+      await tx.offer_branches.create({
+        data: {
+          offer_id: dto.standardOfferId,
+          branch_id: branchId,
         },
       });
-
-      if (existingLink) {
-        await tx.offer_branches.update({
-          where: { id: existingLink.id },
-          data: { is_active: true },
-        });
-      } else {
-        await tx.offer_branches.create({
-          data: {
-            offer_id: dto.standardOfferId,
-            branch_id: branchId,
-            is_active: true,
-          },
-        });
-      }
     });
 
     return {
@@ -1850,29 +1831,17 @@ export class MerchantsService {
         status: 'active',
         valid_from: { lte: now },
         valid_until: { gte: now },
-        OR: [
-          // Offers assigned to specific branches
-          {
-            offer_branches: {
-              some: {
-                branch_id: { in: branchIds },
-                is_active: true,
-              },
-            },
+        // Only fetch offers assigned to specific branches
+        offer_branches: {
+          some: {
+            branch_id: { in: branchIds },
           },
-          // Global offers (no branch assignments)
-          {
-            offer_branches: {
-              none: {},
-            },
-          },
-        ],
+        },
       },
       include: {
         offer_branches: {
           where: {
             branch_id: { in: branchIds },
-            is_active: true,
           },
           select: {
             branch_id: true,
@@ -1908,22 +1877,12 @@ export class MerchantsService {
         formattedDiscount,
       };
 
-      // Check if this is a global offer (no branch assignments)
-      if (offer.offer_branches.length === 0) {
-        // Global offer: add to all branches
-        branches.forEach((branch) => {
-          const existingOffers = branchOffersMap.get(branch.id) || [];
-          existingOffers.push(branchOffer);
-          branchOffersMap.set(branch.id, existingOffers);
-        });
-      } else {
-        // Branch-specific offer: add only to assigned branches
-        offer.offer_branches.forEach((ob) => {
-          const existingOffers = branchOffersMap.get(ob.branch_id) || [];
-          existingOffers.push(branchOffer);
-          branchOffersMap.set(ob.branch_id, existingOffers);
-        });
-      }
+      // Branch-specific offer: add only to assigned branches
+      offer.offer_branches.forEach((ob) => {
+        const existingOffers = branchOffersMap.get(ob.branch_id) || [];
+        existingOffers.push(branchOffer);
+        branchOffersMap.set(ob.branch_id, existingOffers);
+      });
     });
 
     // Format branches with bonus settings and offers
@@ -1967,9 +1926,8 @@ export class MerchantsService {
           // Let's find the matching raw offers for this branch.
           const relevantRawOffers = offers.filter(
             (o) =>
-              // Global or assigned to this branch
-              (o.offer_branches.length === 0 ||
-                o.offer_branches.some((ob) => ob.branch_id === branch.id)) &&
+              // Assigned to this branch
+              o.offer_branches.some((ob) => ob.branch_id === branch.id) &&
               o.redemption_strategy === 'soho_hierarchical',
           );
 

@@ -327,7 +327,6 @@ export class StudentsService {
           offer_branches: {
             some: {
               branch_id: branchId,
-              is_active: true,
             },
           },
         },

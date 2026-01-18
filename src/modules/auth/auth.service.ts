@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as jwt from 'jsonwebtoken';
+import { JwksClient } from 'jwks-rsa';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { SignupDto } from './dto/signup.dto';
@@ -27,7 +28,7 @@ import { generateParchiId } from '../../utils/parchi-id.util';
 export class AuthService {
   private supabase: SupabaseClient;
   private adminSupabase: SupabaseClient;
-  private jwtSecret: string;
+  private jwksClient: JwksClient;
 
   constructor(
     private readonly configService: ConfigService,
@@ -37,17 +38,25 @@ export class AuthService {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
     const supabaseAnonKey = this.configService.get<string>('SUPABASE_ANON_KEY');
     const supabaseServiceKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
-    this.jwtSecret = this.configService.get<string>('SUPABASE_JWT_SECRET') || '';
+
+    // Kept for backward compatibility or simple secrets if ever needed,
+    // though for ES256 tokens we use JWKS.
+    // this.jwtSecret = this.configService.get<string>('SUPABASE_JWT_SECRET') || '';
 
     if (!supabaseUrl || !supabaseAnonKey) {
       throw new Error('Supabase configuration is missing');
     }
 
-    if (!this.jwtSecret) {
-      throw new Error('SUPABASE_JWT_SECRET is required for JWT verification');
-    }
-
     this.supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+    // Initialize JWKS Client
+    // The JWKS URL is typically [SUPABASE_URL]/auth/v1/.well-known/jwks.json
+    this.jwksClient = new JwksClient({
+      jwksUri: `${supabaseUrl}/auth/v1/.well-known/jwks.json`,
+      cache: true,
+      rateLimit: true,
+      jwksRequestsPerMinute: 10,
+    });
 
     // Create admin client with service role key for admin operations
     if (supabaseServiceKey) {
@@ -58,6 +67,20 @@ export class AuthService {
         }
       });
     }
+  }
+
+  // Helper to fetch signing key
+  private async getSigningKey(header: jwt.JwtHeader): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.jwksClient.getSigningKey(header.kid, (err, key) => {
+        if (err || !key) {
+          reject(err || new Error('Key not found'));
+        } else {
+          const signingKey = key.getPublicKey();
+          resolve(signingKey);
+        }
+      });
+    });
   }
 
   async signup(signupDto: SignupDto): Promise<{ user: any; session: any }> {
@@ -239,21 +262,37 @@ export class AuthService {
   // --- UPDATED METHOD ---
   async validateUserFromSession(accessToken: string): Promise<any> {
     try {
-      // Verify JWT token using SUPABASE_JWT_SECRET
-      let decoded: JwtPayload;
-      try {
-        decoded = jwt.verify(accessToken, this.jwtSecret) as JwtPayload;
-      } catch (error) {
-        // Token is invalid or expired
+      // 1. Decode header to find 'kid' and 'alg'
+      // We use complete: true to get header and payload
+      const decodedComplete = jwt.decode(accessToken, { complete: true });
+
+      if (!decodedComplete || !decodedComplete.header || !decodedComplete.payload) {
+        console.error('Invalid JWT structure');
+        return null;
+      }
+
+      const { header, payload } = decodedComplete;
+
+      // 2. Fetch proper public key from JWKS
+      const key = await this.getSigningKey(header);
+
+      // 3. Verify locally
+      const verifiedPayload = jwt.verify(accessToken, key, { algorithms: ['ES256', 'RS256', 'HS256'] }) as JwtPayload;
+
+      const userId = verifiedPayload.sub;
+
+      if (!userId) {
+        console.error('No sub (user_id) in token');
         return null;
       }
 
       // Get user from public.users table using the user ID from the token
       const publicUser = await this.prisma.public_users.findUnique({
-        where: { id: decoded.sub },
+        where: { id: userId },
       });
 
       if (!publicUser || !publicUser.is_active) {
+        // console.error('User validation failed - Found:', !!publicUser, 'Active:', publicUser?.is_active);
         return null;
       }
 
@@ -270,7 +309,7 @@ export class AuthService {
             last_name: true,
             parchi_id: true,
             university: true,
-            profile_picture: true, // [ADD THIS LINE]
+            profile_picture: true,
           },
         });
       } else if (publicUser.role === ROLES.MERCHANT_CORPORATE) {
@@ -306,6 +345,7 @@ export class AuthService {
         branch: branchDetails,
       };
     } catch (error) {
+      console.error('Local JWT Verification failed:', error.message);
       return null;
     }
   }
@@ -834,11 +874,11 @@ export class AuthService {
       // We query auth.users table directly using raw SQL with parameterized queries for security
       // Prisma automatically handles parameterization to prevent SQL injection
       const verifyResult = await this.prisma.$queryRaw<Array<{ encrypted_password: string }>>`
-        SELECT encrypted_password
-        FROM auth.users
-        WHERE id = ${userId}::uuid
-          AND encrypted_password = crypt(${changePasswordDto.currentPassword}, encrypted_password)
-      `;
+          SELECT encrypted_password
+          FROM auth.users
+          WHERE id = ${userId}::uuid
+            AND encrypted_password = crypt(${changePasswordDto.currentPassword}, encrypted_password)
+        `;
 
       // If no matching password found, current password is incorrect
       if (!verifyResult || verifyResult.length === 0) {
@@ -850,10 +890,10 @@ export class AuthService {
       // Step 2: Update password with new encrypted password
       // Generate new salt and encrypt the new password
       await this.prisma.$executeRaw`
-        UPDATE auth.users 
-        SET encrypted_password = crypt(${changePasswordDto.newPassword}, gen_salt('bf')) 
-        WHERE id = ${userId}::uuid
-      `;
+          UPDATE auth.users 
+          SET encrypted_password = crypt(${changePasswordDto.newPassword}, gen_salt('bf')) 
+          WHERE id = ${userId}::uuid
+        `;
 
       return null;
     } catch (error) {

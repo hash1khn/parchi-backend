@@ -206,53 +206,9 @@ export class OffersService {
     }
 
     // Check for "One Active Offer" rule - verify branches don't already have active offers
-    if (targetBranchIds.length > 0) {
-      const activeOffers = await this.prisma.offers.findMany({
-        where: {
-          merchant_id: merchantId,
-          status: 'active',
-          valid_from: { lte: validUntil },
-          valid_until: { gte: validFrom },
-        },
-        include: {
-          offer_branches: {
-            where: {
-              branch_id: { in: targetBranchIds },
-              is_active: true,
-            },
-            include: {
-              merchant_branches: {
-                select: {
-                  id: true,
-                  branch_name: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      // Find branches that already have active offers
-      const busyBranches: Array<{ id: string; name: string }> = [];
-      activeOffers.forEach((offer) => {
-        offer.offer_branches.forEach((ob) => {
-          if (!busyBranches.find((b) => b.id === ob.merchant_branches.id)) {
-            busyBranches.push({
-              id: ob.merchant_branches.id,
-              name: ob.merchant_branches.branch_name,
-            });
-          }
-        });
-      });
-
-      if (busyBranches.length > 0) {
-        const branchNames = busyBranches.map((b) => b.name).join(', ');
-        const errorMsg = `Cannot create offer: The following branches already have active offers: ${branchNames}. Only one active offer per branch is allowed.`;
-        this.logger.warn(errorMsg);
-        this.logger.warn(`Conflicting Active Offers: ${JSON.stringify(activeOffers.map(o => ({ id: o.id, validFrom: o.valid_from, validUntil: o.valid_until })))}`);
-        throw new BadRequestException(errorMsg);
-      }
-    }
+    // REPLACED LOGIC: Instead of throwing error, we will automatically "claim" these branches
+    // by removing them from any other offers in the transaction below.
+    // This strictly enforces the "One Active Offer Per Branch" rule without admin intervention.
 
     // Validate schedule fields
     const scheduleType = createDto.scheduleType || 'always';
@@ -347,11 +303,18 @@ export class OffersService {
       });
 
       if (branchesToAssign.length > 0) {
+        // Enforce uniqueness: Remove these branches from any other offers first
+        // This effectively "steals" the branch for the new offer
+        await tx.offer_branches.deleteMany({
+          where: {
+            branch_id: { in: branchesToAssign.map(b => b.id) },
+          },
+        });
+
         await tx.offer_branches.createMany({
           data: branchesToAssign.map((branch) => ({
             offer_id: newOffer.id,
             branch_id: branch.id,
-            is_active: true,
           })),
         });
       }
@@ -884,10 +847,11 @@ export class OffersService {
 
     // Assign branches (upsert to handle duplicates)
     await this.prisma.$transaction(async (tx) => {
-      // Remove existing assignments for these branches
+      // Remove existing assignments for these branches completely (from ANY offer)
+      // This enforces "One Active Offer Per Branch"
       await tx.offer_branches.deleteMany({
         where: {
-          offer_id: id,
+          // Removed offer_id constraint to delete assignments from any offer
           branch_id: { in: assignDto.branchIds },
         },
       });
@@ -897,7 +861,6 @@ export class OffersService {
         data: assignDto.branchIds.map((branchId) => ({
           offer_id: id,
           branch_id: branchId,
-          is_active: true,
         })),
       });
     });
@@ -1295,9 +1258,6 @@ export class OffersService {
       where: whereClause,
       include: {
         offer_branches: {
-          where: {
-            is_active: true,
-          },
           include: {
             merchant_branches: {
               select: {
@@ -1408,9 +1368,6 @@ export class OffersService {
       where: { id },
       include: {
         offer_branches: {
-          where: {
-            is_active: true,
-          },
           include: {
             merchant_branches: {
               select: {
@@ -1464,7 +1421,7 @@ export class OffersService {
       longitude: ob.merchant_branches.longitude
         ? Number(ob.merchant_branches.longitude)
         : null,
-      isActive: ob.is_active ?? true,
+      isActive: ob.merchant_branches.is_active ?? true,
     }));
 
     return {
@@ -1501,9 +1458,6 @@ export class OffersService {
       },
       include: {
         offer_branches: {
-          where: {
-            is_active: true,
-          },
           include: {
             merchant_branches: {
               select: {
