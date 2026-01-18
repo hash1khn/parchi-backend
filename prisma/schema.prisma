@@ -497,7 +497,7 @@ model offer_branches {
   merchant_branches merchant_branches @relation(fields: [branch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   offers            offers            @relation(fields: [offer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([branch_id])
+  @@unique([offer_id, branch_id])
   @@schema("public")
 }
 
@@ -642,6 +642,8 @@ model students {
   profile_picture          String?
   verification_selfie_path String?
   verified_by              String?                  @db.Uuid
+  cnic                     String?                  @unique @db.VarChar(13)
+  date_of_birth            DateTime?                @db.Date
   redemptions              redemptions[]
   student_branch_stats     student_branch_stats[]
   student_kyc              student_kyc[]
@@ -667,22 +669,23 @@ model system_logs {
 }
 
 model public_users {
-  id                String             @id @db.Uuid
-  email             String             @unique @db.VarChar(255)
-  phone             String?            @db.VarChar(20)
-  role              user_role
-  is_active         Boolean?           @default(true)
-  created_at        DateTime?          @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime?          @default(now()) @db.Timestamptz(6)
-  audit_logs        audit_logs[]
-  merchant_branches merchant_branches?
-  merchants         merchants?
-  offers            offers[]
-  redemptions       redemptions[]
-  student_kyc       student_kyc[]
-  students          students?          @relation("student_user")
-  verified_students students[]         @relation("verified_by")
-  users             auth_users         @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                      String                    @id @db.Uuid
+  email                   String                    @unique @db.VarChar(255)
+  phone                   String?                   @db.VarChar(20)
+  role                    user_role
+  is_active               Boolean?                  @default(true)
+  created_at              DateTime?                 @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime?                 @default(now()) @db.Timestamptz(6)
+  audit_logs              audit_logs[]
+  merchant_branches       merchant_branches?
+  merchants               merchants?
+  offers                  offers[]
+  redemptions             redemptions[]
+  student_kyc             student_kyc[]
+  students                students?                 @relation("student_user")
+  verified_students       students[]                @relation("verified_by")
+  user_notification_reads user_notification_reads[]
+  users                   auth_users                @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("users")
   @@schema("public")
@@ -697,6 +700,33 @@ model oauth_client_states {
 
   @@index([created_at], map: "idx_oauth_client_states_created_at")
   @@schema("auth")
+}
+
+model notifications {
+  id                      String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  title                   String                    @db.VarChar(255)
+  content                 String
+  image_url               String?
+  link_url                String?
+  type                    String                    @default("broadcast") @db.VarChar(50)
+  created_at              DateTime?                 @default(now()) @db.Timestamptz(6)
+  user_notification_reads user_notification_reads[]
+
+  @@index([type], map: "idx_notifications_type")
+  @@schema("public")
+}
+
+model user_notification_reads {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  notification_id String        @db.Uuid
+  user_id         String        @db.Uuid
+  read_at         DateTime      @default(now()) @db.Timestamptz(6)
+  notifications   notifications @relation(fields: [notification_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_notification")
+  users           public_users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user")
+
+  @@unique([notification_id, user_id], map: "unique_notification_user_read")
+  @@index([user_id], map: "idx_user_reads_user_id")
+  @@schema("public")
 }
 
 enum aal_level {

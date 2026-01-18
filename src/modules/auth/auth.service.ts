@@ -410,6 +410,15 @@ export class AuthService {
         );
       }
 
+      // Check if CNIC already exists
+      const existingCnic = await this.prisma.students.findUnique({
+        where: { cnic: signupDto.cnic },
+      });
+
+      if (existingCnic) {
+        throw new ConflictException('A student with this CNIC already exists.');
+      }
+
       // 2. Validate image URLs format
       const urlPattern = /^https?:\/\/.+/;
       if (
@@ -430,7 +439,7 @@ export class AuthService {
           options: {
             data: {
               role: ROLES.STUDENT,
-              phone: signupDto.phone || null,
+              phone: signupDto.phone,
               first_name: signupDto.firstName,
             },
             emailRedirectTo: undefined,
@@ -454,7 +463,7 @@ export class AuthService {
           data: {
             id: userId,
             email: signupDto.email,
-            phone: signupDto.phone || null,
+            phone: signupDto.phone,
             role: ROLES.STUDENT,
             is_active: false,
           },
@@ -468,6 +477,8 @@ export class AuthService {
             last_name: signupDto.lastName,
             university: signupDto.university,
             verification_status: 'pending',
+            cnic: signupDto.cnic,
+            date_of_birth: new Date(signupDto.dateOfBirth),
           },
         });
 

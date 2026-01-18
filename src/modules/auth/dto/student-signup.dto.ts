@@ -5,6 +5,9 @@ import {
   IsString,
   IsUrl,
   MinLength,
+  Length,
+  IsNumberString,
+  IsISO8601,
 } from 'class-validator';
 
 export class StudentSignupDto {
@@ -25,9 +28,19 @@ export class StudentSignupDto {
   @MinLength(6, { message: 'Password must be at least 6 characters long' })
   password: string;
 
-  @IsOptional()
+  @IsNotEmpty()
   @IsString()
-  phone?: string;
+  phone: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @Length(13, 13, { message: 'CNIC must be exactly 13 digits' })
+  @IsNumberString({}, { message: 'CNIC must contain only numbers' })
+  cnic: string;
+
+  @IsNotEmpty()
+  @IsISO8601()
+  dateOfBirth: string;
 
   @IsNotEmpty()
   @IsString()
