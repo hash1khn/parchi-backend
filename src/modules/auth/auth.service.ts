@@ -487,6 +487,8 @@ export class AuthService {
             student_id: student.id,
             student_id_card_front_path: signupDto.studentIdCardFrontUrl,
             student_id_card_back_path: signupDto.studentIdCardBackUrl,
+            cnic_front_image_path: signupDto.cnicFrontImageUrl,
+            cnic_back_image_path: signupDto.cnicBackImageUrl,
             selfie_image_path: signupDto.selfieImageUrl,
           },
         });

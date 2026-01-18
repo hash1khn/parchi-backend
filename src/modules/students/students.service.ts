@@ -91,6 +91,8 @@ export interface StudentKycResponse {
     id: string;
     studentIdCardFrontPath: string;
     studentIdCardBackPath: string;
+    cnicFrontImagePath?: string;
+    cnicBackImagePath?: string;
     selfieImagePath: string;
     submittedAt: Date | null;
     reviewedBy: string | null;
@@ -110,6 +112,8 @@ export interface StudentDetailResponse extends StudentKycResponse {
     id: string;
     studentIdCardFrontPath: string;
     studentIdCardBackPath: string;
+    cnicFrontImagePath?: string;
+    cnicBackImagePath?: string;
     selfieImagePath: string;
     submittedAt: Date | null;
     reviewedBy: string | null;
@@ -753,6 +757,8 @@ export class StudentsService {
           id: latestKyc.id,
           studentIdCardFrontPath: latestKyc.student_id_card_front_path,
           studentIdCardBackPath: latestKyc.student_id_card_back_path,
+          cnicFrontImagePath: latestKyc.cnic_front_image_path,
+          cnicBackImagePath: latestKyc.cnic_back_image_path,
           selfieImagePath: latestKyc.selfie_image_path,
           submittedAt: latestKyc.submitted_at,
           reviewedBy: latestKyc.reviewed_by,
@@ -810,6 +816,8 @@ export class StudentsService {
           id: latestKyc.id,
           studentIdCardFrontPath: latestKyc.student_id_card_front_path,
           studentIdCardBackPath: latestKyc.student_id_card_back_path,
+          cnicFrontImagePath: latestKyc.cnic_front_image_path,
+          cnicBackImagePath: latestKyc.cnic_back_image_path,
           selfieImagePath: latestKyc.selfie_image_path,
           submittedAt: latestKyc.submitted_at,
           reviewedBy: latestKyc.reviewed_by,
