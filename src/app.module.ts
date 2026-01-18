@@ -11,6 +11,7 @@ import { RedemptionsModule } from './modules/redemptions/redemptions.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module';
 import { MailModule } from './modules/mail/mail.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 
 @Module({
@@ -25,6 +26,7 @@ import { MailModule } from './modules/mail/mail.module';
     RedemptionsModule,
     AdminDashboardModule,
     MailModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
