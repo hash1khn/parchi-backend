@@ -59,7 +59,13 @@ export class AdminStudentsController {
   ) {
     const page = queryDto.page ?? 1;
     const limit = queryDto.limit ?? 12;
-    const result = await this.studentsService.getAllStudents(queryDto.status, page, limit);
+    const result = await this.studentsService.getAllStudents(
+      queryDto.status,
+      page,
+      limit,
+      queryDto.search,
+      queryDto.institute,
+    );
     return createPaginatedResponse(
       result.items,
       result.pagination,

@@ -192,12 +192,49 @@ export class StudentsService {
     status?: VerificationStatus,
     page: number = 1,
     limit: number = 12,
+    search?: string,
+    institute?: string,
   ): Promise<{ items: StudentKycResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
 
     const whereClause: Prisma.studentsWhereInput = {};
+    const conditions: Prisma.studentsWhereInput[] = [];
+
     if (status) {
-      whereClause.verification_status = status;
+      conditions.push({ verification_status: status });
+    }
+
+    if (institute) {
+      conditions.push({
+        university: {
+          contains: institute,
+          mode: 'insensitive',
+        },
+      });
+    }
+
+    if (search) {
+      conditions.push({
+        OR: [
+          { first_name: { contains: search, mode: 'insensitive' } },
+          { last_name: { contains: search, mode: 'insensitive' } },
+          { parchi_id: { contains: search, mode: 'insensitive' } },
+          {
+            users: {
+              email: { contains: search, mode: 'insensitive' },
+            },
+          },
+          {
+            users: {
+              phone: { contains: search, mode: 'insensitive' },
+            },
+          },
+        ],
+      });
+    }
+
+    if (conditions.length > 0) {
+      whereClause.AND = conditions;
     }
 
     const [students, total] = await Promise.all([
