@@ -4,6 +4,7 @@ import {
   IsInt,
   Min,
   Max,
+  IsString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -11,7 +12,16 @@ import {
   type VerificationStatus,
 } from '../../../constants/app.constants';
 
+
 export class QueryStudentsDto {
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsString()
+  institute?: string;
+
   @IsOptional()
   @IsEnum(VERIFICATION_STATUS, {
     message: `Status must be one of: ${Object.values(VERIFICATION_STATUS).join(', ')}`,
