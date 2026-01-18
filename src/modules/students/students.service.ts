@@ -57,6 +57,8 @@ export interface StudentListResponse {
   verificationExpiresAt: Date | null;
   createdAt: Date | null;
   updatedAt: Date | null;
+  cnic?: string;
+  dateOfBirth?: Date | null;
 }
 
 export interface StudentKycResponse {
@@ -83,6 +85,8 @@ export interface StudentKycResponse {
   verificationExpiresAt: Date | null;
   createdAt: Date | null;
   updatedAt: Date | null;
+  cnic?: string;
+  dateOfBirth?: Date | null;
   kyc?: {
     id: string;
     studentIdCardFrontPath: string;
@@ -708,6 +712,8 @@ export class StudentsService {
       createdAt: student.created_at,
       updatedAt: student.updated_at,
       emailConfirmed: await this.getEmailConfirmedStatus(student.user_id),
+      cnic: student.cnic,
+      dateOfBirth: student.date_of_birth,
     };
   }
 
@@ -763,6 +769,8 @@ export class StudentsService {
         }
         : null,
       emailConfirmed: await this.getEmailConfirmedStatus(student.user_id),
+      cnic: student.cnic,
+      dateOfBirth: student.date_of_birth,
     };
   }
 
@@ -818,6 +826,8 @@ export class StudentsService {
         }
         : null,
       emailConfirmed: await this.getEmailConfirmedStatus(student.user_id),
+      cnic: student.cnic,
+      dateOfBirth: student.date_of_birth,
     };
   }
 
