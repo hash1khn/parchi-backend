@@ -143,6 +143,7 @@ export class StudentsService {
   async getPendingApprovalStudents(
     page: number = 1,
     limit: number = 12,
+    sort: 'asc' | 'desc' = 'asc',
   ): Promise<{ items: StudentListResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
 
@@ -162,7 +163,7 @@ export class StudentsService {
           // KYC data excluded for list view - use getStudentDetailsForReview for full details
         },
         orderBy: {
-          created_at: 'desc',
+          created_at: sort,
         },
         skip,
         take: limit,

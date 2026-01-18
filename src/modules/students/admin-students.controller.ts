@@ -42,7 +42,11 @@ export class AdminStudentsController {
   ) {
     const page = queryDto.page ?? 1;
     const limit = queryDto.limit ?? 12;
-    const result = await this.studentsService.getPendingApprovalStudents(page, limit);
+    const result = await this.studentsService.getPendingApprovalStudents(
+      page,
+      limit,
+      queryDto.sort,
+    );
     return createPaginatedResponse(
       result.items,
       result.pagination,
