@@ -42,7 +42,7 @@ export class UpdateOfferDto {
 
   @IsOptional()
   @IsNumber()
-  @Min(0.01)
+  @Min(0)
   discountValue?: number;
 
   @IsOptional()
@@ -117,5 +117,13 @@ export class UpdateOfferDto {
   @IsArray()
   @IsString({ each: true })
   branchIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  additionalItem?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 

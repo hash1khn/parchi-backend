@@ -39,10 +39,11 @@ export class CreateOfferDto {
   })
   discountType: DiscountType;
 
+  @ValidateIf((o) => o.discountType !== DISCOUNT_TYPE.ITEM)
   @IsNotEmpty()
   @IsNumber()
   @Min(0.01)
-  discountValue: number;
+  discountValue?: number;
 
   @IsOptional()
   @IsNumber()
@@ -114,5 +115,12 @@ export class CreateOfferDto {
     message: 'endTime must be in HH:mm format',
   })
   endTime?: string;
+  @IsOptional()
+  @IsString()
+  additionalItem?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 

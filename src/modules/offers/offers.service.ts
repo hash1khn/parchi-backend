@@ -11,7 +11,7 @@ import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { AssignBranchesDto } from './dto/assign-branches.dto';
 import { ApproveRejectOfferDto } from './dto/approve-reject-offer.dto';
-import { ROLES, OfferStatus } from '../../constants/app.constants';
+import { ROLES, OfferStatus, DISCOUNT_TYPE } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
 import {
   calculatePaginationMeta,
@@ -58,6 +58,8 @@ export interface OfferResponse {
     bannerUrl: string | null;
   };
   featuredOrder?: number | null;
+  additionalItem?: string | null;
+  notes?: string | null;
 }
 
 export interface OfferAnalyticsResponse {
@@ -171,6 +173,7 @@ export class OffersService {
     // Validate discount value for percentage
     if (
       createDto.discountType === 'percentage' &&
+      createDto.discountValue &&
       createDto.discountValue > 100
     ) {
       this.logger.warn(`Invalid discount value: ${createDto.discountValue}`);
@@ -262,9 +265,12 @@ export class OffersService {
           description: createDto.description || null,
           image_url: createDto.imageUrl || null,
           discount_type: createDto.discountType,
-          discount_value: createDto.discountValue,
+          discount_value: createDto.discountValue ?? 0,
           min_order_value: createDto.minOrderValue || 0,
-          max_discount_amount: createDto.maxDiscountAmount || null,
+          max_discount_amount:
+            createDto.discountType === DISCOUNT_TYPE.ITEM
+              ? null
+              : createDto.maxDiscountAmount || null,
           terms_conditions: createDto.termsConditions || null,
           valid_from: validFrom,
           valid_until: validUntil,
@@ -289,6 +295,8 @@ export class OffersService {
             scheduleType === 'custom'
               ? convertTimeToDate(createDto.endTime)
               : null,
+          additional_item: createDto.additionalItem || null,
+          notes: createDto.notes || null,
         },
       });
 
@@ -623,6 +631,14 @@ export class OffersService {
     }
     if (updateDto.discountType !== undefined) {
       updateData.discount_type = updateDto.discountType;
+      if (updateDto.discountType === DISCOUNT_TYPE.ITEM) {
+        if (updateDto.discountValue === undefined) {
+          updateData.discount_value = 0;
+        }
+        if (updateDto.maxDiscountAmount === undefined) {
+          updateData.max_discount_amount = null;
+        }
+      }
     }
     if (updateDto.discountValue !== undefined) {
       updateData.discount_value = updateDto.discountValue;
@@ -668,6 +684,12 @@ export class OffersService {
     }
     if (updateDto.endTime !== undefined) {
       updateData.end_time = convertTimeToDate(updateDto.endTime);
+    }
+    if (updateDto.additionalItem !== undefined) {
+      (updateData as any).additional_item = updateDto.additionalItem;
+    }
+    if (updateDto.notes !== undefined) {
+      (updateData as any).notes = updateDto.notes;
     }
 
     // Update offer
@@ -1591,6 +1613,8 @@ export class OffersService {
         }
         : undefined,
       featuredOrder: offer.featured_order,
+      additionalItem: offer.additional_item,
+      notes: offer.notes,
     };
   }
 
