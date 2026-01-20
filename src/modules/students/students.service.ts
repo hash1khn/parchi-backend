@@ -383,6 +383,7 @@ export class StudentsService {
           discount_type: true,
           discount_value: true,
           max_discount_amount: true,
+          additional_item: true,
           redemption_strategy: true,
         },
         orderBy: {
@@ -444,6 +445,7 @@ export class StudentsService {
       discount_type: string;
       discount_value: any; // Prisma Decimal type
       max_discount_amount: any | null; // Prisma Decimal type
+      additional_item: string | null;  // <--- ADDED THIS
     } | null,
     strategyDiscount?: number | null,
     strategyNote?: string | null,
@@ -504,6 +506,7 @@ export class StudentsService {
       maxDiscountAmount: defaultOffer.max_discount_amount
         ? Number(defaultOffer.max_discount_amount)
         : null,
+      additionalItem: defaultOffer.additional_item,
       isBonus: false,
     };
   }
