@@ -487,6 +487,7 @@ model merchants {
   student_merchant_stats       student_merchant_stats[]
 
   @@index([verification_status], map: "idx_merchants_status")
+  @@index([featured_order], map: "idx_merchants_featured")
   @@schema("public")
 }
 
@@ -498,6 +499,7 @@ model offer_branches {
   offers            offers            @relation(fields: [offer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([offer_id, branch_id])
+  @@index([branch_id], map: "idx_offer_branches_branch")
   @@schema("public")
 }
 
@@ -542,6 +544,7 @@ model offers {
   @@index([merchant_id, status, created_at(sort: Desc)], map: "idx_offers_merchant_status_created")
   @@index([merchant_id, status, valid_from, valid_until, created_at(sort: Desc)], map: "idx_offers_merchant_active_valid_created")
   @@index([created_at(sort: Desc)], map: "idx_offers_created")
+  @@index([featured_order], map: "idx_offers_featured")
   @@schema("public")
 }
 
@@ -575,6 +578,7 @@ model redemptions {
   @@index([created_at], map: "idx_redemptions_created")
   @@index([offer_id], map: "idx_redemptions_offer")
   @@index([student_id], map: "idx_redemptions_student")
+  @@index([student_id, created_at(sort: Desc)], map: "idx_redemptions_student_history")
   @@schema("public")
 }
 
@@ -659,6 +663,7 @@ model students {
   @@index([user_id], map: "idx_students_user")
   @@index([verification_status], map: "idx_students_verification")
   @@index([verified_by], map: "idx_students_verified_by")
+  @@index([verification_status, total_redemptions(sort: Desc)], map: "idx_students_leaderboard")
   @@schema("public")
 }
 

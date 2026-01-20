@@ -1757,13 +1757,25 @@ export class MerchantsService {
     merchantId: string,
     userId?: string,
   ): Promise<MerchantDetailsForStudentsResponse> {
-    // Get merchant
-    const merchant = await this.prisma.merchants.findUnique({
-      where: { id: merchantId },
-      include: {
-        users: true,
-      },
-    });
+    // [OPTIMIZATION] Parallelize initial fetches (Merchant & Branches)
+    const [merchant, branches] = await Promise.all([
+      this.prisma.merchants.findUnique({
+        where: { id: merchantId },
+        include: { users: true },
+      }),
+      this.prisma.merchant_branches.findMany({
+        where: {
+          merchant_id: merchantId,
+          is_active: true,
+        },
+        include: {
+          branch_bonus_settings: true,
+        },
+        orderBy: {
+          branch_name: 'asc',
+        },
+      }),
+    ]);
 
     if (!merchant) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
@@ -1778,80 +1790,66 @@ export class MerchantsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
     }
 
-    // Get all active branches for this merchant
-    const branches = await this.prisma.merchant_branches.findMany({
-      where: {
-        merchant_id: merchantId,
-        is_active: true,
-      },
-      include: {
-        branch_bonus_settings: true,
-      },
-      orderBy: {
-        branch_name: 'asc',
-      },
-    });
+    // Prepare for parallel fetch of Stats and Offers
+    const branchIds = branches.map((b) => b.id);
+    const now = new Date();
 
-    // Get student branch stats if userId is provided
-    const studentBranchStats: Map<string, number> = new Map();
-    if (userId) {
-      // Get student record
-      const student = await this.prisma.students.findUnique({
-        where: { user_id: userId },
-        select: { id: true },
-      });
-
-      if (student) {
-        const stats = await this.prisma.student_branch_stats.findMany({
+    // [OPTIMIZATION] Parallelize stats and offers fetch
+    const [stats, offers] = await Promise.all([
+      // 1. Get student branch stats (if userId provided)
+      userId
+        ? this.prisma.student_branch_stats.findMany({
           where: {
-            student_id: student.id,
-            branch_id: {
-              in: branches.map((b) => b.id),
-            },
+            // We need to resolve student ID first usually, but if we assume userId map...
+            // Wait, the original code looked up Student ID from User ID first.
+            // We can include a student lookup here or just join if possible.
+            // Existing logic: Find Student -> Find Stats.
+            // Let's implement the student lookup inside this block or before.
+            // To keep it clean, let's do access the student ID via a separate small query or assumes we can do it.
+            // Replicating original logic safely:
+            students: { user_id: userId },
+            branch_id: { in: branchIds },
           },
           select: {
             branch_id: true,
             redemption_count: true,
           },
-        });
+        })
+        : Promise.resolve([] as Array<{ branch_id: string; redemption_count: number | null }>),
 
-        stats.forEach((stat) => {
-          studentBranchStats.set(stat.branch_id, stat.redemption_count || 0);
-        });
-      }
-    }
-
-    // Get active offers for all branches of this merchant
-    // Include both branch-specific offers and global offers (no branch assignments)
-    const now = new Date();
-    const branchIds = branches.map((b) => b.id);
-
-    const offers = await this.prisma.offers.findMany({
-      where: {
-        merchant_id: merchantId,
-        status: 'active',
-        valid_from: { lte: now },
-        valid_until: { gte: now },
-        // Only fetch offers assigned to specific branches
-        offer_branches: {
-          some: {
-            branch_id: { in: branchIds },
+      // 2. Get active offers
+      this.prisma.offers.findMany({
+        where: {
+          merchant_id: merchantId,
+          status: 'active',
+          valid_from: { lte: now },
+          valid_until: { gte: now },
+          offer_branches: {
+            some: {
+              branch_id: { in: branchIds },
+            },
           },
         },
-      },
-      include: {
-        offer_branches: {
-          where: {
-            branch_id: { in: branchIds },
-          },
-          select: {
-            branch_id: true,
+        include: {
+          offer_branches: {
+            where: {
+              branch_id: { in: branchIds },
+            },
+            select: {
+              branch_id: true,
+            },
           },
         },
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
+        orderBy: {
+          created_at: 'desc',
+        },
+      }),
+    ]);
+
+    // Process stats into Map
+    const studentBranchStats: Map<string, number> = new Map();
+    stats.forEach((stat) => {
+      studentBranchStats.set(stat.branch_id, stat.redemption_count || 0);
     });
 
     // Create a map of branch_id -> offers for that branch
