@@ -384,6 +384,41 @@ export class AuthService {
     }
   }
 
+  async refreshSession(refreshToken: string): Promise<{ user: any; session: any }> {
+    try {
+      const { data, error } = await this.supabase.auth.refreshSession({
+        refresh_token: refreshToken,
+      });
+
+      if (error || !data.session || !data.user) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      const publicUser = await this.prisma.public_users.findUnique({
+        where: { id: data.user.id },
+      });
+
+      if (!publicUser || !publicUser.is_active) {
+        throw new UnauthorizedException(API_RESPONSE_MESSAGES.AUTH.ACCOUNT_PENDING);
+      }
+
+      return {
+        user: {
+          id: publicUser.id,
+          email: publicUser.email,
+          role: publicUser.role,
+          is_active: publicUser.is_active,
+        },
+        session: data.session,
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new BadRequestException('Session refresh failed');
+    }
+  }
+
   getSupabaseClient(): SupabaseClient {
     return this.supabase;
   }

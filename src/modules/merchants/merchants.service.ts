@@ -285,15 +285,16 @@ export class MerchantsService {
         category: true,
         offers: {
           select: {
-            redemptions: {
-              where: {
-                created_at: {
-                  gte: startDate,
-                  lte: endDate,
-                },
-              },
+            _count: {
               select: {
-                id: true,
+                redemptions: {
+                  where: {
+                    created_at: {
+                      gte: startDate,
+                      lte: endDate,
+                    },
+                  },
+                },
               },
             },
           },
@@ -304,7 +305,7 @@ export class MerchantsService {
     // Calculate total redemptions for the period and sort
     const merchantsWithRedemptions = merchants.map((merchant) => {
       const totalRedemptions = merchant.offers.reduce(
-        (sum, offer) => sum + (offer.redemptions?.length || 0),
+        (sum, offer) => sum + (offer._count.redemptions || 0),
         0,
       );
       return {
@@ -1863,10 +1864,14 @@ export class MerchantsService {
 
     // Group offers by branch
     offers.forEach((offer) => {
-      const formattedDiscount =
-        offer.discount_type === 'percentage'
-          ? `${Number(offer.discount_value)}% OFF`
-          : `Rs.${Number(offer.discount_value)} OFF`;
+      let formattedDiscount: string;
+      if (offer.discount_type === 'percentage') {
+        formattedDiscount = `${Number(offer.discount_value)}% OFF`;
+      } else if (offer.additional_item && offer.additional_item.trim() !== '') {
+        formattedDiscount = offer.additional_item;
+      } else {
+        formattedDiscount = `Rs. ${Number(offer.discount_value)} OFF`;
+      }
 
       const branchOffer: BranchOffer = {
         id: offer.id,

@@ -29,7 +29,7 @@ import { Audit } from '../../decorators/audit.decorator';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
@@ -88,8 +88,8 @@ export class AuthController {
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  @Audit({ 
-    action: 'CHANGE_PASSWORD', 
+  @Audit({
+    action: 'CHANGE_PASSWORD',
     tableName: 'users',
     getRecordId: (args) => args[3]?.user?.id // Extract user ID from request.user
   })
@@ -111,8 +111,8 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
-  @Audit({ 
-    action: 'UPDATE_PROFILE_PICTURE', 
+  @Audit({
+    action: 'UPDATE_PROFILE_PICTURE',
     tableName: 'students',
     getRecordId: (args) => args[3]?.user?.id // Extract user ID from request.user
   })
@@ -132,6 +132,13 @@ export class AuthController {
     const token = this.extractTokenFromHeader(req);
     await this.authService.logout(token);
     return createApiResponse(null, API_RESPONSE_MESSAGES.AUTH.LOGOUT_SUCCESS);
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  async refresh(@Body('refreshToken') refreshToken: string) {
+    const data = await this.authService.refreshSession(refreshToken);
+    return createApiResponse(data, 'Session refreshed successfully');
   }
 
   @Get('me')
