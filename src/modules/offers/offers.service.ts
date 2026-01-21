@@ -330,7 +330,6 @@ export class OffersService {
       return newOffer;
     });
 
-    // Fetch created offer with relations
     const offerWithRelations = await this.prisma.offers.findUnique({
       where: { id: offer.id },
       include: {
@@ -345,8 +344,32 @@ export class OffersService {
             },
           },
         },
+        merchants: {
+          select: {
+            business_name: true,
+          },
+        },
       },
     });
+
+    // AUTO-NOTIFICATION: If Admin created it, add to queue
+    if (currentUser.role === ROLES.ADMIN) {
+      if (offerWithRelations?.merchants?.business_name) {
+        await this.prisma.notification_queue.create({
+          data: {
+            title: 'New Offer Alert!',
+            content: `Check out the new offer from ${offerWithRelations.merchants.business_name}: ${offer.title}`,
+            image_url: offer.image_url,
+            // Assuming deep link or relative path
+            link_url: `/offers/${offer.id}`,
+            target_topic: 'students_all',
+            status: 'pending', // Waiting to be sent
+            reviewed_by: currentUser.id, // Auto-reviewed by admin
+          },
+        });
+        this.logger.log(`Auto-created notification queue item for offer ${offer.id}`);
+      }
+    }
 
     return this.formatOfferResponse(offerWithRelations);
   }
@@ -1217,6 +1240,30 @@ export class OffersService {
         },
       },
     });
+
+    // AUTO-NOTIFICATION: If Approved, add to queue
+    if (approveRejectDto.action === 'approve') {
+       if (updatedOffer?.merchants?.business_name) {
+        // Use currentUser.id if available, but here we don't have currentUser passed to the method.
+        // Usually, the controller would pass it, but the signature doesn't have it.
+        // We can assume system action or leave reviewed_by null if not critical,
+        // OR update the signature. For now, leaving reviewed_by null or we'd need to change method signature.
+        // Let's create it without reviewed_by for now, or assume it's implicit.
+        // Actually, let's keep it simple.
+        await this.prisma.notification_queue.create({
+          data: {
+            title: 'New Offer Alert!',
+            content: `${updatedOffer.merchants.business_name} has a new offer: ${updatedOffer.title}!`,
+            image_url: updatedOffer.image_url,
+            link_url: `/offers/${updatedOffer.id}`,
+            target_topic: 'students_all',
+            status: 'pending',
+            // reviewed_by: ... we don't have user ID here easily unless we change controller
+          },
+        });
+        this.logger.log(`Auto-created notification queue item for approved offer ${updatedOffer.id}`);
+       }
+    }
 
     return this.formatOfferResponse(updatedOffer);
   }

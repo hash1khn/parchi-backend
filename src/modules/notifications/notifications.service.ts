@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import * as admin from 'firebase-admin';
@@ -76,6 +76,131 @@ export class NotificationsService implements OnModuleInit {
       }
     } catch (error) {
       this.logger.error('Error sending broadcast notification:', error);
+      throw error;
+    }
+  }
+
+  async getNotificationQueue(status?: string) {
+    try {
+      const where: any = {};
+      if (status) {
+        where.status = status;
+      }
+
+      const queue = await this.prisma.notification_queue.findMany({
+        where,
+        orderBy: {
+          created_at: 'desc',
+        },
+        include: {
+          users: {
+            select: {
+              email: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      return queue;
+    } catch (error) {
+      this.logger.error('Error fetching notification queue:', error);
+      throw error;
+    }
+  }
+
+  async getNotificationHistory(page: number = 1, limit: number = 10) {
+    try {
+      const skip = (page - 1) * limit;
+
+      const [data, total] = await Promise.all([
+        this.prisma.notifications.findMany({
+          skip,
+          take: limit,
+          orderBy: {
+            created_at: 'desc',
+          },
+        }),
+        this.prisma.notifications.count(),
+      ]);
+
+      return {
+        data,
+        meta: {
+          total,
+          page,
+          last_page: Math.ceil(total / limit),
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error fetching notification history:', error);
+      throw error;
+    }
+  }
+
+
+  async sendFromQueue(id: string) {
+    try {
+      // 1. Fetch queue item
+      const queueItem = await this.prisma.notification_queue.findUnique({
+        where: { id },
+      });
+
+      if (!queueItem) {
+        throw new NotFoundException('Notification queue item not found');
+      }
+
+      if (queueItem.status === 'sent') {
+        throw new BadRequestException('Notification has already been sent');
+      }
+
+      // 2. Save to Database (History)
+      const notification = await this.prisma.notifications.create({
+        data: {
+          title: queueItem.title,
+          content: queueItem.content,
+          image_url: queueItem.image_url,
+          link_url: queueItem.link_url,
+          type: 'broadcast', // derived from queue, assumming broadcast for now
+        },
+      });
+
+      // 3. Define payload
+      const message: admin.messaging.Message = {
+        notification: {
+          title: queueItem.title,
+          body: queueItem.content,
+          ...(queueItem.image_url && { imageUrl: queueItem.image_url }),
+        },
+        data: {
+          notification_id: notification.id,
+          click_action: 'FLUTTER_NOTIFICATION_CLICK',
+          ...(queueItem.link_url && { link_url: queueItem.link_url }),
+        },
+        topic: queueItem.target_topic || 'students_all',
+      };
+
+      // 4. Send via Firebase
+      if (admin.apps.length > 0) {
+        const response = await admin.messaging().send(message);
+        this.logger.log(`Successfully sent queue notification ${id}: ${response}`);
+
+        // 5. Update Queue Status
+        await this.prisma.notification_queue.update({
+          where: { id },
+          data: {
+            status: 'sent',
+            updated_at: new Date(),
+          },
+        });
+
+        return { success: true, messageId: response, notification };
+      } else {
+        this.logger.warn('Firebase app not initialized, skipping push notification');
+        return { success: false, error: 'Firebase not initialized', notification };
+      }
+    } catch (error) {
+      this.logger.error(`Error sending notification from queue ${id}:`, error);
       throw error;
     }
   }
