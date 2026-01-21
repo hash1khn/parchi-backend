@@ -358,6 +358,7 @@ export class AuthService {
             parchi_id: true,
             university: true,
             profile_picture: true,
+            is_founders_club: true,
           },
         });
       } else if (publicUser.role === ROLES.MERCHANT_CORPORATE) {
@@ -388,7 +389,12 @@ export class AuthService {
         role: publicUser.role,
         is_active: publicUser.is_active,
         // Attach role-specific details to the user object
-        student: studentDetails,
+        student: studentDetails
+          ? {
+            ...studentDetails,
+            isFounderClub: studentDetails.is_founders_club,
+          }
+          : null,
         merchant: merchantDetails,
         branch: branchDetails,
       };
