@@ -1866,6 +1866,7 @@ export class MerchantsService {
         discount_type: true,
         discount_value: true,
         redemption_strategy: true,
+        additional_item: true,
         offer_branches: {
           where: {
             branch_id: { in: branchIds },
