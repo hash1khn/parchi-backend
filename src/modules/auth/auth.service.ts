@@ -178,6 +178,18 @@ export class AuthService {
         });
 
       if (authError || !authData.user) {
+        // Check if it's an unconfirmed email case
+        // We query the auth schema directly to check email_confirmed_at
+        const authUser = await this.prisma.auth_users.findFirst({
+          where: { email: loginDto.email },
+        });
+
+        if (authUser && !authUser.email_confirmed_at) {
+          throw new UnauthorizedException(
+            'Please check your inbox and confirm your email address before logging in.',
+          );
+        }
+
         throw new UnauthorizedException(
           API_RESPONSE_MESSAGES.AUTH.INVALID_CREDENTIALS,
         );
@@ -493,18 +505,46 @@ export class AuthService {
       });
 
       if (existingUser) {
-        throw new ConflictException(
-          API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_EMAIL_EXISTS,
-        );
+        if (existingUser.role === ROLES.STUDENT) {
+          const student = await this.prisma.students.findUnique({
+            where: { user_id: existingUser.id },
+            include: {
+              student_kyc: { orderBy: { submitted_at: 'desc' }, take: 1 },
+            },
+          });
+
+          if (student && student.verification_status === 'rejected') {
+            await this.handleRejectedStudentCleanup(student, existingUser);
+          } else {
+            throw new ConflictException(
+              API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_EMAIL_EXISTS,
+            );
+          }
+        } else {
+          throw new ConflictException(
+            API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_EMAIL_EXISTS,
+          );
+        }
       }
 
       // Check if CNIC already exists
-      const existingCnic = await this.prisma.students.findUnique({
+      const existingCnicStudent = await this.prisma.students.findUnique({
         where: { cnic: signupDto.cnic },
+        include: {
+          users: true,
+          student_kyc: { orderBy: { submitted_at: 'desc' }, take: 1 },
+        },
       });
 
-      if (existingCnic) {
-        throw new ConflictException('A student with this CNIC already exists.');
+      if (existingCnicStudent) {
+        if (existingCnicStudent.verification_status === 'rejected') {
+          await this.handleRejectedStudentCleanup(
+            existingCnicStudent,
+            existingCnicStudent.users,
+          );
+        } else {
+          throw new ConflictException('A student with this CNIC already exists.');
+        }
       }
 
       // 2. Validate image URLs format
@@ -1026,6 +1066,50 @@ export class AuthService {
       throw new BadRequestException(
         error.message || API_RESPONSE_MESSAGES.AUTH.CHANGE_PASSWORD_FAILED,
       );
+    }
+  }
+
+  private async handleRejectedStudentCleanup(student: any, user: any) {
+    // 1. Archive to rejected_student_logs
+    const lastKyc = student.student_kyc?.[0];
+
+    try {
+      await this.prisma.rejected_student_logs.create({
+        data: {
+          old_user_id: user.id,
+          email: user.email,
+          cnic: student.cnic,
+          parchi_id: student.parchi_id,
+          first_name: student.first_name,
+          last_name: student.last_name,
+          university: student.university,
+          rejection_reason: lastKyc?.review_notes || 'No reason provided',
+          rejected_by: lastKyc?.reviewed_by,
+          rejected_at: lastKyc?.reviewed_at || new Date(),
+        },
+      });
+    } catch (e) {
+      console.error('Failed to log rejected student archive:', e);
+      // Proceed to cleanup anyway
+    }
+
+    // 2. Delete Supabase User (Cascades to public_users -> students -> etc)
+    try {
+      const { error } = await this.adminSupabase.auth.admin.deleteUser(user.id);
+      if (error) throw error;
+    } catch (error) {
+      console.warn(
+        `Supabase user deletion failed for ${user.email}, attempting DB cleanup manually:`,
+        error.message,
+      );
+      // Fallback: Delete from public_users manually
+      try {
+        await this.prisma.public_users.delete({ where: { id: user.id } });
+      } catch (dbError) {
+        console.error('Failed to force delete public_user:', dbError);
+        // We throw here because if we can't delete, we can't recreate
+        throw new BadRequestException('Failed to cleanup rejected account. Please contact support.');
+      }
     }
   }
 }
