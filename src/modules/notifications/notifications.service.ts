@@ -204,4 +204,96 @@ export class NotificationsService implements OnModuleInit {
       throw error;
     }
   }
+
+  async getStudentNotifications(userId: string, page: number = 1, limit: number = 10) {
+    try {
+      const skip = (page - 1) * limit;
+
+      // Fetch notifications with read status for this user
+      const [notifications, total] = await Promise.all([
+        this.prisma.notifications.findMany({
+          skip,
+          take: limit,
+          orderBy: {
+            created_at: 'desc',
+          },
+          include: {
+            user_notification_reads: {
+              where: {
+                user_id: userId,
+              },
+              select: {
+                read_at: true,
+              },
+            },
+          },
+        }),
+        this.prisma.notifications.count(),
+      ]);
+
+      // Transform raw result to add is_read flag
+      const data = notifications.map((n) => ({
+        id: n.id,
+        title: n.title,
+        content: n.content,
+        imageUrl: n.image_url,
+        linkUrl: n.link_url,
+        type: n.type,
+        createdAt: n.created_at,
+        isRead: n.user_notification_reads.length > 0,
+      }));
+
+      return {
+        data,
+        meta: {
+          total,
+          page,
+          last_page: Math.ceil(total / limit),
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error fetching student notifications:', error);
+      throw error;
+    }
+  }
+
+  async markAsRead(userId: string, notificationId: string) {
+    try {
+      // Check if notification exists
+      const notification = await this.prisma.notifications.findUnique({
+        where: { id: notificationId },
+      });
+
+      if (!notification) {
+        throw new NotFoundException('Notification not found');
+      }
+
+      // Check if already read
+      const existingRead = await this.prisma.user_notification_reads.findUnique({
+        where: {
+          notification_id_user_id: {
+            notification_id: notificationId,
+            user_id: userId,
+          },
+        },
+      });
+
+      if (existingRead) {
+        return { message: 'Notification already marked as read' };
+      }
+
+      // Mark as read
+      await this.prisma.user_notification_reads.create({
+        data: {
+          user_id: userId,
+          notification_id: notificationId,
+        },
+      });
+
+      return { message: 'Notification marked as read' };
+    } catch (error) {
+      this.logger.error(`Error marking notification ${notificationId} as read for user ${userId}:`, error);
+      throw error;
+    }
+  }
 }
