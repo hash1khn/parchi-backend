@@ -144,7 +144,7 @@ export class OffersService {
       merchantId = createDto.merchantId;
     } else if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       // Merchant corporate uses their own merchant ID
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
 
@@ -365,7 +365,7 @@ export class OffersService {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
-    if (!currentUser.merchant_id) {
+    if (!currentUser.merchant?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
     }
 
@@ -457,7 +457,7 @@ export class OffersService {
 
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant_id) {
@@ -493,7 +493,7 @@ export class OffersService {
 
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant_id) {
@@ -733,7 +733,7 @@ export class OffersService {
 
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant_id) {
@@ -793,7 +793,7 @@ export class OffersService {
 
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant_id) {
@@ -843,7 +843,7 @@ export class OffersService {
 
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant_id) {
@@ -928,7 +928,7 @@ export class OffersService {
 
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant_id) {
@@ -986,7 +986,7 @@ export class OffersService {
 
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.OFFER.ACCESS_DENIED);
       }
       if (offer.merchant_id !== currentUser.merchant_id) {

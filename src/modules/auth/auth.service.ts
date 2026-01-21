@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as jwt from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
+import { LRUCache } from 'lru-cache';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { SignupDto } from './dto/signup.dto';
@@ -29,6 +30,7 @@ export class AuthService {
   private supabase: SupabaseClient;
   private adminSupabase: SupabaseClient;
   private jwksClient: JwksClient;
+  private tokenCache: LRUCache<string, any>;
 
   constructor(
     private readonly configService: ConfigService,
@@ -56,6 +58,13 @@ export class AuthService {
       cache: true,
       rateLimit: true,
       jwksRequestsPerMinute: 10,
+    });
+
+    // Initialize token cache with 5-minute TTL and max 1000 tokens
+    // This caches JWT verification results to avoid repeated verifications
+    this.tokenCache = new LRUCache({
+      max: 1000,
+      ttl: 1000 * 60 * 5, // 5 minutes
     });
 
     // Create admin client with service role key for admin operations
@@ -259,11 +268,22 @@ export class AuthService {
     }
   }
 
-  // --- UPDATED METHOD ---
+  /**
+   * Lightweight JWT validation - GUARDS ONLY
+   * This method is used by JwtAuthGuard and should be FAST
+   * NO database queries - only JWT verification
+   * Returns minimal user info from JWT claims including merchant_id/branch_id
+   * Uses LRU cache to avoid repeated verification of the same token
+   */
   async validateUserFromSession(accessToken: string): Promise<any> {
     try {
+      // Check cache first (5-minute TTL)
+      const cachedResult = this.tokenCache.get(accessToken);
+      if (cachedResult) {
+        return cachedResult;
+      }
+
       // 1. Decode header to find 'kid' and 'alg'
-      // We use complete: true to get header and payload
       const decodedComplete = jwt.decode(accessToken, { complete: true });
 
       if (!decodedComplete || !decodedComplete.header || !decodedComplete.payload) {
@@ -271,13 +291,15 @@ export class AuthService {
         return null;
       }
 
-      const { header, payload } = decodedComplete;
+      const { header } = decodedComplete;
 
-      // 2. Fetch proper public key from JWKS
+      // 2. Fetch proper public key from JWKS (cached by jwks-rsa library)
       const key = await this.getSigningKey(header);
 
-      // 3. Verify locally
-      const verifiedPayload = jwt.verify(accessToken, key, { algorithms: ['ES256', 'RS256', 'HS256'] }) as JwtPayload;
+      // 3. Verify JWT signature
+      const verifiedPayload = jwt.verify(accessToken, key, {
+        algorithms: ['ES256', 'RS256', 'HS256']
+      }) as JwtPayload;
 
       const userId = verifiedPayload.sub;
 
@@ -286,13 +308,39 @@ export class AuthService {
         return null;
       }
 
-      // Get user from public.users table using the user ID from the token
+      // 🔥 CRITICAL: Return minimal payload from JWT ONLY - NO DATABASE QUERIES
+      // Extract merchant_id/branch_id from user_metadata for zero-DB-query auth
+      const result = {
+        id: userId,
+        email: verifiedPayload.email,
+        role: verifiedPayload.user_metadata?.role || verifiedPayload.app_metadata?.role,
+        merchant_id: verifiedPayload.user_metadata?.merchant_id,  // For MERCHANT_CORPORATE
+        branch_id: verifiedPayload.user_metadata?.branch_id,      // For MERCHANT_BRANCH
+      };
+
+      // Cache the result for future requests (5-minute TTL)
+      this.tokenCache.set(accessToken, result);
+
+      return result;
+    } catch (error) {
+      console.error('Local JWT Verification failed:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get full user details with role-specific data
+   * This method SHOULD be used for endpoints like /auth/me
+   * Fetches complete user profile from database
+   */
+  async getCurrentUserWithDetails(userId: string): Promise<any> {
+    try {
+      // Get user from public.users table
       const publicUser = await this.prisma.public_users.findUnique({
         where: { id: userId },
       });
 
       if (!publicUser || !publicUser.is_active) {
-        // console.error('User validation failed - Found:', !!publicUser, 'Active:', publicUser?.is_active);
         return null;
       }
 
@@ -345,11 +393,10 @@ export class AuthService {
         branch: branchDetails,
       };
     } catch (error) {
-      console.error('Local JWT Verification failed:', error.message);
+      console.error('Failed to get user details:', error.message);
       return null;
     }
   }
-  // --- UPDATED METHOD END ---
 
   async logout(accessToken: string): Promise<null> {
     try {
@@ -631,6 +678,15 @@ export class AuthService {
         };
       });
 
+      // 🔥 Update Supabase user metadata with merchant_id for zero-DB-query auth
+      await this.adminSupabase.auth.admin.updateUserById(userId, {
+        user_metadata: {
+          role: ROLES.MERCHANT_CORPORATE,
+          phone: signupDto.contact || null,
+          merchant_id: result.merchant.id, // Store merchant ID in JWT
+        },
+      });
+
       return {
         id: result.merchant.id,
         email: result.user.email,
@@ -792,6 +848,16 @@ export class AuthService {
           user: publicUser,
           branch,
         };
+      });
+
+      // 🔥 Update Supabase user metadata with branch_id and merchant_id for zero-DB-query auth
+      await this.adminSupabase.auth.admin.updateUserById(userId, {
+        user_metadata: {
+          role: ROLES.MERCHANT_BRANCH,
+          phone: signupDto.contact || null,
+          branch_id: result.branch.id, // Store branch ID in JWT
+          merchant_id: merchantId,      // Store parent merchant ID in JWT
+        },
       });
 
       // 6. Return response (without sensitive data)

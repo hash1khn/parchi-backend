@@ -17,7 +17,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "migrate:jwt": "ts-node -r tsconfig-paths/register src/scripts/migrate-jwt-metadata.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -33,6 +34,7 @@
     "firebase-admin": "^13.6.0",
     "jsonwebtoken": "^9.0.3",
     "jwks-rsa": "^3.2.1",
+    "lru-cache": "^11.2.4",
     "morgan": "^1.10.1",
     "nodemailer": "^7.0.12",
     "reflect-metadata": "^0.2.2",
@@ -46,6 +48,7 @@
     "@nestjs/testing": "^11.0.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
+    "@types/lru-cache": "^7.10.9",
     "@types/morgan": "^1.9.10",
     "@types/node": "^22.10.7",
     "@types/nodemailer": "^7.0.5",

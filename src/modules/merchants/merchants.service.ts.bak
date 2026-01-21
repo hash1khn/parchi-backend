@@ -285,16 +285,15 @@ export class MerchantsService {
         category: true,
         offers: {
           select: {
-            _count: {
-              select: {
-                redemptions: {
-                  where: {
-                    created_at: {
-                      gte: startDate,
-                      lte: endDate,
-                    },
-                  },
+            redemptions: {
+              where: {
+                created_at: {
+                  gte: startDate,
+                  lte: endDate,
                 },
+              },
+              select: {
+                id: true,
               },
             },
           },
@@ -305,7 +304,7 @@ export class MerchantsService {
     // Calculate total redemptions for the period and sort
     const merchantsWithRedemptions = merchants.map((merchant) => {
       const totalRedemptions = merchant.offers.reduce(
-        (sum, offer) => sum + (offer._count.redemptions || 0),
+        (sum, offer) => sum + (offer.redemptions?.length || 0),
         0,
       );
       return {
@@ -414,7 +413,7 @@ export class MerchantsService {
 
     // Authorization check: merchants can only update their own account
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id || currentUser.merchant_id !== id) {
+      if (!currentUser.merchant?.id || currentUser.merchant_id !== id) {
         throw new ForbiddenException(
           API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
         );
@@ -701,7 +700,7 @@ export class MerchantsService {
 
     // If corporate account, filter by their merchant_id
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(
           API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
         );
@@ -798,7 +797,7 @@ export class MerchantsService {
 
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(
           API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
         );
@@ -870,7 +869,7 @@ export class MerchantsService {
 
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(
           API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
         );
@@ -967,7 +966,7 @@ export class MerchantsService {
       );
     }
 
-    if (!currentUser.merchant_id) {
+    if (!currentUser.merchant?.id) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
       );
@@ -975,13 +974,8 @@ export class MerchantsService {
 
     const merchantId = currentUser.merchant_id;
 
-    // Check if corporate account is active (need to fetch from DB since not in JWT)
-    const merchant = await this.prisma.merchants.findUnique({
-      where: { id: merchantId },
-      select: { is_active: true },
-    });
-
-    if (!merchant || !merchant.is_active) {
+    // Check if corporate account is active
+    if (!currentUser.merchant.is_active) {
       throw new ForbiddenException(
         'Cannot create branches for an inactive corporate account',
       );
@@ -1055,7 +1049,7 @@ export class MerchantsService {
 
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(
           API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
         );
@@ -1102,7 +1096,7 @@ export class MerchantsService {
     const whereClause: Prisma.merchant_branchesWhereInput = {};
 
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      if (!currentUser.merchant_id) {
+      if (!currentUser.merchant?.id) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
       }
       whereClause.merchant_id = currentUser.merchant_id;
@@ -1171,7 +1165,7 @@ export class MerchantsService {
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       if (
-        !currentUser.merchant_id ||
+        !currentUser.merchant?.id ||
         branch.merchant_id !== currentUser.merchant_id
       ) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
@@ -1258,7 +1252,7 @@ export class MerchantsService {
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       if (
-        !currentUser.merchant_id ||
+        !currentUser.merchant?.id ||
         branch.merchant_id !== currentUser.merchant_id
       ) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
@@ -1322,7 +1316,7 @@ export class MerchantsService {
     // Authorization check
     if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
       if (
-        !currentUser.merchant_id ||
+        !currentUser.merchant?.id ||
         branch.merchant_id !== currentUser.merchant_id
       ) {
         throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
@@ -1481,7 +1475,7 @@ export class MerchantsService {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
-    if (!currentUser.merchant_id) {
+    if (!currentUser.merchant?.id) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
       );
@@ -1562,7 +1556,7 @@ export class MerchantsService {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
-    if (!currentUser.merchant_id) {
+    if (!currentUser.merchant?.id) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
       );
@@ -1635,7 +1629,7 @@ export class MerchantsService {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
-    if (!currentUser.merchant_id) {
+    if (!currentUser.merchant?.id) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
       );
@@ -1700,7 +1694,7 @@ export class MerchantsService {
     if (currentUser.role !== ROLES.MERCHANT_CORPORATE) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
-    if (!currentUser.merchant_id) {
+    if (!currentUser.merchant?.id) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.MERCHANT.BRANCH_ACCESS_DENIED,
       );
@@ -1890,14 +1884,10 @@ export class MerchantsService {
 
     // Group offers by branch
     offers.forEach((offer) => {
-      let formattedDiscount: string;
-      if (offer.discount_type === 'percentage') {
-        formattedDiscount = `${Number(offer.discount_value)}% OFF`;
-      } else if (offer.additional_item && offer.additional_item.trim() !== '') {
-        formattedDiscount = offer.additional_item;
-      } else {
-        formattedDiscount = `Rs. ${Number(offer.discount_value)} OFF`;
-      }
+      const formattedDiscount =
+        offer.discount_type === 'percentage'
+          ? `${Number(offer.discount_value)}% OFF`
+          : `Rs.${Number(offer.discount_value)} OFF`;
 
       const branchOffer: BranchOffer = {
         id: offer.id,

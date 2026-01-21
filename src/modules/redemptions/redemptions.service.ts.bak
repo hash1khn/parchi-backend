@@ -89,7 +89,7 @@ export class RedemptionsService {
       );
     }
 
-    if (!currentUser.branch_id) {
+    if (!currentUser.branch?.id) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_ACCESS_DENIED,
       );
@@ -796,7 +796,7 @@ export class RedemptionsService {
       );
     }
 
-    if (!currentUser.branch_id) {
+    if (!currentUser.branch?.id) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_ACCESS_DENIED,
       );
@@ -931,7 +931,7 @@ export class RedemptionsService {
       );
     }
 
-    if (!currentUser.branch_id) {
+    if (!currentUser.branch?.id) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_ACCESS_DENIED,
       );
@@ -1004,7 +1004,7 @@ export class RedemptionsService {
       );
     }
 
-    if (!currentUser.branch_id) {
+    if (!currentUser.branch?.id) {
       throw new ForbiddenException(
         API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_ACCESS_DENIED,
       );
@@ -1480,7 +1480,7 @@ export class RedemptionsService {
    * Returns today's count and percentage change vs yesterday
    */
   async getBranchDailyStats(currentUser: CurrentUser) {
-    if (!currentUser.branch_id) {
+    if (!currentUser.branch?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
 
@@ -1546,7 +1546,7 @@ export class RedemptionsService {
    * Returns list of redemptions for today with student and offer details
    */
   async getBranchDailyRedemptionDetails(currentUser: CurrentUser) {
-    if (!currentUser.branch_id) {
+    if (!currentUser.branch?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
 
@@ -1632,7 +1632,7 @@ export class RedemptionsService {
    * Includes: Unique Students, Bonus Deals, Peak Hour, Hourly Chart Data
    */
   async getBranchAggregatedStats(currentUser: CurrentUser) {
-    if (!currentUser.branch_id) {
+    if (!currentUser.branch?.id) {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
 

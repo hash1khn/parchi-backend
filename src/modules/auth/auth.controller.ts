@@ -8,6 +8,7 @@ import {
   Get,
   Request,
   Patch,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
@@ -145,7 +146,15 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async getProfile(@CurrentUser() user) {
-    return createApiResponse(user, 'Profile retrieved successfully');
+    // Guard provides minimal user info (id, email, role)
+    // Fetch full user details with role-specific data
+    const userWithDetails = await this.authService.getCurrentUserWithDetails(user.id);
+
+    if (!userWithDetails) {
+      throw new UnauthorizedException('User not found or inactive');
+    }
+
+    return createApiResponse(userWithDetails, 'Profile retrieved successfully');
   }
 
   @Get('admin-only')

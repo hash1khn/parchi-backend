@@ -28,14 +28,31 @@ export interface JwtPayload {
   role: UserRole;
   iat?: number;
   exp?: number;
+  // Supabase-specific metadata fields
+  user_metadata?: {
+    role?: UserRole;
+    phone?: string;
+    first_name?: string;
+    merchant_id?: string;  // For MERCHANT_CORPORATE users
+    branch_id?: string;    // For MERCHANT_BRANCH users
+    [key: string]: any;
+  };
+  app_metadata?: {
+    role?: UserRole;
+    [key: string]: any;
+  };
 }
 
 export interface CurrentUser {
   id: string;
   email: string;
   role: UserRole;
-  is_active: boolean;
-  // Role-specific details (only populated for the user's role)
+  // IDs extracted from JWT metadata (zero-DB-query auth)
+  merchant_id?: string;  // For MERCHANT_CORPORATE users
+  branch_id?: string;    // For MERCHANT_BRANCH users
+  // Legacy nested objects (deprecated - use IDs above)
+  // Kept for backwards compatibility with /auth/me endpoint
+  is_active?: boolean;
   student?: {
     first_name: string;
     last_name: string;

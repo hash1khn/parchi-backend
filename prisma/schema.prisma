@@ -500,6 +500,7 @@ model offer_branches {
 
   @@unique([offer_id, branch_id])
   @@index([branch_id], map: "idx_offer_branches_branch")
+  @@index([branch_id], map: "idx_offer_branches_branch_id")
   @@schema("public")
 }
 
@@ -545,6 +546,7 @@ model offers {
   @@index([merchant_id, status, valid_from, valid_until, created_at(sort: Desc)], map: "idx_offers_merchant_active_valid_created")
   @@index([created_at(sort: Desc)], map: "idx_offers_created")
   @@index([featured_order], map: "idx_offers_featured")
+  @@index([merchant_id, status, valid_from, valid_until], map: "idx_offers_merchant_date_status")
   @@schema("public")
 }
 
@@ -593,6 +595,7 @@ model student_branch_stats {
   students           students          @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([student_id, branch_id])
+  @@index([student_id, branch_id], map: "idx_student_branch_stats_student_branch")
   @@schema("public")
 }
 
