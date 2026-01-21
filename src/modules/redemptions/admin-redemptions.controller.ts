@@ -22,6 +22,7 @@ import { ROLES } from '../../constants/app.constants';
 import { CreateRedemptionDto } from './dto/create-redemption.dto';
 import { UpdateRedemptionDto } from './dto/update-redemption.dto';
 import { QueryRedemptionsDto } from './dto/query-redemptions.dto';
+import { RejectRedemptionAttemptDto } from './dto/reject-redemption-attempt.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { Audit } from '../../decorators/audit.decorator';
 import {
@@ -32,10 +33,10 @@ import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response
 
 @Controller('admin/redemptions')
 export class AdminRedemptionsController {
-  constructor(private readonly redemptionsService: RedemptionsService) {}
+  constructor(private readonly redemptionsService: RedemptionsService) { }
 
   // ========== Branch Staff Endpoints ==========
-  
+
   @Get('stats/daily')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_BRANCH)
@@ -76,8 +77,17 @@ export class AdminRedemptionsController {
     return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.CREATE_SUCCESS, HttpStatus.CREATED);
   }
 
-
-
+  @Post('reject-attempt')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_BRANCH)
+  @HttpCode(HttpStatus.OK)
+  async rejectRedemptionAttempt(
+    @Body() rejectDto: RejectRedemptionAttemptDto,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    const data = await this.redemptionsService.rejectRedemptionAttempt(rejectDto, currentUser);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.REJECT_SUCCESS);
+  }
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.MERCHANT_BRANCH, ROLES.ADMIN)

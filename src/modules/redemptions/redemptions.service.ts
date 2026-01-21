@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { CreateRedemptionDto } from './dto/create-redemption.dto';
 import { UpdateRedemptionDto } from './dto/update-redemption.dto';
+import { RejectRedemptionAttemptDto } from './dto/reject-redemption-attempt.dto';
 import { QueryRedemptionsDto } from './dto/query-redemptions.dto';
 import { ROLES } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
@@ -18,6 +19,7 @@ import {
   PaginationMeta,
 } from '../../utils/pagination.util';
 import { SohoStrategy } from './strategies/soho.strategy';
+import { AuditService } from '../audit/audit.service';
 
 export interface RedemptionResponse {
   id: string;
@@ -72,6 +74,7 @@ export class RedemptionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sohoStrategy: SohoStrategy,
+    private readonly auditService: AuditService,
   ) { }
 
   /**
@@ -581,6 +584,98 @@ export class RedemptionsService {
     );
 
     return this.formatRedemptionResponse(redemption);
+  }
+
+  /**
+   * Reject redemption attempt
+   * Branch staff only
+   */
+  async rejectRedemptionAttempt(
+    rejectDto: RejectRedemptionAttemptDto,
+    currentUser: CurrentUser,
+  ): Promise<RedemptionResponse> {
+    // Verify branch staff has a branch
+    if (currentUser.role !== ROLES.MERCHANT_BRANCH) {
+      throw new ForbiddenException(
+        API_RESPONSE_MESSAGES.REDEMPTION.ACCESS_DENIED,
+      );
+    }
+
+    if (!currentUser.branch_id) {
+      throw new ForbiddenException(
+        API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_ACCESS_DENIED,
+      );
+    }
+
+    const branchId = currentUser.branch_id;
+
+    // Normalize parchi ID (uppercase, trim)
+    const normalizedParchiId = rejectDto.parchiId.trim().toUpperCase();
+
+    if (!normalizedParchiId || !normalizedParchiId.startsWith('PK-')) {
+      throw new BadRequestException(
+        API_RESPONSE_MESSAGES.REDEMPTION.INVALID_PARCHI_ID,
+      );
+    }
+
+    // Verify offer exists
+    const offer = await this.prisma.offers.findUnique({
+      where: { id: rejectDto.offerId },
+    });
+
+    if (!offer) {
+      throw new NotFoundException(
+        API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_FOUND,
+      );
+    }
+
+    // 1. Find student by parchi ID
+    const student = await this.prisma.students.findUnique({
+      where: { parchi_id: normalizedParchiId },
+    });
+
+    if (!student) {
+      throw new NotFoundException(
+        API_RESPONSE_MESSAGES.REDEMPTION.STUDENT_NOT_FOUND,
+      );
+    }
+
+    // Log the rejection to audit logs ONLY
+    await this.auditService.logAction(
+      'REJECT_REDEMPTION_ATTEMPT',
+      'redemptions',
+      undefined, // No record ID
+      {
+        student: {
+          id: student.id,
+          parchiId: student.parchi_id,
+          firstName: student.first_name,
+          lastName: student.last_name,
+        },
+        offer: {
+          id: offer.id,
+          title: offer.title,
+        },
+        branchId: branchId,
+        rejectionReason: rejectDto.rejectionReason,
+      },
+      currentUser.id,
+    );
+
+    // Return a mocked response as we don't create a real record
+    return {
+      id: 'rejected-attempt', // Dummy ID
+      studentId: student.id,
+      offerId: offer.id,
+      branchId: branchId,
+      isBonusApplied: false,
+      bonusDiscountApplied: null,
+      verifiedBy: null,
+      notes: `REJECTED: ${rejectDto.rejectionReason}`,
+      createdAt: new Date(),
+      status: 'rejected',
+      discountDetails: undefined,
+    } as RedemptionResponse;
   }
 
   /**
