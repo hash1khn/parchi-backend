@@ -12,6 +12,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module';
 import { MailModule } from './modules/mail/mail.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { InstitutesModule } from './modules/institutes/institutes.module';
 
 
 @Module({
@@ -27,6 +28,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     AdminDashboardModule,
     MailModule,
     NotificationsModule,
+    InstitutesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

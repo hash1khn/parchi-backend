@@ -778,6 +778,18 @@ model rejected_student_logs {
 
   @@index([email], map: "idx_rejected_logs_email")
   @@index([cnic], map: "idx_rejected_logs_cnic")
+
+  @@schema("public")
+}
+
+model institutes {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name       String    @unique @db.VarChar(255)
+  is_active  Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([is_active], map: "idx_institutes_active")
   @@schema("public")
 }
 
