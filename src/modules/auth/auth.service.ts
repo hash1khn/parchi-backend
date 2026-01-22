@@ -598,6 +598,7 @@ export class AuthService {
           data: {
             user_id: publicUser.id,
             // parchi_id will be assigned upon approval
+            parchi_id: null as any,
             first_name: signupDto.firstName,
             last_name: signupDto.lastName,
             university: signupDto.university,
@@ -1107,6 +1108,20 @@ export class AuthService {
         // We throw here because if we can't delete, we can't recreate
         throw new BadRequestException('Failed to cleanup rejected account. Please contact support.');
       }
+    }
+  }
+
+
+  async updateFcmToken(userId: string, token: string): Promise<any> {
+    try {
+      const result = await this.prisma.public_users.update({
+        where: { id: userId },
+        data: { fcm_token: token } as any,
+        select: { id: true, fcm_token: true } as any,
+      });
+      return result;
+    } catch (error) {
+      throw new BadRequestException('Failed to update FCM token');
     }
   }
 }

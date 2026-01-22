@@ -9,6 +9,7 @@ import {
   Request,
   Patch,
   UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
@@ -198,5 +199,19 @@ export class AuthController {
 
     const [type, token] = authHeader.split(' ') ?? [];
     return type === 'Bearer' ? token : '';
+  }
+
+  @Patch('update-fcm')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async updateFcmToken(
+    @CurrentUser() user: any,
+    @Body() body: { token: string },
+  ) {
+    if (!body.token) {
+      throw new BadRequestException('Token is required');
+    }
+    const data = await this.authService.updateFcmToken(user.id, body.token);
+    return createApiResponse(data, 'FCM token updated successfully');
   }
 }
