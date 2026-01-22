@@ -1,5 +1,7 @@
 import { UserRole } from '../constants/app.constants';
 
+export type { UserRole };
+
 export interface ApiResponse<T = any> {
   data: T;
   status: number;
