@@ -637,7 +637,7 @@ model student_merchant_stats {
 model students {
   id                       String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   user_id                  String                   @unique @db.Uuid
-  parchi_id                String                   @unique @db.VarChar(10)
+  parchi_id                String?                  @unique @db.VarChar(10)
   first_name               String                   @db.VarChar(100)
   last_name                String                   @db.VarChar(100)
   university               String                   @db.VarChar(255)

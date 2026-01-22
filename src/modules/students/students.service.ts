@@ -19,6 +19,7 @@ import {
 } from '../../utils/pagination.util';
 import { PaginationMeta } from '../../utils/pagination.util';
 import { SohoStrategy } from '../redemptions/strategies/soho.strategy';
+import { generateParchiId } from '../../utils/parchi-id.util';
 
 export interface StudentVerificationResponse {
   parchiId: string;
@@ -415,7 +416,7 @@ export class StudentsService {
       strategyNote,
     );
     return {
-      parchiId: student.parchi_id,
+      parchiId: student.parchi_id || parchiId,
       firstName: student.first_name,
       lastName: student.last_name,
       university: student.university,
@@ -592,6 +593,12 @@ export class StudentsService {
     const isActive = approveRejectDto.action === 'approve';
     const now = new Date();
 
+    // Generate Parchi ID if approving and not yet assigned
+    let parchiIdToUpdate: string | undefined;
+    if (approveRejectDto.action === 'approve' && !student.parchi_id) {
+      parchiIdToUpdate = await generateParchiId(this.prisma);
+    }
+
     // Use transaction to ensure all updates happen atomically
     await this.prisma.$transaction(async (tx) => {
       // Get KYC selfie path if available and approving
@@ -616,6 +623,8 @@ export class StudentsService {
               : null,
           // Save selfie image from KYC before deleting it
           ...(selfiePath && { verification_selfie_path: selfiePath }),
+          // Assign Parchi ID if newly generated
+          ...(parchiIdToUpdate && { parchi_id: parchiIdToUpdate }),
         },
       });
 
@@ -703,7 +712,7 @@ export class StudentsService {
     return {
       id: student.id,
       userId: student.user_id,
-      parchiId: student.parchi_id,
+      parchiId: student.parchi_id || 'PENDING',
       firstName: student.first_name,
       lastName: student.last_name,
       email: student.users.email,
@@ -733,7 +742,7 @@ export class StudentsService {
     return {
       id: student.id,
       userId: student.user_id,
-      parchiId: student.parchi_id,
+      parchiId: student.parchi_id || 'PENDING',
       firstName: student.first_name,
       lastName: student.last_name,
       email: student.users.email,
@@ -792,7 +801,7 @@ export class StudentsService {
     return {
       id: student.id,
       userId: student.user_id,
-      parchiId: student.parchi_id,
+      parchiId: student.parchi_id || 'PENDING',
       firstName: student.first_name,
       lastName: student.last_name,
       email: student.users.email,

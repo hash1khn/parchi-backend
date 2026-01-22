@@ -582,9 +582,6 @@ export class AuthService {
 
       const userId = authData.user.id;
 
-      // 5. Generate unique Parchi ID
-      const parchiId = await generateParchiId(this.prisma);
-
       // 6. Transaction
       const result = await this.prisma.$transaction(async (tx) => {
         const publicUser = await tx.public_users.create({
@@ -600,7 +597,7 @@ export class AuthService {
         const student = await tx.students.create({
           data: {
             user_id: publicUser.id,
-            parchi_id: parchiId,
+            // parchi_id will be assigned upon approval
             first_name: signupDto.firstName,
             last_name: signupDto.lastName,
             university: signupDto.university,
@@ -634,7 +631,7 @@ export class AuthService {
         firstName: result.student.first_name,
         lastName: result.student.last_name,
         university: result.student.university,
-        parchiId: result.student.parchi_id,
+        parchiId: result.student.parchi_id || 'PENDING',
         verificationStatus: result.student.verification_status,
         createdAt: result.student.created_at,
       };
