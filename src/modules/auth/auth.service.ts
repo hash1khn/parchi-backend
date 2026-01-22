@@ -570,7 +570,7 @@ export class AuthService {
               phone: signupDto.phone,
               first_name: signupDto.firstName,
             },
-            emailRedirectTo: undefined,
+            emailRedirectTo: 'parchi://auth-callback',
           },
         });
 
