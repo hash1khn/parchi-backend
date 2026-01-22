@@ -371,6 +371,7 @@ export class AuthService {
             university: true,
             profile_picture: true,
             is_founders_club: true,
+            verification_status: true, // [NEW]
           },
         });
       } else if (publicUser.role === ROLES.MERCHANT_CORPORATE) {
@@ -581,6 +582,17 @@ export class AuthService {
       }
 
       const userId = authData.user.id;
+
+      // [NEW] Check if public user already exists
+      const existingPublicUser = await this.prisma.public_users.findUnique({
+        where: { id: userId },
+      });
+
+      if (existingPublicUser) {
+        throw new ConflictException(
+          API_RESPONSE_MESSAGES.AUTH.EMAIL_ALREADY_REGISTERED,
+        );
+      }
 
       // 6. Transaction
       const result = await this.prisma.$transaction(async (tx) => {
