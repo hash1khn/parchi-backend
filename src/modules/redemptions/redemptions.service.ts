@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
@@ -20,6 +21,7 @@ import {
 } from '../../utils/pagination.util';
 import { SohoStrategy } from './strategies/soho.strategy';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface RedemptionResponse {
   id: string;
@@ -75,6 +77,8 @@ export class RedemptionsService {
     private readonly prisma: PrismaService,
     private readonly sohoStrategy: SohoStrategy,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
+    private readonly configService: ConfigService,
   ) { }
 
   /**
@@ -568,6 +572,7 @@ export class RedemptionsService {
                 parchi_id: true,
                 first_name: true,
                 last_name: true,
+                user_id: true,
               },
             },
             users: {
@@ -583,7 +588,62 @@ export class RedemptionsService {
       },
     );
 
-    return this.formatRedemptionResponse(redemption);
+    const formattedRedemption = await this.formatRedemptionResponse(redemption);
+
+    // Send personal notification to the student
+    try {
+      // Calculate savings percentage for the message
+      let savingsPercentage = 0;
+      const discountValue = Number(formattedRedemption.offer?.discountValue || 0);
+      const bonusValue = Number(formattedRedemption.bonusDiscountApplied || 0);
+
+      if (
+        formattedRedemption.offer?.discountType === 'percentage' &&
+        !formattedRedemption.isBonusApplied
+      ) {
+        savingsPercentage = discountValue;
+      } else if (formattedRedemption.isBonusApplied) {
+        // If bonus applied, try to use the bonus value if it looks like a percentage (<= 100)
+        // Otherwise fallback to base discount
+        if (bonusValue <= 100) {
+          savingsPercentage = bonusValue;
+        } else {
+          savingsPercentage = discountValue;
+        }
+      } else {
+        savingsPercentage = discountValue;
+      }
+      
+      const branchName = formattedRedemption.branch?.branchName || 'Parchi Partner';
+      const notificationTitle = 'Parchi lag gayi!';
+      const notificationBody = `You got a ${savingsPercentage}% discount at ${branchName}!`;
+
+      
+      // Get API base URL for image
+      // Note: Assuming API_BASE_URL is set in .env. If running locally on emulator, 
+      // localhost might not be reachable from device unless using IP.
+      const apiBaseUrl = this.configService.get<string>('API_BASE_URL') || 'http://localhost:8080';
+      // Ensure no double slash
+      const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl;
+      const imageUrl = `${baseUrl}/public/notifs-icon.png`;
+
+      // We need to access the student's user_id which we added to the select
+      const studentUserId = (redemption as any).students?.user_id;
+
+      if (studentUserId) {
+        await this.notificationsService.sendPersonalNotification(
+          studentUserId,
+          notificationTitle,
+          notificationBody,
+          imageUrl, // Image URL
+        );
+      }
+    } catch (error) {
+      console.error('Failed to send redemption notification', error);
+      // We don't throw here to avoid failing the redemption response
+    }
+
+    return formattedRedemption;
   }
 
   /**
@@ -632,6 +692,16 @@ export class RedemptionsService {
     // 1. Find student by parchi ID
     const student = await this.prisma.students.findUnique({
       where: { parchi_id: normalizedParchiId },
+      select: {
+        id: true,
+        parchi_id: true,
+        first_name: true,
+        last_name: true,
+        university: true,
+        cnic: true,
+        user_id: true,
+        verification_status: true,
+      }
     });
 
     if (!student) {
@@ -656,26 +726,48 @@ export class RedemptionsService {
           id: offer.id,
           title: offer.title,
         },
-        branchId: branchId,
-        rejectionReason: rejectDto.rejectionReason,
+        branchId,
+        reason: rejectDto.rejectionReason,
       },
       currentUser.id,
     );
+    
+    // Send rejection notification
+    try {
+        const apiBaseUrl = this.configService.get<string>('API_BASE_URL') || 'http://localhost:8080';
+        const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl;
+        const imageUrl = `${baseUrl}/public/notifs-icon.png`;
 
-    // Return a mocked response as we don't create a real record
+        await this.notificationsService.sendPersonalNotification(
+            student.user_id,
+            'Parchi nahi lag payi :(',
+            `Your redemption was rejected. Reason: ${rejectDto.rejectionReason}`,
+            imageUrl
+        );
+    } catch (error) {
+        console.error('Failed to send rejection notification', error);
+    }
+
+    // Return a dummy rejected response structure since we don't save rejected redemptions in redemptions table anymore
     return {
-      id: 'rejected-attempt', // Dummy ID
+      id: 'rejected',
       studentId: student.id,
       offerId: offer.id,
-      branchId: branchId,
+      branchId,
       isBonusApplied: false,
       bonusDiscountApplied: null,
-      verifiedBy: null,
-      notes: `REJECTED: ${rejectDto.rejectionReason}`,
+      verifiedBy: currentUser.id,
+      notes: rejectDto.rejectionReason,
       createdAt: new Date(),
       status: 'rejected',
-      discountDetails: undefined,
+      student: {
+        id: student.id,
+        parchiId: student.parchi_id,
+        firstName: student.first_name,
+        lastName: student.last_name,
+      },
     } as RedemptionResponse;
+
   }
 
   /**
