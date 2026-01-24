@@ -692,6 +692,7 @@ export class StudentsService {
         this.mailService.sendStudentApprovedEmail(
           result.users.email,
           result.first_name,
+          result.parchi_id!,
         );
       } else {
         this.mailService.sendStudentRejectedEmail(
