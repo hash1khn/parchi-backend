@@ -10,6 +10,7 @@ import {
   Patch,
   UnauthorizedException,
   BadRequestException,
+  Param,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
@@ -19,6 +20,7 @@ import { CorporateSignupDto } from './dto/corporate-signup.dto';
 import { BranchSignupDto } from './dto/branch-signup.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
@@ -199,6 +201,24 @@ export class AuthController {
 
     const [type, token] = authHeader.split(' ') ?? [];
     return type === 'Bearer' ? token : '';
+  }
+
+  @Post('admin/reset-password/:userId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: 'ADMIN_RESET_PASSWORD',
+    tableName: 'users',
+    recordIdParam: 'userId'
+  })
+  async adminResetPassword(
+    @Param('userId') userId: string,
+    @Body() resetPasswordDto: AdminResetPasswordDto,
+    @CurrentUser() currentUser: any,
+  ) {
+    await this.authService.adminResetPassword(userId, resetPasswordDto.newPassword);
+    return createApiResponse(null, 'Password reset successfully');
   }
 
   @Patch('update-fcm')

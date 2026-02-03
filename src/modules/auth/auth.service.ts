@@ -1136,5 +1136,58 @@ export class AuthService {
       throw new BadRequestException('Failed to update FCM token');
     }
   }
+
+  /**
+   * Admin-only password reset for branch and merchant accounts
+   * Allows administrators to reset passwords for users who have lost access
+   * Uses Supabase admin client to bypass normal authentication requirements
+   */
+  async adminResetPassword(
+    userId: string,
+    newPassword: string,
+  ): Promise<null> {
+    try {
+      // Verify the user exists and get their role
+      const user = await this.prisma.public_users.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new BadRequestException('User not found');
+      }
+
+      // Only allow password reset for branch and merchant accounts
+      if (user.role !== ROLES.MERCHANT_BRANCH && user.role !== ROLES.MERCHANT_CORPORATE) {
+        throw new BadRequestException(
+          'Password reset is only allowed for branch and merchant accounts'
+        );
+      }
+
+      // Update password using Supabase Admin API
+      const { error: supabaseError } = await this.adminSupabase.auth.admin.updateUserById(
+        userId,
+        {
+          password: newPassword,
+        }
+      );
+
+      if (supabaseError) {
+        throw new BadRequestException(
+          `Failed to update password: ${supabaseError.message}`
+        );
+      }
+
+      return null;
+    } catch (error) {
+      if (
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to reset password',
+      );
+    }
+  }
 }
 
