@@ -133,6 +133,7 @@ export class AdminStudentsController {
     const data = await this.studentsService.toggleStudentStatus(
       id,
       updateStatusDto.isActive,
+      updateStatusDto.reason,
     );
     return createApiResponse(
       data,

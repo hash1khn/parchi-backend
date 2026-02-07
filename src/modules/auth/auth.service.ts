@@ -208,6 +208,12 @@ export class AuthService {
 
       // Check if account is active
       if (!publicUser.is_active) {
+        // Check if there is a specific deactivation reason
+        if (publicUser.deactivation_reason) {
+          throw new ForbiddenException(
+            `Your account has been deactivated. Reason: ${publicUser.deactivation_reason}`,
+          );
+        }
         // Check specifically for students who are rejected
         if (publicUser.role === ROLES.STUDENT) {
           const student = await this.prisma.students.findUnique({
@@ -322,6 +328,17 @@ export class AuthService {
 
       // 🔥 CRITICAL: Return minimal payload from JWT ONLY - NO DATABASE QUERIES
       // Extract merchant_id/branch_id from user_metadata for zero-DB-query auth
+      // UPDATE: We MUST check if the user is active to support deactivation
+      // We will rely on the LRU cache (5 min TTL) to minimize DB load
+      const userStatus = await this.prisma.public_users.findUnique({
+        where: { id: userId },
+        select: { is_active: true },
+      });
+
+      if (!userStatus || !userStatus.is_active) {
+        return null;
+      }
+
       const result = {
         id: userId,
         email: verifiedPayload.email,

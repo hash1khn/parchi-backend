@@ -717,6 +717,7 @@ export class StudentsService {
   async toggleStudentStatus(
     id: string,
     isActive: boolean,
+    reason?: string,
   ): Promise<StudentKycResponse> {
     const student = await this.prisma.students.findUnique({
       where: { id },
@@ -731,6 +732,7 @@ export class StudentsService {
       where: { id: student.user_id },
       data: {
         is_active: isActive,
+        deactivation_reason: isActive ? null : reason,
       },
     });
 
@@ -744,6 +746,7 @@ export class StudentsService {
             email: true,
             phone: true,
             is_active: true,
+            deactivation_reason: true,
           },
         },
         verified_by_user: {
