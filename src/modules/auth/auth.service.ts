@@ -295,12 +295,6 @@ export class AuthService {
    */
   async validateUserFromSession(accessToken: string): Promise<any> {
     try {
-      // Check cache first (5-minute TTL)
-      const cachedResult = this.tokenCache.get(accessToken);
-      if (cachedResult) {
-        return cachedResult;
-      }
-
       // 1. Decode header to find 'kid' and 'alg'
       const decodedComplete = jwt.decode(accessToken, { complete: true });
 
@@ -310,15 +304,7 @@ export class AuthService {
       }
 
       const { header } = decodedComplete;
-
-      // 2. Fetch proper public key from JWKS (cached by jwks-rsa library)
-      const key = await this.getSigningKey(header);
-
-      // 3. Verify JWT signature
-      const verifiedPayload = jwt.verify(accessToken, key, {
-        algorithms: ['ES256', 'RS256', 'HS256']
-      }) as JwtPayload;
-
+      const verifiedPayload = decodedComplete.payload as JwtPayload;
       const userId = verifiedPayload.sub;
 
       if (!userId) {
@@ -326,18 +312,32 @@ export class AuthService {
         return null;
       }
 
-      // 🔥 CRITICAL: Return minimal payload from JWT ONLY - NO DATABASE QUERIES
-      // Extract merchant_id/branch_id from user_metadata for zero-DB-query auth
-      // UPDATE: We MUST check if the user is active to support deactivation
-      // We will rely on the LRU cache (5 min TTL) to minimize DB load
+      // 🔥 CRITICAL FIX: Check is_active status FIRST before returning cached result
+      // This ensures deactivated users are immediately blocked (no 5-minute cache delay)
       const userStatus = await this.prisma.public_users.findUnique({
         where: { id: userId },
         select: { is_active: true },
       });
 
       if (!userStatus || !userStatus.is_active) {
+        // Delete from cache if user is inactive
+        this.tokenCache.delete(accessToken);
         return null;
       }
+
+      // NOW check cache (after is_active check)
+      const cachedResult = this.tokenCache.get(accessToken);
+      if (cachedResult) {
+        return cachedResult;
+      }
+
+      // 2. Fetch proper public key from JWKS (cached by jwks-rsa library)
+      const key = await this.getSigningKey(header);
+
+      // 3. Verify JWT signature
+      jwt.verify(accessToken, key, {
+        algorithms: ['ES256', 'RS256', 'HS256']
+      });
 
       const result = {
         id: userId,
@@ -348,6 +348,7 @@ export class AuthService {
       };
 
       // Cache the result for future requests (5-minute TTL)
+      // Note: We still check is_active on EVERY request, cache is only for JWT verification
       this.tokenCache.set(accessToken, result);
 
       return result;
@@ -482,6 +483,12 @@ export class AuthService {
       });
 
       if (!publicUser || !publicUser.is_active) {
+        // Check if there is a specific deactivation reason
+        if (publicUser?.deactivation_reason) {
+          throw new ForbiddenException(
+            `Your account has been deactivated. Reason: ${publicUser.deactivation_reason}`,
+          );
+        }
         throw new UnauthorizedException(API_RESPONSE_MESSAGES.AUTH.ACCOUNT_PENDING);
       }
 
@@ -495,7 +502,7 @@ export class AuthService {
         session: data.session,
       };
     } catch (error) {
-      if (error instanceof UnauthorizedException) {
+      if (error instanceof UnauthorizedException || error instanceof ForbiddenException) {
         throw error;
       }
       throw new BadRequestException('Session refresh failed');
