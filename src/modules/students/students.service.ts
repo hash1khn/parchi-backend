@@ -60,6 +60,7 @@ export interface StudentListResponse {
   updatedAt: Date | null;
   cnic?: string;
   dateOfBirth?: Date | null;
+  isActive: boolean;
 }
 
 export interface StudentKycResponse {
@@ -88,6 +89,7 @@ export interface StudentKycResponse {
   updatedAt: Date | null;
   cnic?: string;
   dateOfBirth?: Date | null;
+  isActive: boolean;
   kyc?: {
     id: string;
     studentIdCardFrontPath: string;
@@ -167,6 +169,7 @@ export class StudentsService {
               id: true,
               email: true,
               phone: true,
+              is_active: true,
             },
           },
           // KYC data excluded for list view - use getStudentDetailsForReview for full details
@@ -256,6 +259,7 @@ export class StudentsService {
               id: true,
               email: true,
               phone: true,
+              is_active: true,
             },
           },
           verified_by_user: {
@@ -707,6 +711,69 @@ export class StudentsService {
   }
 
   /**
+   * Toggle student status (active/inactive)
+   * Admin only
+   */
+  async toggleStudentStatus(
+    id: string,
+    isActive: boolean,
+  ): Promise<StudentKycResponse> {
+    const student = await this.prisma.students.findUnique({
+      where: { id },
+    });
+
+    if (!student) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
+    }
+
+    // Update user is_active status
+    await this.prisma.public_users.update({
+      where: { id: student.user_id },
+      data: {
+        is_active: isActive,
+      },
+    });
+
+    // Validated student fetching to return full response
+    const updatedStudent = await this.prisma.students.findUnique({
+      where: { id },
+      include: {
+        users: {
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            is_active: true,
+          },
+        },
+        verified_by_user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+          },
+        },
+        student_kyc: {
+          orderBy: {
+            submitted_at: 'desc',
+          },
+          take: 1,
+          include: {
+            users: {
+              select: {
+                id: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return this.formatStudentResponse(updatedStudent!);
+  }
+
+  /**
    * Format student list response (without KYC data)
    */
   private async formatStudentListResponse(student: any): Promise<StudentListResponse> {
@@ -731,6 +798,7 @@ export class StudentsService {
       emailConfirmed: await this.getEmailConfirmedStatus(student.user_id),
       cnic: student.cnic,
       dateOfBirth: student.date_of_birth,
+      isActive: student.users.is_active ?? false,
     };
   }
 
@@ -790,6 +858,7 @@ export class StudentsService {
       emailConfirmed: await this.getEmailConfirmedStatus(student.user_id),
       cnic: student.cnic,
       dateOfBirth: student.date_of_birth,
+      isActive: student.users.is_active ?? false,
     };
   }
 
@@ -849,6 +918,7 @@ export class StudentsService {
       emailConfirmed: await this.getEmailConfirmedStatus(student.user_id),
       cnic: student.cnic,
       dateOfBirth: student.date_of_birth,
+      isActive: student.users.is_active ?? false,
     };
   }
 

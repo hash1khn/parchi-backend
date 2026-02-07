@@ -20,6 +20,7 @@ import { ROLES } from '../../constants/app.constants';
 import { ApproveRejectStudentDto } from './dto/approve-reject-student.dto';
 import { QueryStudentsDto } from './dto/query-students.dto';
 import { QueryPendingStudentsDto } from './dto/query-pending-students.dto';
+import { UpdateStudentStatusDto } from './dto/update-student-status.dto';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { Audit } from '../../decorators/audit.decorator';
@@ -118,6 +119,26 @@ export class AdminStudentsController {
       approveRejectDto.action === 'approve'
         ? API_RESPONSE_MESSAGES.STUDENT.APPROVE_SUCCESS
         : API_RESPONSE_MESSAGES.STUDENT.REJECT_SUCCESS,
+    );
+  }
+  @Put(':id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'UPDATE_STUDENT_STATUS', tableName: 'students', recordIdParam: 'id' })
+  async toggleStudentStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateStatusDto: UpdateStudentStatusDto,
+  ) {
+    const data = await this.studentsService.toggleStudentStatus(
+      id,
+      updateStatusDto.isActive,
+    );
+    return createApiResponse(
+      data,
+      updateStatusDto.isActive
+        ? API_RESPONSE_MESSAGES.STUDENT.ACTIVATE_SUCCESS
+        : API_RESPONSE_MESSAGES.STUDENT.DEACTIVATE_SUCCESS,
     );
   }
 }

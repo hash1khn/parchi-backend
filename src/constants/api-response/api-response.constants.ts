@@ -82,6 +82,8 @@ export const API_RESPONSE_MESSAGES = {
     NOT_FOUND: 'Student not found',
     APPROVE_SUCCESS: 'Student approved successfully',
     REJECT_SUCCESS: 'Student rejected successfully',
+    ACTIVATE_SUCCESS: 'Student activated successfully',
+    DEACTIVATE_SUCCESS: 'Student deactivated successfully',
     INVALID_ID: 'Invalid student ID',
     LEADERBOARD_SUCCESS: 'Leaderboard retrieved successfully',
   },
