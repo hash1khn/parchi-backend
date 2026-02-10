@@ -191,6 +191,9 @@ export class MerchantsService {
       where: {
         verification_status: 'approved',
         is_active: true,
+        business_name: {
+          not: 'Test Merchant',
+        },
         users: {
           role: 'merchant_corporate',
         },
@@ -276,6 +279,9 @@ export class MerchantsService {
       where: {
         verification_status: 'approved',
         is_active: true,
+        business_name: {
+          not: 'Test Merchant',
+        },
         users: {
           role: 'merchant_corporate',
         },
