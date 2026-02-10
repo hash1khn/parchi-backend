@@ -261,4 +261,139 @@ export class AdminDashboardService {
             },
         });
     }
+
+    async getFinancialOverview(startDate?: Date, endDate?: Date) {
+        // Prepare date filter
+        const dateFilter: any = {};
+        if (startDate) dateFilter.gte = startDate;
+        if (endDate) dateFilter.lte = endDate;
+
+        // Fetch all approved merchants with their branches and redemption counts
+        const merchants = await this.prisma.merchants.findMany({
+            where: {
+                verification_status: 'approved',
+                is_active: true, // Optional: only active merchants? Or all for financial history?
+            },
+            select: {
+                id: true,
+                business_name: true,
+                redemption_fee: true,
+                merchant_branches: {
+                    select: {
+                        id: true,
+                        branch_name: true,
+                        redemptions: {
+                            where: {
+                                created_at: Object.keys(dateFilter).length > 0 ? dateFilter : undefined,
+                            },
+                            select: {
+                                id: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        // Calculate financials
+        let grandTotalReceivables = 0;
+
+        const processedMerchants = merchants.map(merchant => {
+            const feePerRedemption = Number(merchant.redemption_fee || 0);
+            let merchantTotalRedemptions = 0;
+            let merchantTotalReceivables = 0;
+
+            const branches = merchant.merchant_branches.map(branch => {
+                const count = branch.redemptions.length;
+                const receivables = count * feePerRedemption;
+
+                merchantTotalRedemptions += count;
+                merchantTotalReceivables += receivables;
+
+                return {
+                    id: branch.id,
+                    name: branch.branch_name,
+                    redemptionCount: count,
+                    receivables: receivables,
+                };
+            });
+
+            grandTotalReceivables += merchantTotalReceivables;
+
+            return {
+                id: merchant.id,
+                name: merchant.business_name,
+                redemptionFee: feePerRedemption,
+                totalRedemptions: merchantTotalRedemptions,
+                totalReceivables: merchantTotalReceivables,
+                branches: branches.sort((a, b) => b.receivables - a.receivables), // Sort branches by revenue
+            };
+        });
+
+        // Sort merchants by total receivables
+        processedMerchants.sort((a, b) => b.totalReceivables - a.totalReceivables);
+
+        return {
+            grandTotalReceivables,
+            merchants: processedMerchants,
+        };
+    }
+
+    async getBranchRedemptions(branchId: string, startDate?: Date, endDate?: Date) {
+        const whereClause: any = {
+            branch_id: branchId,
+        };
+
+        if (startDate || endDate) {
+            whereClause.created_at = {};
+            if (startDate) whereClause.created_at.gte = startDate;
+            if (endDate) whereClause.created_at.lte = endDate;
+        }
+
+        const redemptions = await this.prisma.redemptions.findMany({
+            where: whereClause,
+            include: {
+                students: {
+                    select: {
+                        id: true,
+                        parchi_id: true,
+                        first_name: true,
+                        last_name: true,
+                        university: true,
+                    },
+                },
+                offers: {
+                    select: {
+                        title: true,
+                        discount_value: true,
+                        discount_type: true,
+                    },
+                },
+                merchant_branches: { // To get redemption fee if needed, accessible via merchant
+                   select: {
+                       merchants: {
+                           select: {
+                               redemption_fee: true
+                           }
+                       }
+                   }
+                }
+            },
+            orderBy: {
+                created_at: 'desc',
+            },
+        });
+
+        return redemptions.map(r => ({
+            id: r.id,
+            date: r.created_at,
+            studentName: `${r.students.first_name} ${r.students.last_name}`,
+            parchiId: r.students.parchi_id,
+            university: r.students.university,
+            offerTitle: r.offers.title,
+            discount: `${r.offers.discount_value}${r.offers.discount_type === 'percentage' ? '%' : ' PKR'}`,
+            payableAmount: Number(r.merchant_branches?.merchants?.redemption_fee || 0),
+            status: r.verified_by ? 'Verified' : 'Pending', // Or however you want to display status
+        }));
+    }
 }
