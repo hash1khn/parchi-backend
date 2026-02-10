@@ -45,6 +45,7 @@ export class AdminOffersController {
       queryDto.merchantId,
       page,
       limit,
+      queryDto.search,
     );
     return createPaginatedResponse(
       result.items,

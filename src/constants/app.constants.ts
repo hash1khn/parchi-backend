@@ -20,6 +20,8 @@ export type VerificationStatus =
 export const OFFER_STATUS = {
   ACTIVE: 'active',
   INACTIVE: 'inactive',
+  PENDING_APPROVAL: 'pending_approval',
+  REJECTED: 'rejected',
 } as const;
 
 export type OfferStatus = typeof OFFER_STATUS[keyof typeof OFFER_STATUS];

@@ -24,6 +24,10 @@ export class QueryAdminOffersDto {
   merchantId?: string;
 
   @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

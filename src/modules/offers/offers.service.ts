@@ -280,7 +280,11 @@ export class OffersService {
           // Always create as 'active', even if unassigned.
           // Unassigned offers (no branches) won't cause conflicts.
           // They need to be active to appear in the "Branch Assignment" dropdowns.
-          status: 'active',
+          // Corporate offers are pending approval; Admin offers are active immediately
+          status:
+            currentUser.role === ROLES.MERCHANT_CORPORATE
+              ? 'pending_approval'
+              : 'active',
           created_by: currentUser.id,
           schedule_type: scheduleType,
           allowed_days:
@@ -637,7 +641,7 @@ export class OffersService {
       valid_until?: Date;
       daily_limit?: number | null;
       total_limit?: number | null;
-      status?: 'active' | 'inactive';
+      status?: OfferStatus;
       schedule_type?: string;
       allowed_days?: number[];
       start_time?: Date | null;
@@ -1099,6 +1103,7 @@ export class OffersService {
     merchantId?: string,
     page: number = 1,
     limit: number = 10,
+    search?: string,
   ): Promise<{ items: OfferResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
 
@@ -1108,6 +1113,16 @@ export class OffersService {
     }
     if (merchantId) {
       whereClause.merchant_id = merchantId;
+    }
+    if (search) {
+      whereClause.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { 
+          merchants: { 
+            business_name: { contains: search, mode: 'insensitive' } 
+          } 
+        },
+      ];
     }
 
     const [offers, total] = await Promise.all([
@@ -1212,7 +1227,7 @@ export class OffersService {
 
     // Update offer status
     const status =
-      approveRejectDto.action === 'approve' ? 'active' : 'inactive';
+      approveRejectDto.action === 'approve' ? 'active' : 'rejected';
 
     const updatedOffer = await this.prisma.offers.update({
       where: { id },
