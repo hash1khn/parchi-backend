@@ -5,6 +5,7 @@ import {
   IsUrl,
   IsBoolean,
   IsEnum,
+  IsNumber,
 } from 'class-validator';
 import {
   VERIFICATION_STATUS,
@@ -53,5 +54,9 @@ export class UpdateCorporateAccountDto {
   @IsOptional()
   @IsString()
   termsAndConditions?: string;
+
+  @IsOptional()
+  @IsNumber()
+  redemptionFee?: number;
 }
 

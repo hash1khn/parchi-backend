@@ -40,6 +40,7 @@ export interface CorporateMerchantResponse {
   updatedAt: Date | null;
   bannerUrl: string | null;
   termsAndConditions: string | null;
+  redemptionFee: number;
 }
 
 export interface BranchResponse {
@@ -173,6 +174,7 @@ export class MerchantsService {
         updatedAt: merchant.updated_at,
         bannerUrl: merchant.banner_url,
         termsAndConditions: merchant.terms_and_conditions,
+        redemptionFee: Number(merchant.redemption_fee),
       }),
     );
 
@@ -380,6 +382,7 @@ export class MerchantsService {
       updatedAt: merchant.updated_at,
       bannerUrl: merchant.banner_url,
       termsAndConditions: merchant.terms_and_conditions,
+      redemptionFee: Number(merchant.redemption_fee),
     };
 
     return formattedMerchant;
@@ -456,6 +459,9 @@ export class MerchantsService {
     }
     if (updateDto.termsAndConditions !== undefined) {
       updateData.terms_and_conditions = updateDto.termsAndConditions;
+    }
+    if (updateDto.redemptionFee !== undefined) {
+      updateData.redemption_fee = updateDto.redemptionFee;
     }
 
     // Update verification_status if provided (admin only)
@@ -539,6 +545,7 @@ export class MerchantsService {
       updatedAt: updatedMerchant.updated_at,
       bannerUrl: updatedMerchant.banner_url,
       termsAndConditions: updatedMerchant.terms_and_conditions,
+      redemptionFee: Number(updatedMerchant.redemption_fee),
     };
 
     return formattedMerchant;
@@ -645,6 +652,7 @@ export class MerchantsService {
       updatedAt: updatedMerchant.updated_at,
       bannerUrl: updatedMerchant.banner_url,
       termsAndConditions: updatedMerchant.terms_and_conditions,
+      redemptionFee: Number(updatedMerchant.redemption_fee),
     };
 
     return formattedMerchant;
@@ -1467,6 +1475,89 @@ export class MerchantsService {
     };
 
     return formattedBranch;
+  }
+
+  async getRedemptionReport(
+    currentUser: CurrentUser,
+    startDate: Date,
+    endDate: Date,
+  ) {
+    if (currentUser.role !== ROLES.MERCHANT_CORPORATE || !currentUser.merchant_id) {
+      throw new ForbiddenException('Only corporate merchants can access reports');
+    }
+
+    // Get merchant details including redemption fee
+    const merchant = await this.prisma.merchants.findUnique({
+      where: { id: currentUser.merchant_id },
+      select: {
+        business_name: true,
+        redemption_fee: true,
+      },
+    });
+
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
+
+    // Get all branches for this merchant
+    const branches = await this.prisma.merchant_branches.findMany({
+      where: { merchant_id: currentUser.merchant_id },
+      select: { id: true },
+    });
+
+    const branchIds = branches.map((b) => b.id);
+
+    // Fetch redemptions
+    const redemptions = await this.prisma.redemptions.findMany({
+      where: {
+        branch_id: { in: branchIds },
+        created_at: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      include: {
+        merchant_branches: {
+          select: { branch_name: true },
+        },
+        offers: {
+          select: { title: true },
+        },
+        students: {
+          select: {
+            university: true,
+            users: {
+              select: {
+                email: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    return {
+      merchantDetails: {
+        businessName: merchant.business_name,
+        redemptionFee: Number(merchant.redemption_fee),
+      },
+      redemptions: redemptions.map(r => ({
+        id: r.id,
+        date: r.created_at,
+        branchName: r.merchant_branches.branch_name,
+        offerTitle: r.offers.title,
+        studentInfo: r.students?.users?.email || 'Unknown',
+        university: r.students?.university,
+        discountApplied: Number(r.bonus_discount_applied || 0),
+      })),
+      summary: {
+        totalRedemptions: redemptions.length,
+        totalPayable: redemptions.length * Number(merchant.redemption_fee),
+      }
+    };
   }
 
   /**

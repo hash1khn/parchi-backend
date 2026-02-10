@@ -222,6 +222,23 @@ export class MerchantsController {
     return createApiResponse(data, 'Offer performance retrieved successfully');
   }
 
+  @Get('dashboard/reports/redemptions')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  async getRedemptionReport(
+    @CurrentUser() currentUser: ICurrentUser,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const data = await this.merchantsService.getRedemptionReport(
+      currentUser,
+      startDate ? new Date(startDate) : new Date(0), // Default to all time if not specified? Or handle validation.
+      endDate ? new Date(endDate) : new Date(),
+    );
+    return createApiResponse(data, 'Redemption report retrieved successfully');
+  }
+
   // ========== Bonus Settings Endpoints (Corporate & Admin) ==========
 
   @Get('branches/:branchId/bonus-settings')
