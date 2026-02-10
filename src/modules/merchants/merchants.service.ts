@@ -1539,11 +1539,30 @@ export class MerchantsService {
       },
     });
 
+    // Calculate branch breakdown
+    const branchBreakdownMap = new Map<string, { name: string; count: number }>();
+    
+    redemptions.forEach(r => {
+      const branchName = r.merchant_branches.branch_name;
+      if (!branchBreakdownMap.has(branchName)) {
+        branchBreakdownMap.set(branchName, { name: branchName, count: 0 });
+      }
+      const entry = branchBreakdownMap.get(branchName)!;
+      entry.count++;
+    });
+
+    const branchBreakdown = Array.from(branchBreakdownMap.values()).map(b => ({
+      branchName: b.name,
+      totalRedemptions: b.count,
+      totalPayable: b.count * Number(merchant.redemption_fee)
+    }));
+
     return {
       merchantDetails: {
         businessName: merchant.business_name,
         redemptionFee: Number(merchant.redemption_fee),
       },
+      branchBreakdown,
       redemptions: redemptions.map(r => ({
         id: r.id,
         date: r.created_at,
