@@ -396,4 +396,66 @@ export class AdminDashboardService {
             status: r.verified_by ? 'Verified' : 'Pending', // Or however you want to display status
         }));
     }
+
+    async getCorporateRedemptions(merchantId: string, startDate?: Date, endDate?: Date) {
+        const whereClause: any = {
+            merchant_branches: {
+                merchant_id: merchantId
+            }
+        };
+
+        if (startDate || endDate) {
+            whereClause.created_at = {};
+            if (startDate) whereClause.created_at.gte = startDate;
+            if (endDate) whereClause.created_at.lte = endDate;
+        }
+
+        const redemptions = await this.prisma.redemptions.findMany({
+            where: whereClause,
+            include: {
+                students: {
+                    select: {
+                        id: true,
+                        parchi_id: true,
+                        first_name: true,
+                        last_name: true,
+                        university: true,
+                    },
+                },
+                offers: {
+                    select: {
+                        title: true,
+                        discount_value: true,
+                        discount_type: true,
+                    },
+                },
+                merchant_branches: {
+                    select: {
+                        branch_name: true,
+                        merchants: {
+                            select: {
+                                redemption_fee: true
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: {
+                created_at: 'desc',
+            },
+        });
+
+        return redemptions.map(r => ({
+            id: r.id,
+            date: r.created_at,
+            studentName: `${r.students.first_name} ${r.students.last_name}`,
+            parchiId: r.students.parchi_id,
+            university: r.students.university,
+            branchName: r.merchant_branches.branch_name,
+            offerTitle: r.offers.title,
+            discount: `${r.offers.discount_value}${r.offers.discount_type === 'percentage' ? '%' : ' PKR'}`,
+            payableAmount: Number(r.merchant_branches?.merchants?.redemption_fee || 0),
+            status: r.verified_by ? 'Verified' : 'Pending',
+        }));
+    }
 }

@@ -92,4 +92,24 @@ export class AdminDashboardController {
             'Branch redemptions retrieved successfully',
         );
     }
+
+    @Get('corporate-redemptions/:merchantId')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async getCorporateRedemptions(
+        @Param('merchantId') merchantId: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+    ) {
+        const data = await this.adminDashboardService.getCorporateRedemptions(
+            merchantId,
+            startDate ? new Date(startDate) : undefined,
+            endDate ? new Date(endDate) : undefined,
+        );
+        return createApiResponse(
+            data,
+            'Corporate redemptions retrieved successfully',
+        );
+    }
 }
