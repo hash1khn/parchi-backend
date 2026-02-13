@@ -5,6 +5,8 @@ import {
   BadRequestException,
   UnprocessableEntityException,
   ForbiddenException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -13,6 +15,7 @@ import { JwksClient } from 'jwks-rsa';
 import { LRUCache } from 'lru-cache';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { StudentSignupDto } from './dto/student-signup.dto';
@@ -36,6 +39,8 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
+    @Inject(forwardRef(() => NotificationsService))
+    private readonly notificationsService: NotificationsService,
   ) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
     const supabaseAnonKey = this.configService.get<string>('SUPABASE_ANON_KEY');
@@ -428,6 +433,7 @@ export class AuthService {
           : null,
         merchant: merchantDetails,
         branch: branchDetails,
+        hasUnreadNotifications: await this.notificationsService.hasUnread(userId),
       };
     } catch (error) {
       console.error('Failed to get user details:', error.message);

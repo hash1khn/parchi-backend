@@ -365,4 +365,38 @@ export class NotificationsService implements OnModuleInit {
       return { success: false, error: error.message };
     }
   }
+
+  async hasUnread(userId: string): Promise<boolean> {
+    try {
+      // Logic:
+      // Count notifications where:
+      // 1. (type = 'broadcast' OR target_user_id = userId)
+      // 2. AND NOT EXISTS in user_notification_reads for this userId
+      
+      const unreadCount = await this.prisma.notifications.count({
+        where: {
+          AND: [
+            {
+              OR: [
+                { type: 'broadcast' },
+                { target_user_id: userId },
+              ],
+            },
+            {
+              user_notification_reads: {
+                none: {
+                  user_id: userId,
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      return unreadCount > 0;
+    } catch (error) {
+      this.logger.error(`Error checking unread notifications for ${userId}:`, error);
+      return false; // Default to false on error to avoid blocking UI
+    }
+  }
 }
