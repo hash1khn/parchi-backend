@@ -60,6 +60,13 @@ export class MerchantsController {
     return createApiResponse(data, 'Brands retrieved successfully');
   }
 
+  @Get('public/brands')
+  @HttpCode(HttpStatus.OK)
+  async getPublicBrands() {
+    const data = await this.merchantsService.getAllBrands();
+    return createApiResponse(data, 'Public brands retrieved successfully');
+  }
+
   @Put('brands/featured')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
