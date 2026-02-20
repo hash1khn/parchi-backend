@@ -805,6 +805,20 @@ model institutes {
   @@schema("public")
 }
 
+model deletion_requests {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  identifier String   @db.VarChar(255)
+  reason     String
+  status     String   @default("pending") @db.VarChar(20) // pending, processed, rejected
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([identifier])
+  @@index([status])
+  @@map("deletion_requests")
+  @@schema("public")
+}
+
 enum aal_level {
   aal1
   aal2

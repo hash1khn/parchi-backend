@@ -15,6 +15,7 @@ import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.
 import { MailModule } from './modules/mail/mail.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { InstitutesModule } from './modules/institutes/institutes.module';
+import { AccountDeletionModule } from './modules/account-deletion/account-deletion.module';
 
 
 @Module({
@@ -35,6 +36,7 @@ import { InstitutesModule } from './modules/institutes/institutes.module';
     MailModule,
     NotificationsModule,
     InstitutesModule,
+    AccountDeletionModule,
   ],
   controllers: [AppController],
   providers: [AppService],
