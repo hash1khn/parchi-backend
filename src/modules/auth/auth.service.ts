@@ -339,9 +339,10 @@ export class AuthService {
       // 2. Fetch proper public key from JWKS (cached by jwks-rsa library)
       const key = await this.getSigningKey(header);
 
-      // 3. Verify JWT signature
+      // 3. Verify JWT signature (with 30s clock tolerance for minor skew)
       jwt.verify(accessToken, key, {
-        algorithms: ['ES256', 'RS256', 'HS256']
+        algorithms: ['ES256', 'RS256', 'HS256'],
+        clockTolerance: 30,
       });
 
       const result = {
@@ -358,6 +359,32 @@ export class AuthService {
 
       return result;
     } catch (error) {
+      // If the token is expired locally, fall back to Supabase's server-side verification.
+      // This handles cases where the Flutter app sends a token that is slightly expired
+      // locally but Supabase still considers valid (e.g. clock skew or race conditions).
+      if (error.name === 'TokenExpiredError') {
+        console.warn('Local JWT expired, falling back to Supabase server verification...');
+        try {
+          const { data: { user }, error: supabaseError } = await this.supabase.auth.getUser(accessToken);
+          if (supabaseError || !user) {
+            console.error('Supabase fallback verification also failed:', supabaseError?.message);
+            return null;
+          }
+          // Build result from Supabase user object
+          const fallbackResult = {
+            id: user.id,
+            email: user.email,
+            role: user.user_metadata?.role || user.app_metadata?.role,
+            merchant_id: user.user_metadata?.merchant_id,
+            branch_id: user.user_metadata?.branch_id,
+          };
+          return fallbackResult;
+        } catch (supabaseFallbackError) {
+          console.error('Supabase fallback threw:', supabaseFallbackError.message);
+          return null;
+        }
+      }
+
       console.error('Local JWT Verification failed:', error.message);
       return null;
     }
