@@ -34,6 +34,7 @@ export class AuthService {
   private adminSupabase: SupabaseClient;
   private jwksClient: JwksClient;
   private tokenCache: LRUCache<string, any>;
+  private activeStatusCache: LRUCache<string, boolean>;
 
   constructor(
     private readonly configService: ConfigService,
@@ -65,14 +66,20 @@ export class AuthService {
       jwksRequestsPerMinute: 10,
     });
 
-    // Initialize token cache with 5-minute TTL and max 1000 tokens
-    // This caches JWT verification results to avoid repeated verifications
-    this.tokenCache = new LRUCache({
-      max: 1000,
-      ttl: 1000 * 60 * 5, // 5 minutes
-    });
+  // Initialize token cache with 5-minute TTL and max 1000 tokens
+  // This caches JWT verification results to avoid repeated verifications
+  this.tokenCache = new LRUCache({
+    max: 1000,
+    ttl: 1000 * 60 * 5, // 5 minutes
+  });
 
-    // Create admin client with service role key for admin operations
+  // Short-lived cache for is_active status (30-second TTL, max 5000 users)
+  // Limits DB hits to 1 per user per 30 seconds instead of every request,
+  // while still propagating deactivation quickly.
+  this.activeStatusCache = new LRUCache<string, boolean>({
+    max: 5000,
+    ttl: 1000 * 30, // 30 seconds
+  });    // Create admin client with service role key for admin operations
     if (supabaseServiceKey) {
       this.adminSupabase = createClient(supabaseUrl, supabaseServiceKey, {
         auth: {
@@ -294,13 +301,16 @@ export class AuthService {
   /**
    * Lightweight JWT validation - GUARDS ONLY
    * This method is used by JwtAuthGuard and should be FAST
-   * NO database queries - only JWT verification
-   * Returns minimal user info from JWT claims including merchant_id/branch_id
-   * Uses LRU cache to avoid repeated verification of the same token
+   * Flow:
+   *   1. Decode header (no DB, no network)
+   *   2. Check token LRU cache → return immediately if hit (also checks is_active in cache)
+   *   3. Verify JWT signature via JWKS (JWKS keys are cached by jwks-rsa)
+   *   4. Check is_active via short-TTL LRU cache (DB hit at most once per 30 s per user)
+   *   5. Cache verified result and return
    */
   async validateUserFromSession(accessToken: string): Promise<any> {
     try {
-      // 1. Decode header to find 'kid' and 'alg'
+      // 1. Decode header to find 'kid' and 'alg' — pure CPU, no I/O
       const decodedComplete = jwt.decode(accessToken, { complete: true });
 
       if (!decodedComplete || !decodedComplete.header || !decodedComplete.payload) {
@@ -317,33 +327,55 @@ export class AuthService {
         return null;
       }
 
-      // 🔥 CRITICAL FIX: Check is_active status FIRST before returning cached result
-      // This ensures deactivated users are immediately blocked (no 5-minute cache delay)
-      const userStatus = await this.prisma.public_users.findUnique({
-        where: { id: userId },
-        select: { is_active: true },
-      });
-
-      if (!userStatus || !userStatus.is_active) {
-        // Delete from cache if user is inactive
-        this.tokenCache.delete(accessToken);
-        return null;
-      }
-
-      // NOW check cache (after is_active check)
+      // 2. Check token-level LRU cache FIRST (before any I/O).
+      //    The cached result already passed both JWT verification and is_active check.
       const cachedResult = this.tokenCache.get(accessToken);
       if (cachedResult) {
+        // Still gate on is_active — use the short-TTL status cache to avoid a DB hit
+        // every request while still propagating deactivation within ~30 seconds.
+        const cachedActive = this.activeStatusCache.get(userId);
+        if (cachedActive === false) {
+          this.tokenCache.delete(accessToken);
+          return null;
+        }
+        if (cachedActive === true) {
+          return cachedResult;
+        }
+        // Cache miss for status — do a single DB lookup
+        const userStatus = await this.prisma.public_users.findUnique({
+          where: { id: userId },
+          select: { is_active: true },
+        });
+        if (!userStatus || !userStatus.is_active) {
+          this.activeStatusCache.set(userId, false);
+          this.tokenCache.delete(accessToken);
+          return null;
+        }
+        this.activeStatusCache.set(userId, true);
         return cachedResult;
       }
 
-      // 2. Fetch proper public key from JWKS (cached by jwks-rsa library)
+      // 3. Cache miss — verify JWT signature via JWKS (keys are internally cached by jwks-rsa)
       const key = await this.getSigningKey(header);
-
-      // 3. Verify JWT signature (with 30s clock tolerance for minor skew)
       jwt.verify(accessToken, key, {
         algorithms: ['ES256', 'RS256', 'HS256'],
         clockTolerance: 30,
       });
+
+      // 4. JWT is valid — now check is_active via short-TTL status cache
+      let isActive = this.activeStatusCache.get(userId);
+      if (isActive === undefined) {
+        const userStatus = await this.prisma.public_users.findUnique({
+          where: { id: userId },
+          select: { is_active: true },
+        });
+        isActive = userStatus?.is_active ?? false;
+        this.activeStatusCache.set(userId, isActive);
+      }
+
+      if (!isActive) {
+        return null;
+      }
 
       const result = {
         id: userId,
@@ -353,8 +385,7 @@ export class AuthService {
         branch_id: verifiedPayload.user_metadata?.branch_id,      // For MERCHANT_BRANCH
       };
 
-      // Cache the result for future requests (5-minute TTL)
-      // Note: We still check is_active on EVERY request, cache is only for JWT verification
+      // 5. Cache the fully-verified result for 5 minutes
       this.tokenCache.set(accessToken, result);
 
       return result;
@@ -362,7 +393,7 @@ export class AuthService {
       // If the token is expired locally, fall back to Supabase's server-side verification.
       // This handles cases where the Flutter app sends a token that is slightly expired
       // locally but Supabase still considers valid (e.g. clock skew or race conditions).
-      if (error.name === 'TokenExpiredError') {
+      if ((error as any).name === 'TokenExpiredError') {
         console.warn('Local JWT expired, falling back to Supabase server verification...');
         try {
           const { data: { user }, error: supabaseError } = await this.supabase.auth.getUser(accessToken);
@@ -380,12 +411,12 @@ export class AuthService {
           };
           return fallbackResult;
         } catch (supabaseFallbackError) {
-          console.error('Supabase fallback threw:', supabaseFallbackError.message);
+          console.error('Supabase fallback threw:', (supabaseFallbackError as any).message);
           return null;
         }
       }
 
-      console.error('Local JWT Verification failed:', error.message);
+      console.error('Local JWT Verification failed:', (error as any).message);
       return null;
     }
   }

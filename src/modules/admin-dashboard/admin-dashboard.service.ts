@@ -157,7 +157,7 @@ export class AdminDashboardService {
             if (endDate) redemptionWhere.created_at.lte = endDate;
         }
 
-        // Get all approved merchants with their branch redemptions
+        // Get all approved merchants with their branch redemption counts (DB-level aggregation)
         const merchants = await this.prisma.merchants.findMany({
             where: {
                 verification_status: 'approved',
@@ -171,10 +171,9 @@ export class AdminDashboardService {
                     select: {
                         id: true,
                         branch_name: true,
-                        redemptions: {
-                            where: redemptionWhere,
+                        _count: {
                             select: {
-                                id: true,
+                                redemptions: { where: redemptionWhere },
                             },
                         },
                     },
@@ -188,7 +187,7 @@ export class AdminDashboardService {
                 const branches = merchant.merchant_branches.map((branch) => ({
                     id: branch.id,
                     branchName: branch.branch_name,
-                    redemptionCount: branch.redemptions.length,
+                    redemptionCount: branch._count.redemptions,
                 })).sort((a, b) => b.redemptionCount - a.redemptionCount);
 
                 const redemptionCount = branches.reduce(
@@ -282,12 +281,13 @@ export class AdminDashboardService {
                     select: {
                         id: true,
                         branch_name: true,
-                        redemptions: {
-                            where: {
-                                created_at: Object.keys(dateFilter).length > 0 ? dateFilter : undefined,
-                            },
+                        _count: {
                             select: {
-                                id: true,
+                                redemptions: {
+                                    where: {
+                                        created_at: Object.keys(dateFilter).length > 0 ? dateFilter : undefined,
+                                    },
+                                },
                             },
                         },
                     },
@@ -304,7 +304,7 @@ export class AdminDashboardService {
             let merchantTotalReceivables = 0;
 
             const branches = merchant.merchant_branches.map(branch => {
-                const count = branch.redemptions.length;
+                const count = branch._count.redemptions;
                 const receivables = count * feePerRedemption;
 
                 merchantTotalRedemptions += count;

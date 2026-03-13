@@ -12,6 +12,7 @@ import {
   BadRequestException,
   Param,
 } from '@nestjs/common';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
@@ -35,7 +36,11 @@ import { Audit } from '../../decorators/audit.decorator';
 export class AuthController {
   constructor(private readonly authService: AuthService) { }
 
+  // ── Strict rate-limits on unauthenticated / credential endpoints ──────────
+  // 10 attempts per 60 seconds per IP — blocks brute-force and enumeration.
+
   @Post('signup')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.CREATED)
   async signup(@Body() signupDto: SignupDto) {
     const data = await this.authService.signup(signupDto);
@@ -43,6 +48,7 @@ export class AuthController {
   }
 
   @Post('student/signup')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.CREATED)
   async studentSignup(@Body() studentSignupDto: StudentSignupDto) {
     const data = await this.authService.studentSignup(studentSignupDto);
@@ -76,6 +82,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
     const data = await this.authService.login(loginDto);
@@ -83,6 +90,7 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
     await this.authService.forgotPassword(forgotPasswordDto);
@@ -95,7 +103,7 @@ export class AuthController {
   @Audit({
     action: 'CHANGE_PASSWORD',
     tableName: 'users',
-    getRecordId: (args) => args[3]?.user?.id // Extract user ID from request.user
+    getRecordId: (args) => args[3]?.user?.id
   })
   async changePassword(
     @Body() changePasswordDto: ChangePasswordDto,
@@ -118,7 +126,7 @@ export class AuthController {
   @Audit({
     action: 'UPDATE_PROFILE_PICTURE',
     tableName: 'students',
-    getRecordId: (args) => args[3]?.user?.id // Extract user ID from request.user
+    getRecordId: (args) => args[3]?.user?.id
   })
   async updateProfilePicture(
     @Body() dto: UpdateProfilePictureDto,
@@ -127,7 +135,6 @@ export class AuthController {
     const data = await this.authService.updateStudentProfilePicture(user.id, dto.imageUrl);
     return createApiResponse(data, 'Profile picture updated successfully');
   }
-
 
   @Post('logout')
   @UseGuards(JwtAuthGuard)
@@ -139,6 +146,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @HttpCode(HttpStatus.OK)
   async refresh(@Body('refreshToken') refreshToken: string) {
     const data = await this.authService.refreshSession(refreshToken);
@@ -147,10 +155,9 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
+  @SkipThrottle() // authenticated + read-only; no abuse risk
   @HttpCode(HttpStatus.OK)
   async getProfile(@CurrentUser() user) {
-    // Guard provides minimal user info (id, email, role)
-    // Fetch full user details with role-specific data
     const userWithDetails = await this.authService.getCurrentUserWithDetails(user.id);
 
     if (!userWithDetails) {
@@ -195,10 +202,7 @@ export class AuthController {
 
   private extractTokenFromHeader(request: any): string {
     const authHeader = request.headers?.authorization;
-    if (!authHeader) {
-      return '';
-    }
-
+    if (!authHeader) return '';
     const [type, token] = authHeader.split(' ') ?? [];
     return type === 'Bearer' ? token : '';
   }

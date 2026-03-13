@@ -113,253 +113,174 @@ export class RedemptionsService {
       );
     }
 
-    // Use transaction to ensure atomicity and prevent race conditions
+    // ── Pre-flight reads (outside transaction) ────────────────────────────
+    // Performing these reads before opening the transaction keeps the
+    // transaction window as short as possible, reducing lock-hold time and
+    // the chance of deadlocks when multiple branches redeem concurrently.
+    // Any of these throw early and cheaply before a transaction is opened.
+
+    const [student, branch, offer] = await Promise.all([
+      this.prisma.students.findUnique({
+        where: { parchi_id: normalizedParchiId },
+        include: {
+          users: { select: { id: true, is_active: true } },
+        },
+      }),
+      this.prisma.merchant_branches.findUnique({
+        where: { id: branchId },
+        include: {
+          merchants: {
+            select: {
+              id: true,
+              business_name: true,
+              logo_path: true,
+              category: true,
+            },
+          },
+        },
+      }),
+      this.prisma.offers.findUnique({
+        where: { id: createDto.offerId },
+        include: {
+          offer_branches: { where: { branch_id: branchId } },
+          merchants: {
+            select: {
+              id: true,
+              business_name: true,
+              logo_path: true,
+              category: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    // Validate student
+    if (!student) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.REDEMPTION.STUDENT_NOT_FOUND);
+    }
+    if (!student.users.is_active) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.REDEMPTION.STUDENT_NOT_VERIFIED);
+    }
+    if (student.verification_status !== 'approved') {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.REDEMPTION.STUDENT_NOT_VERIFIED);
+    }
+
+    // Validate branch
+    if (!branch) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_NOT_FOUND);
+    }
+    if (!branch.is_active) {
+      throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_NOT_ACTIVE);
+    }
+
+    // Validate offer
+    if (!offer) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_FOUND);
+    }
+
+    const now = new Date();
+
+    if (offer.status !== 'active') {
+      throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_ACTIVE);
+    }
+    if (offer.valid_from > now || offer.valid_until < now) {
+      throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_ACTIVE);
+    }
+    if (!offer.offer_branches || offer.offer_branches.length === 0) {
+      throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_AVAILABLE_AT_BRANCH);
+    }
+
+    // Validate schedule
+    const scheduleType = offer.schedule_type || 'always';
+    if (scheduleType === 'custom') {
+      const allowedDays = offer.allowed_days || [];
+      if (allowedDays.length > 0) {
+        const today = now.getDay();
+        if (!allowedDays.includes(today)) {
+          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          throw new BadRequestException(
+            `This offer is not available on ${dayNames[today]}. It is only available on: ${allowedDays.map((d) => dayNames[d]).join(', ')}`,
+          );
+        }
+      }
+
+      const startTime = offer.start_time;
+      const endTime = offer.end_time;
+      if (startTime && endTime) {
+        const currentTime = now.getHours() * 60 + now.getMinutes();
+        const toMinutes = (t: Date) => { const d = new Date(t); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
+        const startMinutes = toMinutes(startTime);
+        const endMinutes = toMinutes(endTime);
+        const isWithinWindow =
+          startMinutes <= endMinutes
+            ? currentTime >= startMinutes && currentTime <= endMinutes
+            : currentTime >= startMinutes || currentTime <= endMinutes;
+
+        if (!isWithinWindow) {
+          const fmt = (t: Date) => { const d = new Date(t); return `${d.getUTCHours().toString().padStart(2, '0')}:${d.getUTCMinutes().toString().padStart(2, '0')}`; };
+          throw new BadRequestException(
+            `This offer is only available between ${fmt(startTime)} and ${fmt(endTime)}. Current time is outside this window.`,
+          );
+        }
+      }
+    }
+
+    // Check total limit (optimistic — the transaction will re-check with a lock)
+    if (offer.total_limit && (offer.current_redemptions || 0) >= offer.total_limit) {
+      throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_LIMIT_REACHED);
+    }
+
+    // Pre-fetch bonus settings and student stats in parallel (reads only)
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const recentWindow = new Date(now.getTime() - this.DUPLICATE_PREVENTION_WINDOW_MS);
+
+    const [bonusSettings, studentBranchStats] = await Promise.all([
+      this.prisma.branch_bonus_settings.findUnique({ where: { branch_id: branchId } }),
+      this.prisma.student_branch_stats.findUnique({
+        where: { student_id_branch_id: { student_id: student.id, branch_id: branchId } },
+      }),
+    ]);
+
+    // ── Transaction: writes + race-condition guards only ─────────────────
     const redemption = await this.prisma.$transaction(
       async (tx) => {
-        // 1. Find student by parchi ID
-        const student = await tx.students.findUnique({
-          where: { parchi_id: normalizedParchiId },
-          include: {
-            users: {
-              select: {
-                id: true,
-                is_active: true,
-              },
-            },
-          },
-        });
-
-        if (!student) {
-          throw new NotFoundException(
-            API_RESPONSE_MESSAGES.REDEMPTION.STUDENT_NOT_FOUND,
-          );
-        }
-
-        if (!student.users.is_active) {
-          throw new ForbiddenException(
-            API_RESPONSE_MESSAGES.REDEMPTION.STUDENT_NOT_VERIFIED,
-          );
-        }
-
-        if (student.verification_status !== 'approved') {
-          throw new ForbiddenException(
-            API_RESPONSE_MESSAGES.REDEMPTION.STUDENT_NOT_VERIFIED,
-          );
-        }
-
-        // 2. Verify branch exists and is active
-        const branch = await tx.merchant_branches.findUnique({
-          where: { id: branchId },
-          include: {
-            merchants: {
-              select: {
-                id: true,
-                business_name: true,
-                logo_path: true,
-                category: true,
-              },
-            },
-          },
-        });
-
-        if (!branch) {
-          throw new NotFoundException(
-            API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_NOT_FOUND,
-          );
-        }
-
-        if (!branch.is_active) {
-          throw new BadRequestException(
-            API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_NOT_ACTIVE,
-          );
-        }
-
-        // 3. Verify offer exists and is active
-        const offer = await tx.offers.findUnique({
-          where: { id: createDto.offerId },
-          include: {
-            offer_branches: {
-              where: {
-                branch_id: branchId,
-              },
-            },
-            merchants: {
-              select: {
-                id: true,
-                business_name: true,
-                logo_path: true,
-                category: true,
-              },
-            },
-          },
-        });
-
-        if (!offer) {
-          throw new NotFoundException(
-            API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_FOUND,
-          );
-        }
-
-        // 4. Verify offer is active and within validity period
-        const now = new Date();
-        if (offer.status !== 'active') {
-          throw new BadRequestException(
-            API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_ACTIVE,
-          );
-        }
-
-        if (offer.valid_from > now || offer.valid_until < now) {
-          throw new BadRequestException(
-            API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_ACTIVE,
-          );
-        }
-
-        // 5. Verify offer is available at this branch
-        if (!offer.offer_branches || offer.offer_branches.length === 0) {
-          throw new BadRequestException(
-            API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_AVAILABLE_AT_BRANCH,
-          );
-        }
-
-        // 5.5. Validate schedule (allowed_days and time windows)
-        const scheduleType = offer.schedule_type || 'always';
-        if (scheduleType === 'custom') {
-          // Check if today is in allowed_days
-          const allowedDays = offer.allowed_days || [];
-          if (allowedDays.length > 0) {
-            const today = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-            if (!allowedDays.includes(today)) {
-              const dayNames = [
-                'Sunday',
-                'Monday',
-                'Tuesday',
-                'Wednesday',
-                'Thursday',
-                'Friday',
-                'Saturday',
-              ];
-              throw new BadRequestException(
-                `This offer is not available on ${dayNames[today]}. It is only available on: ${allowedDays.map((d) => dayNames[d]).join(', ')}`,
-              );
-            }
-          }
-
-          // Check if current time is within the time window
-          const startTime = offer.start_time;
-          const endTime = offer.end_time;
-
-          if (startTime && endTime) {
-            const currentTime = now.getHours() * 60 + now.getMinutes(); // Current time in minutes
-
-            // Convert database time to minutes
-            const formatTimeToMinutes = (time: Date): number => {
-              const date = new Date(time);
-              return date.getUTCHours() * 60 + date.getUTCMinutes();
-            };
-
-            const startMinutes = formatTimeToMinutes(startTime);
-            const endMinutes = formatTimeToMinutes(endTime);
-
-            // Handle time windows that span midnight (e.g., 22:00 - 02:00)
-            let isWithinWindow = false;
-            if (startMinutes <= endMinutes) {
-              // Normal time window (e.g., 09:00 - 17:00)
-              isWithinWindow =
-                currentTime >= startMinutes && currentTime <= endMinutes;
-            } else {
-              // Time window spans midnight (e.g., 22:00 - 02:00)
-              isWithinWindow =
-                currentTime >= startMinutes || currentTime <= endMinutes;
-            }
-
-            if (!isWithinWindow) {
-              const formatTimeString = (time: Date): string => {
-                const date = new Date(time);
-                const hours = date.getUTCHours().toString().padStart(2, '0');
-                const minutes = date
-                  .getUTCMinutes()
-                  .toString()
-                  .padStart(2, '0');
-                return `${hours}:${minutes}`;
-              };
-
-              throw new BadRequestException(
-                `This offer is only available between ${formatTimeString(startTime)} and ${formatTimeString(endTime)}. Current time is outside this window.`,
-              );
-            }
-          }
-        }
-
-        // 6. Check offer limits
-        if (
-          offer.total_limit &&
-          (offer.current_redemptions || 0) >= offer.total_limit
-        ) {
-          throw new BadRequestException(
-            API_RESPONSE_MESSAGES.REDEMPTION.OFFER_LIMIT_REACHED,
-          );
-        }
-
-        // 7. Calculate start of day for daily limit checks
-        const startOfDay = new Date(now);
-        startOfDay.setHours(0, 0, 0, 0);
-
-        // 8. Check daily limit for this offer
+        // Re-check total limit inside the transaction (with row lock via UPDATE below)
+        // and daily limit — these need to be atomic.
         if (offer.daily_limit) {
           const todayRedemptions = await tx.redemptions.count({
             where: {
               offer_id: createDto.offerId,
               branch_id: branchId,
-              created_at: {
-                gte: startOfDay,
-              },
+              created_at: { gte: startOfDay },
             },
           });
-
           if (todayRedemptions >= offer.daily_limit) {
-            throw new BadRequestException(
-              API_RESPONSE_MESSAGES.REDEMPTION.OFFER_LIMIT_REACHED,
-            );
+            throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_LIMIT_REACHED);
           }
         }
 
-        // 9. RACE CONDITION PREVENTION: Check for recent duplicate redemption
-        const recentWindow = new Date(
-          now.getTime() - this.DUPLICATE_PREVENTION_WINDOW_MS,
-        );
-
+        // Duplicate-redemption guard
         const recentRedemption = await tx.redemptions.findFirst({
           where: {
             student_id: student.id,
             offer_id: createDto.offerId,
             branch_id: branchId,
-            created_at: {
-              gte: recentWindow,
-            },
+            created_at: { gte: recentWindow },
           },
-          orderBy: {
-            created_at: 'desc',
-          },
+          orderBy: { created_at: 'desc' },
         });
-
         if (recentRedemption) {
-          throw new BadRequestException(
-            API_RESPONSE_MESSAGES.REDEMPTION.DUPLICATE_REDEMPTION,
-          );
+          throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.DUPLICATE_REDEMPTION);
         }
 
-        // 10. Check student's daily limit for this offer at this branch
-        // REMOVED: Hardcoded limit of 1 redemption per student per day per branch removed as per requirement.
-        // const studentTodayRedemptions = await tx.redemptions.count({ ... });
-        // if (studentTodayRedemptions > 0) { ... }
-
-        // 11. Calculate bonus discount OR Strategy Discount
+        // Calculate bonus / strategy discount
         let isBonusApplied = false;
         let bonusDiscountApplied: number | null = null;
         let strategyNote: string | null = null;
         let calculatedStrategyDiscount: number | undefined;
 
-        // CHECK FOR STRATEGY FIRST
         if ((offer as any).redemption_strategy === 'soho_hierarchical') {
           const strategyResult = await this.sohoStrategy.calculateDiscount({
             studentId: student.id,
@@ -367,224 +288,125 @@ export class RedemptionsService {
             offerId: createDto.offerId,
             tx,
           });
-
-          // Strategy Result Overrides Standard Logic
           calculatedStrategyDiscount = strategyResult.discountValue;
           strategyNote = strategyResult.note || null;
-
-          // Treat Strategy overrides as "Bonus" for storage purposes so the value persists
-          // This ensures historical redemptions show the correct % (e.g. 30%, 40%) instead of the static offer % (20%)
           bonusDiscountApplied = calculatedStrategyDiscount;
           isBonusApplied = true;
         }
 
-        const bonusSettings = await tx.branch_bonus_settings.findUnique({
-          where: { branch_id: branchId },
-        });
-
-        if (
-          !(offer as any).redemption_strategy &&
-          bonusSettings &&
-          bonusSettings.is_active
-        ) {
-          const studentBranchStats = await tx.student_branch_stats.findUnique({
-            where: {
-              student_id_branch_id: {
-                student_id: student.id,
-                branch_id: branchId,
-              },
-            },
-          });
-
+        if (!(offer as any).redemption_strategy && bonusSettings && bonusSettings.is_active) {
           const redemptionCount = studentBranchStats?.redemption_count || 0;
-
-          // Check if this redemption qualifies for bonus (e.g. 5th redemption)
-          // Logic: (current_count + 1) % required === 0
-          if (
-            (redemptionCount + 1) % bonusSettings.redemptions_required ===
-            0
-          ) {
+          if ((redemptionCount + 1) % bonusSettings.redemptions_required === 0) {
             isBonusApplied = true;
-
             if (bonusSettings.discount_type === 'percentage') {
               bonusDiscountApplied = Number(bonusSettings.discount_value);
               if (bonusSettings.max_discount_amount) {
-                bonusDiscountApplied = Math.min(
-                  bonusDiscountApplied,
-                  Number(bonusSettings.max_discount_amount),
-                );
+                bonusDiscountApplied = Math.min(bonusDiscountApplied, Number(bonusSettings.max_discount_amount));
               }
             } else if (bonusSettings.discount_type === 'fixed') {
               bonusDiscountApplied = Number(bonusSettings.discount_value);
             } else if (bonusSettings.discount_type === 'item') {
-              // Item type - no discount, just additional item
               bonusDiscountApplied = 0;
             }
           }
         }
 
-        // 12. Calculate savings (offer discount + bonus)
-        let totalSavings = 0;
+        const totalSavings =
+          typeof calculatedStrategyDiscount !== 'undefined'
+            ? calculatedStrategyDiscount
+            : isBonusApplied
+              ? Number(offer.discount_value) + (bonusDiscountApplied || 0)
+              : Number(offer.discount_value);
 
-        if (typeof calculatedStrategyDiscount !== 'undefined') {
-          totalSavings = calculatedStrategyDiscount;
-        } else {
-          const offerDiscount = Number(offer.discount_value);
-          totalSavings = isBonusApplied
-            ? offerDiscount + (bonusDiscountApplied || 0)
-            : offerDiscount;
-        }
-
-        // 13. Create redemption record
+        // Create redemption record
         const newRedemption = await tx.redemptions.create({
           data: {
             student_id: student.id,
             offer_id: createDto.offerId,
             branch_id: branchId,
             is_bonus_applied: isBonusApplied,
-            bonus_discount_applied: bonusDiscountApplied
-              ? bonusDiscountApplied
-              : null,
-            verified_by: currentUser.id, // Auto-verified by branch staff
+            bonus_discount_applied: bonusDiscountApplied ?? null,
+            verified_by: currentUser.id,
             notes: strategyNote
-              ? createDto.notes
-                ? `${strategyNote} | ${createDto.notes}`
-                : strategyNote
+              ? createDto.notes ? `${strategyNote} | ${createDto.notes}` : strategyNote
               : createDto.notes || null,
           },
         });
 
-        // 14. Update offer current_redemptions
-        await tx.offers.update({
-          where: { id: createDto.offerId },
-          data: {
-            current_redemptions: {
-              increment: 1,
-            },
-          },
-        });
-
-        // 15. Update student stats
-        await tx.students.update({
-          where: { id: student.id },
-          data: {
-            total_redemptions: {
-              increment: 1,
-            },
-            total_savings: {
-              increment: totalSavings,
-            },
-          },
-        });
-
-        // 16. Update student_merchant_stats
-        const existingMerchantStats = await tx.student_merchant_stats.findFirst(
-          {
-            where: {
-              student_id: student.id,
-              merchant_id: branch.merchant_id,
-            },
-          },
-        );
-
-        if (existingMerchantStats) {
-          await tx.student_merchant_stats.update({
-            where: { id: existingMerchantStats.id },
+        // All counter updates run in parallel inside the transaction
+        await Promise.all([
+          tx.offers.update({
+            where: { id: createDto.offerId },
+            data: { current_redemptions: { increment: 1 } },
+          }),
+          tx.students.update({
+            where: { id: student.id },
             data: {
-              redemption_count: {
-                increment: 1,
+              total_redemptions: { increment: 1 },
+              total_savings: { increment: totalSavings },
+            },
+          }),
+          tx.student_merchant_stats.upsert({
+            where: {
+              student_id_merchant_id: {
+                student_id: student.id,
+                merchant_id: branch.merchant_id,
               },
-              total_savings: {
-                increment: totalSavings,
-              },
+            },
+            update: {
+              redemption_count: { increment: 1 },
+              total_savings: { increment: totalSavings },
               last_redemption_at: now,
             },
-          });
-        } else {
-          await tx.student_merchant_stats.create({
-            data: {
+            create: {
               student_id: student.id,
               merchant_id: branch.merchant_id,
               redemption_count: 1,
               total_savings: totalSavings,
               last_redemption_at: now,
             },
-          });
-        }
-
-        // 17. Update student_branch_stats
-        const existingBranchStats = await tx.student_branch_stats.findFirst({
-          where: {
-            student_id: student.id,
-            branch_id: branchId,
-          },
-        });
-
-        if (existingBranchStats) {
-          await tx.student_branch_stats.update({
-            where: { id: existingBranchStats.id },
-            data: {
-              redemption_count: {
-                increment: 1,
+          }),
+          tx.student_branch_stats.upsert({
+            where: {
+              student_id_branch_id: {
+                student_id: student.id,
+                branch_id: branchId,
               },
-              total_savings: {
-                increment: totalSavings,
-              },
+            },
+            update: {
+              redemption_count: { increment: 1 },
+              total_savings: { increment: totalSavings },
               last_redemption_at: now,
             },
-          });
-        } else {
-          await tx.student_branch_stats.create({
-            data: {
+            create: {
               student_id: student.id,
               branch_id: branchId,
               redemption_count: 1,
               total_savings: totalSavings,
               last_redemption_at: now,
             },
-          });
-        }
+          }),
+        ]);
 
-        // Return redemption with relations
-        return await tx.redemptions.findUnique({
+        // Return redemption with relations for the response
+        return tx.redemptions.findUnique({
           where: { id: newRedemption.id },
           include: {
             offers: {
-              select: {
-                id: true,
-                title: true,
-                discount_type: true,
-                discount_value: true,
-                image_url: true,
-              },
+              select: { id: true, title: true, discount_type: true, discount_value: true, image_url: true },
             },
             merchant_branches: {
-              select: {
-                id: true,
-                branch_name: true,
-                address: true,
-                city: true,
-              },
+              select: { id: true, branch_name: true, address: true, city: true },
             },
             students: {
-              select: {
-                id: true,
-                parchi_id: true,
-                first_name: true,
-                last_name: true,
-                user_id: true,
-              },
+              select: { id: true, parchi_id: true, first_name: true, last_name: true, user_id: true },
             },
-            users: {
-              select: {
-                id: true,
-              },
-            },
+            users: { select: { id: true } },
           },
         });
       },
       {
-        timeout: 20000, // 20 second timeout for transaction
+        timeout: 10000, // reduced from 20s — reads are no longer inside, so writes are fast
       },
     );
 

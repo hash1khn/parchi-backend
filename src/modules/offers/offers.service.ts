@@ -1307,6 +1307,13 @@ export class OffersService {
   /**
    * Get active offers for students
    * Student only
+   *
+   * Strategy:
+   * - When NO location is provided: push skip/take to the DB (fast, indexed).
+   * - When location IS provided: we must fetch all offers that pass the base
+   *   filters so we can calculate distances and filter by radius in-process.
+   *   This is acceptable because the active+valid index keeps the result set
+   *   small; once PostGIS is available this should move to the DB entirely.
    */
   async getActiveOffersForStudents(
     category?: string,
@@ -1322,116 +1329,122 @@ export class OffersService {
   }> {
     const skip = calculateSkip(page, limit);
     const now = new Date();
+    const hasLocation = latitude !== undefined && longitude !== undefined;
 
-    // Build where clause for active offers
+    // Build base where clause — hits idx_offers_active_valid_created
     const whereClause: Prisma.offersWhereInput = {
       status: 'active',
       valid_from: { lte: now },
       valid_until: { gte: now },
     };
 
-    // Filter by merchant category if provided
     if (category) {
-      whereClause.merchants = {
-        category: category,
-      };
+      whereClause.merchants = { category };
     }
 
-    // Get all active offers with merchant and branch info
-    const offers = await this.prisma.offers.findMany({
-      where: whereClause,
-      include: {
-        offer_branches: {
-          include: {
-            merchant_branches: {
-              select: {
-                id: true,
-                branch_name: true,
-                latitude: true,
-                longitude: true,
-                address: true,
-                city: true,
-                is_active: true,
-              },
+    const includeClause = {
+      offer_branches: {
+        include: {
+          merchant_branches: {
+            select: {
+              id: true,
+              branch_name: true,
+              latitude: true,
+              longitude: true,
+              address: true,
+              city: true,
+              is_active: true,
             },
           },
         },
-        merchants: {
-          select: {
-            id: true,
-            business_name: true,
-            logo_path: true,
-            category: true,
-            banner_url: true,
-          },
+      },
+      merchants: {
+        select: {
+          id: true,
+          business_name: true,
+          logo_path: true,
+          category: true,
+          banner_url: true,
         },
       },
+    } as const;
+
+    // ── Fast path: no location filter ──────────────────────────────────────
+    // Sort can be pushed to DB for 'newest' and 'popularity'; proximity sort
+    // requires coordinates so it falls into the slow path below.
+    if (!hasLocation && sort !== 'proximity') {
+      const dbOrderBy: Prisma.offersOrderByWithRelationInput =
+        sort === 'popularity'
+          ? { current_redemptions: 'desc' }
+          : { created_at: 'desc' }; // default / 'newest'
+
+      const [offers, total] = await Promise.all([
+        this.prisma.offers.findMany({
+          where: whereClause,
+          include: includeClause,
+          orderBy: dbOrderBy,
+          skip,
+          take: limit,
+        }),
+        this.prisma.offers.count({ where: whereClause }),
+      ]);
+
+      return {
+        items: offers.map((o) => this.formatOfferResponse(o) as OfferResponseWithDistance),
+        pagination: calculatePaginationMeta(total, page, limit),
+      };
+    }
+
+    // ── Slow path: location-based filtering / proximity sort ──────────────
+    // We must fetch all candidate offers to compute distances.
+    // The where clause keeps this bounded to currently-active offers only.
+    const offers = await this.prisma.offers.findMany({
+      where: whereClause,
+      include: includeClause,
+      // Pre-sort by popularity/newest in DB to preserve that ordering when
+      // no proximity sort is requested, avoiding an extra JS sort pass.
+      orderBy:
+        sort === 'popularity'
+          ? { current_redemptions: 'desc' }
+          : { created_at: 'desc' },
     });
 
-    // Format offers and calculate distances if coordinates provided
+    // Calculate distances and filter by radius
     let formattedOffers: OfferResponseWithDistance[] = offers.map((offer) => {
       const formatted = this.formatOfferResponse(offer);
 
-      // Calculate minimum distance to any branch if coordinates provided
-      if (latitude !== undefined && longitude !== undefined) {
+      if (hasLocation) {
         const distances = offer.offer_branches
-          .filter(
-            (ob) =>
-              ob.merchant_branches.latitude && ob.merchant_branches.longitude,
-          )
-          .map((ob) => {
-            const branchLat = Number(ob.merchant_branches.latitude);
-            const branchLng = Number(ob.merchant_branches.longitude);
-            return this.calculateDistance(
-              latitude,
-              longitude,
-              branchLat,
-              branchLng,
-            );
-          });
-
-        const minDistance =
-          distances.length > 0 ? Math.min(...distances) : undefined;
+          .filter((ob) => ob.merchant_branches.latitude && ob.merchant_branches.longitude)
+          .map((ob) =>
+            this.calculateDistance(
+              latitude!,
+              longitude!,
+              Number(ob.merchant_branches.latitude),
+              Number(ob.merchant_branches.longitude),
+            ),
+          );
         return {
           ...formatted,
-          distance: minDistance,
+          distance: distances.length > 0 ? Math.min(...distances) : undefined,
         } as OfferResponseWithDistance;
       }
 
       return formatted as OfferResponseWithDistance;
     });
 
-    // Filter by radius if coordinates provided
-    if (latitude !== undefined && longitude !== undefined) {
+    // Filter by radius
+    if (hasLocation) {
       formattedOffers = formattedOffers.filter(
-        (offer) => offer.distance !== undefined && offer.distance <= radius,
+        (o) => o.distance !== undefined && o.distance <= radius,
       );
     }
 
-    // Sort offers
-    if (sort === 'popularity') {
-      formattedOffers.sort(
-        (a, b) => b.currentRedemptions - a.currentRedemptions,
-      );
-    } else if (
-      sort === 'proximity' &&
-      latitude !== undefined &&
-      longitude !== undefined
-    ) {
-      formattedOffers.sort((a, b) => {
-        const distA = a.distance ?? Infinity;
-        const distB = b.distance ?? Infinity;
-        return distA - distB;
-      });
-    } else if (sort === 'newest') {
-      formattedOffers.sort((a, b) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return dateB - dateA;
-      });
+    // Apply JS-only sort (proximity) — popularity/newest already sorted by DB
+    if (sort === 'proximity' && hasLocation) {
+      formattedOffers.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
     }
 
-    // Apply pagination
     const total = formattedOffers.length;
     const paginatedOffers = formattedOffers.slice(skip, skip + limit);
 

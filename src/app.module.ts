@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -20,6 +22,17 @@ import { AccountDeletionModule } from './modules/account-deletion/account-deleti
 
 @Module({
   imports: [
+    // ── Rate limiting ──────────────────────────────────────────────────────
+    // Global default: 100 requests per 60 seconds per IP.
+    // Auth endpoints override this with a much stricter limit via @Throttle().
+    ThrottlerModule.forRoot([
+      {
+        name: 'global',
+        ttl: 60_000,   // 60-second window
+        limit: 100,    // max 100 requests per window
+      },
+    ]),
+
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
       serveRoot: '/public',
@@ -39,6 +52,13 @@ import { AccountDeletionModule } from './modules/account-deletion/account-deleti
     AccountDeletionModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Apply ThrottlerGuard globally so every route is rate-limited by default
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule { }
