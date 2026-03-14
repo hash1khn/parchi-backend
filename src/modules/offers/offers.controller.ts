@@ -81,11 +81,9 @@ export class OffersController {
     );
   }
 
-  // ========== Student App Endpoints ==========
+  // ========== Student App Endpoints (public — no auth required) ==========
 
   @Get('active')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getActiveOffers(@Query() queryDto: QueryActiveOffersDto) {
     const radius = queryDto.radius ?? 10;
@@ -108,8 +106,6 @@ export class OffersController {
   }
 
   @Get('merchant/:merchantId')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getOffersByMerchant(@Param('merchantId') merchantId: string) {
     const data =
@@ -118,8 +114,6 @@ export class OffersController {
   }
 
   @Get(':id/details')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getOfferDetails(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.offersService.getOfferDetailsForStudents(id);
@@ -129,8 +123,6 @@ export class OffersController {
   // ========== Merchant Corporate Account Endpoints (continued) ==========
 
   @Get('featured')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.STUDENT, ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getFeaturedOffers() {
     const data = await this.offersService.getFeaturedOffers();

@@ -52,14 +52,13 @@ export class MerchantsController {
   }
 
   @Get('brands')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.STUDENT, ROLES.ADMIN)
   @HttpCode(HttpStatus.OK)
   async getAllBrands() {
     const data = await this.merchantsService.getAllBrands();
     return createApiResponse(data, 'Brands retrieved successfully');
   }
 
+  // Kept for backwards-compat — resolves to the same handler
   @Get('public/brands')
   @HttpCode(HttpStatus.OK)
   async getPublicBrands() {
@@ -77,8 +76,6 @@ export class MerchantsController {
   }
 
   @Get('student/list')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getMerchantsListForStudents(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -99,16 +96,15 @@ export class MerchantsController {
 
   // Student endpoint for merchant details - placed before other :id routes
   @Get(':id/details')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.STUDENT)
   @HttpCode(HttpStatus.OK)
   async getMerchantDetailsForStudents(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: ICurrentUser,
   ) {
+    // currentUser may be undefined for unauthenticated (guest) requests
     const data = await this.merchantsService.getMerchantDetailsForStudents(
       id,
-      currentUser.id,
+      currentUser?.id,
     );
     return createApiResponse(
       data,
