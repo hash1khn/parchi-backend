@@ -968,30 +968,26 @@ export class StudentsService {
   }> {
     const skip = calculateSkip(page, limit);
 
-    // Get total count of verified students
-    const total = await this.prisma.students.count({
-      where: {
-        verification_status: 'approved',
-      },
-    });
+    const leaderboardWhere = { verification_status: 'approved' } as const;
 
-    // Get students ordered by total_redemptions descending
-    const students = await this.prisma.students.findMany({
-      where: {
-        verification_status: 'approved',
-      },
-      select: {
-        first_name: true,
-        last_name: true,
-        university: true,
-        total_redemptions: true,
-      },
-      orderBy: {
-        total_redemptions: 'desc',
-      },
-      skip,
-      take: limit,
-    });
+    // Run count and data fetch in parallel — uses idx_students_leaderboard index
+    const [total, students] = await Promise.all([
+      this.prisma.students.count({ where: leaderboardWhere }),
+      this.prisma.students.findMany({
+        where: leaderboardWhere,
+        select: {
+          first_name: true,
+          last_name: true,
+          university: true,
+          total_redemptions: true,
+        },
+        orderBy: {
+          total_redemptions: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+    ]);
 
     // Calculate rank based on skip + index + 1
     const items = students.map((student, index) => ({
