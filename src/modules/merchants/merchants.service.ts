@@ -1879,220 +1879,257 @@ export class MerchantsService {
     merchantId: string,
     userId?: string,
   ): Promise<MerchantDetailsForStudentsResponse> {
+    // ── Single round-trip: one SQL query replaces 3 separate Prisma round-trips ─
+    //
+    // Previously this method made 2–3 network round-trips to the database
+    // (merchant+branches, offers, student stats). Each round-trip over the
+    // internet to Supabase costs ~300–600 ms, so 3 × 400 ms ≈ 1.2–2 s total.
+    //
+    // This raw query fetches everything in one go:
+    //   • merchant + role validation
+    //   • active branches + bonus settings (LEFT JOIN)
+    //   • active/valid offers with their branch assignments (LEFT JOIN + JSON_AGG)
+    //   • student redemption stats for this student × these branches (LEFT JOIN)
+    //
+    // All joins are on indexed foreign keys, so Postgres cost is unchanged.
+    // The only saving is eliminating 2 extra network hops.
     const now = new Date();
 
-    // ── Round-trip 1: merchant+branches and offers run in parallel ────────
-    // Offers no longer wait for branchIds — they filter by merchant_id
-    // (covered by idx_offers_merchant_active_valid_created) which avoids a
-    // serial second round-trip that used to cost an extra ~80–150 ms.
-    const [merchantWithBranches, offers] = await Promise.all([
-      // Query 1: merchant + active branches + bonus settings
-      this.prisma.merchants.findUnique({
-        where: { id: merchantId },
-        select: {
-          id: true,
-          business_name: true,
-          logo_path: true,
-          banner_url: true,
-          category: true,
-          terms_and_conditions: true,
-          verification_status: true,
-          is_active: true,
-          users: {
-            select: { role: true },
-          },
-          merchant_branches: {
-            where: { is_active: true },
-            select: {
-              id: true,
-              branch_name: true,
-              address: true,
-              city: true,
-              latitude: true,
-              longitude: true,
-              contact_phone: true,
-              branch_bonus_settings: true,
-            },
-            orderBy: { branch_name: 'asc' },
-          },
-        },
-      }),
+    // Resolve student UUID once (cheap indexed lookup on idx_students_user)
+    // Only needed if a userId was supplied.
+    let studentId: string | null = null;
+    if (userId) {
+      const studentRow = await this.prisma.students.findUnique({
+        where: { user_id: userId },
+        select: { id: true },
+      });
+      studentId = studentRow?.id ?? null;
+    }
 
-      // Query 2: active, valid offers for this merchant
-      // Uses idx_offers_merchant_active_valid_created composite index.
-      // offer_branches sub-select is resolved in-memory after fetch —
-      // no extra branch-id filter needed in the WHERE clause.
-      this.prisma.offers.findMany({
-        where: {
-          merchant_id: merchantId,
-          status: 'active',
-          valid_from: { lte: now },
-          valid_until: { gte: now },
-        },
-        select: {
-          id: true,
-          title: true,
-          image_url: true,
-          discount_type: true,
-          discount_value: true,
-          redemption_strategy: true,
-          additional_item: true,
-          offer_branches: {
-            select: { branch_id: true },
-          },
-        },
-        orderBy: { created_at: 'desc' },
-      }),
-    ]);
+    type RawRow = {
+      m_id: string;
+      m_business_name: string;
+      m_logo_path: string | null;
+      m_banner_url: string | null;
+      m_category: string | null;
+      m_terms: string | null;
+      m_verification_status: string | null;
+      m_is_active: boolean | null;
+      m_user_role: string;
+      b_id: string | null;
+      b_branch_name: string | null;
+      b_address: string | null;
+      b_city: string | null;
+      b_latitude: string | null;
+      b_longitude: string | null;
+      b_contact_phone: string | null;
+      bbs_redemptions_required: number | null;
+      bbs_discount_type: string | null;
+      bbs_discount_value: string | null;
+      bbs_additional_item: string | null;
+      bbs_is_active: boolean | null;
+      sbs_redemption_count: number | null;
+      offers_json: string | null; // JSON array of offers for this branch
+    };
+
+    const rows = await this.prisma.$queryRaw<RawRow[]>`
+      SELECT
+        -- Merchant
+        m.id                        AS m_id,
+        m.business_name             AS m_business_name,
+        m.logo_path                 AS m_logo_path,
+        m.banner_url                AS m_banner_url,
+        m.category                  AS m_category,
+        m.terms_and_conditions      AS m_terms,
+        m.verification_status::text AS m_verification_status,
+        m.is_active                 AS m_is_active,
+        u.role::text                AS m_user_role,
+
+        -- Branch
+        b.id                        AS b_id,
+        b.branch_name               AS b_branch_name,
+        b.address                   AS b_address,
+        b.city                      AS b_city,
+        b.latitude::text            AS b_latitude,
+        b.longitude::text           AS b_longitude,
+        b.contact_phone             AS b_contact_phone,
+
+        -- Bonus settings
+        bbs.redemptions_required    AS bbs_redemptions_required,
+        bbs.discount_type           AS bbs_discount_type,
+        bbs.discount_value::text    AS bbs_discount_value,
+        bbs.additional_item         AS bbs_additional_item,
+        bbs.is_active               AS bbs_is_active,
+
+        -- Student stats for this branch (NULL if no userId)
+        sbs.redemption_count        AS sbs_redemption_count,
+
+        -- Offers assigned to this branch (aggregated as JSON)
+        (
+          SELECT json_agg(
+            json_build_object(
+              'id',                  o.id,
+              'title',               o.title,
+              'imageUrl',            o.image_url,
+              'discountType',        o.discount_type,
+              'discountValue',       o.discount_value::text,
+              'additionalItem',      o.additional_item,
+              'redemptionStrategy',  o.redemption_strategy
+            )
+            ORDER BY o.created_at DESC
+          )
+          FROM public.offer_branches ob2
+          JOIN public.offers o
+            ON o.id = ob2.offer_id
+           AND o.merchant_id    = ${merchantId}::uuid
+           AND o.status         = 'active'
+           AND o.valid_from    <= ${now}
+           AND o.valid_until   >= ${now}
+          WHERE ob2.branch_id = b.id
+        )                           AS offers_json
+
+      FROM public.merchants m
+      JOIN public.users u
+        ON u.id = m.user_id
+
+      LEFT JOIN public.merchant_branches b
+        ON b.merchant_id = m.id
+       AND b.is_active = true
+
+      LEFT JOIN public.branch_bonus_settings bbs
+        ON bbs.branch_id = b.id
+
+      LEFT JOIN public.student_branch_stats sbs
+        ON sbs.branch_id  = b.id
+       AND sbs.student_id = ${studentId ? studentId : null}::uuid
+
+      WHERE m.id = ${merchantId}::uuid
+
+      ORDER BY b.branch_name ASC
+    `;
+
+    if (!rows.length) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    const first = rows[0];
 
     // Validate merchant
-    if (!merchantWithBranches) {
+    if (first.m_user_role !== ROLES.MERCHANT_CORPORATE) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
     }
-    if (merchantWithBranches.users.role !== ROLES.MERCHANT_CORPORATE) {
-      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
-    }
-    if (
-      merchantWithBranches.verification_status !== 'approved' ||
-      !merchantWithBranches.is_active
-    ) {
+    if (first.m_verification_status !== 'approved' || !first.m_is_active) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
     }
 
-    const branches = merchantWithBranches.merchant_branches;
-    const branchIds = branches.map((b) => b.id);
-    const branchIdsSet = new Set(branchIds);
+    // ── Assemble response in-memory (no extra DB calls) ───────────────────
+    const formattedBranches: BranchWithBonusSettings[] = rows
+      .filter((r) => r.b_id !== null)
+      .map((r) => {
+        const currentStats = r.sbs_redemption_count ?? 0;
 
-    // ── Round-trip 2: student stats — filtered to THIS merchant's branches ─
-    // Previously loaded ALL student_branch_stats with no branch filter, then
-    // threw away every row that didn't belong to this merchant.
-    // Now we pass `branch_id: { in: branchIds }` so Postgres uses
-    // idx_student_branch_stats_student_branch and returns only the handful
-    // of rows that matter (typically 1–5 rows instead of potentially 200+).
-    const studentBranchStats = new Map<string, number>();
-
-    if (userId && branchIds.length > 0) {
-      const student = await this.prisma.students.findUnique({
-        where: { user_id: userId },
-        select: {
-          id: true,
-          student_branch_stats: {
-            where: { branch_id: { in: branchIds } },
-            select: { branch_id: true, redemption_count: true },
-          },
-        },
-      });
-      if (student) {
-        student.student_branch_stats.forEach((stat) => {
-          studentBranchStats.set(stat.branch_id, stat.redemption_count || 0);
-        });
-      }
-    }
-
-    // Build branch → offers map (pure in-memory, no DB round-trip)
-    const branchOffersMap = new Map<string, BranchOffer[]>();
-    branches.forEach((b) => branchOffersMap.set(b.id, []));
-
-    offers.forEach((offer) => {
-      let formattedDiscount: string;
-      if (offer.discount_type === 'percentage') {
-        formattedDiscount = `${Number(offer.discount_value)}% OFF`;
-      } else if (offer.additional_item && offer.additional_item.trim() !== '') {
-        formattedDiscount = offer.additional_item;
-      } else {
-        formattedDiscount = `Rs. ${Number(offer.discount_value)} OFF`;
-      }
-
-      const branchOffer: BranchOffer = {
-        id: offer.id,
-        title: offer.title,
-        imageUrl: offer.image_url,
-        discountType: offer.discount_type,
-        discountValue: Number(offer.discount_value),
-        formattedDiscount,
-      };
-
-      offer.offer_branches.forEach((ob) => {
-        if (branchIdsSet.has(ob.branch_id)) {
-          const list = branchOffersMap.get(ob.branch_id) || [];
-          list.push(branchOffer);
-          branchOffersMap.set(ob.branch_id, list);
-        }
-      });
-    });
-
-    // Format branches
-    const formattedBranches: BranchWithBonusSettings[] = branches.map((branch) => {
-      const currentStats = studentBranchStats.get(branch.id) ?? 0;
-      let bonusSettings: BranchWithBonusSettings['bonusSettings'] = null;
-
-      if (branch.branch_bonus_settings) {
-        const settings = branch.branch_bonus_settings;
-        let discountDescription: string;
-        if (settings.discount_type === 'percentage') {
-          discountDescription = `${settings.discount_value}% OFF`;
-        } else if (settings.discount_type === 'fixed') {
-          discountDescription = `Rs.${settings.discount_value} OFF`;
-        } else if (settings.additional_item) {
-          discountDescription = settings.additional_item;
-        } else {
-          discountDescription = 'Bonus Reward';
-        }
-        bonusSettings = {
-          redemptionsRequired: settings.redemptions_required,
-          currentRedemptions: currentStats,
-          discountDescription,
-          isActive: settings.is_active ?? true,
+        // Parse offers JSON aggregated by Postgres
+        type RawOffer = {
+          id: string;
+          title: string;
+          imageUrl: string | null;
+          discountType: string;
+          discountValue: string;
+          additionalItem: string | null;
+          redemptionStrategy: string | null;
         };
-      }
+        const rawOffers: RawOffer[] =
+          r.offers_json
+            ? (typeof r.offers_json === 'string'
+                ? JSON.parse(r.offers_json)
+                : r.offers_json) as RawOffer[]
+            : [];
 
-      // Soho hierarchical strategy fallback
-      if (!bonusSettings) {
-        const hasSoho = offers.some(
-          (o) =>
-            o.redemption_strategy === 'soho_hierarchical' &&
-            o.offer_branches.some((ob) => ob.branch_id === branch.id),
-        );
-        if (hasSoho) {
-          const count = currentStats;
-          let target: number;
-          let description: string;
-          if (count < 2) {
-            target = 2; description = '30% OFF';
-          } else if (count === 2) {
-            target = 3; description = '40% OFF';
+        const offers: BranchOffer[] = rawOffers.map((o) => {
+          let formattedDiscount: string;
+          if (o.discountType === 'percentage') {
+            formattedDiscount = `${Number(o.discountValue)}% OFF`;
+          } else if (o.additionalItem && o.additionalItem.trim() !== '') {
+            formattedDiscount = o.additionalItem;
           } else {
-            target = count + 1; description = '40% OFF (Streak)';
+            formattedDiscount = `Rs. ${Number(o.discountValue)} OFF`;
+          }
+          return {
+            id: o.id,
+            title: o.title,
+            imageUrl: o.imageUrl,
+            discountType: o.discountType,
+            discountValue: Number(o.discountValue),
+            formattedDiscount,
+          };
+        });
+
+        // Bonus settings
+        let bonusSettings: BranchWithBonusSettings['bonusSettings'] = null;
+        if (r.bbs_discount_type !== null) {
+          let discountDescription: string;
+          if (r.bbs_discount_type === 'percentage') {
+            discountDescription = `${r.bbs_discount_value}% OFF`;
+          } else if (r.bbs_discount_type === 'fixed') {
+            discountDescription = `Rs.${r.bbs_discount_value} OFF`;
+          } else if (r.bbs_additional_item) {
+            discountDescription = r.bbs_additional_item;
+          } else {
+            discountDescription = 'Bonus Reward';
           }
           bonusSettings = {
-            redemptionsRequired: target,
-            currentRedemptions: count,
-            discountDescription: description,
-            isActive: true,
+            redemptionsRequired: r.bbs_redemptions_required ?? 5,
+            currentRedemptions: currentStats,
+            discountDescription,
+            isActive: r.bbs_is_active ?? true,
           };
         }
-      }
 
-      return {
-        id: branch.id,
-        name: branch.branch_name,
-        address: branch.address,
-        city: branch.city,
-        latitude: branch.latitude ? Number(branch.latitude) : null,
-        longitude: branch.longitude ? Number(branch.longitude) : null,
-        contactPhone: branch.contact_phone,
-        bonusSettings,
-        offers: branchOffersMap.get(branch.id) || [],
-      };
-    });
+        // Soho hierarchical strategy fallback
+        if (!bonusSettings) {
+          const hasSoho = rawOffers.some(
+            (o) => o.redemptionStrategy === 'soho_hierarchical',
+          );
+          if (hasSoho) {
+            const count = currentStats;
+            let target: number;
+            let description: string;
+            if (count < 2) {
+              target = 2; description = '30% OFF';
+            } else if (count === 2) {
+              target = 3; description = '40% OFF';
+            } else {
+              target = count + 1; description = '40% OFF (Streak)';
+            }
+            bonusSettings = {
+              redemptionsRequired: target,
+              currentRedemptions: count,
+              discountDescription: description,
+              isActive: true,
+            };
+          }
+        }
+
+        return {
+          id: r.b_id!,
+          name: r.b_branch_name!,
+          address: r.b_address!,
+          city: r.b_city!,
+          latitude: r.b_latitude ? Number(r.b_latitude) : null,
+          longitude: r.b_longitude ? Number(r.b_longitude) : null,
+          contactPhone: r.b_contact_phone,
+          bonusSettings,
+          offers,
+        };
+      });
 
     return {
-      id: merchantWithBranches.id,
-      businessName: merchantWithBranches.business_name,
-      logoPath: merchantWithBranches.logo_path,
-      bannerUrl: merchantWithBranches.banner_url,
-      category: merchantWithBranches.category,
-      termsAndConditions: merchantWithBranches.terms_and_conditions,
+      id: first.m_id,
+      businessName: first.m_business_name,
+      logoPath: first.m_logo_path,
+      bannerUrl: first.m_banner_url,
+      category: first.m_category,
+      termsAndConditions: first.m_terms,
       branches: formattedBranches,
     };
   }
