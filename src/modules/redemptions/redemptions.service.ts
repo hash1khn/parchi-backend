@@ -673,28 +673,25 @@ export class RedemptionsService {
     const [redemptions, total] = await Promise.all([
       this.prisma.redemptions.findMany({
         where: whereClause,
-        include: {
-          offers: {
-            select: {
-              id: true,
-              title: true,
-              discount_type: true,
-              discount_value: true,
-              image_url: true,
-            },
-          },
+        // List view: only fetch the minimal fields needed to render a row.
+        // Full offer/branch/merchant details are loaded on-demand via GET /redemptions/:id
+        select: {
+          id: true,
+          student_id: true,
+          offer_id: true,
+          branch_id: true,
+          is_bonus_applied: true,
+          bonus_discount_applied: true,
+          verified_by: true,
+          notes: true,
+          created_at: true,
           merchant_branches: {
             select: {
-              id: true,
               branch_name: true,
-              address: true,
-              city: true,
               merchants: {
                 select: {
-                  id: true,
                   business_name: true,
                   logo_path: true,
-                  category: true,
                 },
               },
             },
@@ -708,7 +705,7 @@ export class RedemptionsService {
     ]);
 
     const formattedRedemptions = redemptions.map((r) =>
-      this.formatRedemptionResponse(r),
+      this.formatListRedemptionResponse(r),
     );
 
     return {
@@ -1395,6 +1392,52 @@ export class RedemptionsService {
       totalRedemptions,
       bonusesUnlocked,
       leaderboardPosition,
+    };
+  }
+
+  /**
+   * Format a lightweight redemption response for list views.
+   * Only includes fields returned by the slim list SELECT (no offer join, no branch address/id).
+   */
+  private formatListRedemptionResponse(redemption: any): RedemptionResponse {
+    const status =
+      redemption.notes && redemption.notes.toUpperCase().includes('REJECTED')
+        ? 'rejected'
+        : redemption.verified_by
+          ? 'verified'
+          : 'pending';
+
+    return {
+      id: redemption.id,
+      studentId: redemption.student_id,
+      offerId: redemption.offer_id,
+      branchId: redemption.branch_id,
+      isBonusApplied: redemption.is_bonus_applied || false,
+      bonusDiscountApplied: redemption.bonus_discount_applied
+        ? Number(redemption.bonus_discount_applied)
+        : null,
+      verifiedBy: redemption.verified_by,
+      notes: redemption.notes,
+      createdAt: redemption.created_at,
+      status,
+      // Slim merchant — enough for the list row logo + name
+      merchant: redemption.merchant_branches?.merchants
+        ? {
+          id: '',
+          businessName: redemption.merchant_branches.merchants.business_name,
+          logoPath: redemption.merchant_branches.merchants.logo_path,
+          category: null,
+        }
+        : undefined,
+      // Slim branch — just the display name
+      branch: redemption.merchant_branches
+        ? {
+          id: '',
+          branchName: redemption.merchant_branches.branch_name,
+          address: '',
+          city: '',
+        }
+        : undefined,
     };
   }
 
