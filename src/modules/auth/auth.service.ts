@@ -547,14 +547,36 @@ export class AuthService {
         where: { id: data.user.id },
       });
 
-      if (!publicUser || !publicUser.is_active) {
-        // Check if there is a specific deactivation reason
-        if (publicUser?.deactivation_reason) {
+      if (!publicUser) {
+        throw new UnauthorizedException('User account not found.');
+      }
+
+      if (!publicUser.is_active) {
+        // Check if there is a specific deactivation reason (admin deactivated)
+        if (publicUser.deactivation_reason) {
           throw new ForbiddenException(
             `Your account has been deactivated. Reason: ${publicUser.deactivation_reason}`,
           );
         }
-        throw new UnauthorizedException(API_RESPONSE_MESSAGES.AUTH.ACCOUNT_PENDING);
+        // Check specifically for students who are rejected
+        if (publicUser.role === ROLES.STUDENT) {
+          const student = await this.prisma.students.findUnique({
+            where: { user_id: publicUser.id },
+            include: {
+              student_kyc: {
+                orderBy: { submitted_at: 'desc' },
+                take: 1,
+              },
+            },
+          });
+          if (student && student.verification_status === 'rejected') {
+            const reason = student.student_kyc[0]?.review_notes || 'No reason provided';
+            throw new ForbiddenException(`Your account has been rejected. Reason: ${reason}`);
+          }
+          // Still pending approval
+          throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.ACCOUNT_PENDING);
+        }
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.ACCOUNT_PENDING);
       }
 
       return {
