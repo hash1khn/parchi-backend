@@ -393,7 +393,7 @@ export class RedemptionsService {
           where: { id: newRedemption.id },
           include: {
             offers: {
-              select: { id: true, title: true, discount_type: true, discount_value: true, image_url: true },
+              select: { id: true, title: true, discount_type: true, discount_value: true, image_url: true, additional_item: true },
             },
             merchant_branches: {
               select: { id: true, branch_name: true, address: true, city: true },
@@ -414,31 +414,40 @@ export class RedemptionsService {
 
     // Send personal notification to the student
     try {
-      // Calculate savings percentage for the message
-      let savingsPercentage = 0;
-      const discountValue = Number(formattedRedemption.offer?.discountValue || 0);
-      const bonusValue = Number(formattedRedemption.bonusDiscountApplied || 0);
+      // Use raw redemption data so discount_type is not distorted by formatRedemptionResponse
+      const rawOffer = (redemption as any).offers;
+      const rawDiscountType: string = rawOffer?.discount_type ?? '';
+      const rawDiscountValue = Number(rawOffer?.discount_value ?? 0);
+      const bonusDiscountApplied = Number((redemption as any).bonus_discount_applied ?? 0);
+      const isBonusApplied = (redemption as any).is_bonus_applied === true;
+      const additionalItem: string | null = rawOffer?.additional_item ?? null;
 
-      if (
-        formattedRedemption.offer?.discountType === 'percentage' &&
-        !formattedRedemption.isBonusApplied
-      ) {
-        savingsPercentage = discountValue;
-      } else if (formattedRedemption.isBonusApplied) {
-        // If bonus applied, try to use the bonus value if it looks like a percentage (<= 100)
-        // Otherwise fallback to base discount
-        if (bonusValue <= 100) {
-          savingsPercentage = bonusValue;
-        } else {
-          savingsPercentage = discountValue;
-        }
-      } else {
-        savingsPercentage = discountValue;
-      }
-      
       const branchName = formattedRedemption.branch?.branchName || 'Parchi Partner';
       const notificationTitle = 'Parchi lag gayi!';
-      const notificationBody = `You got a ${savingsPercentage}% discount at ${branchName}!`;
+      let notificationBody: string;
+
+      if (isBonusApplied && bonusDiscountApplied > 0) {
+        // Bonus was applied — bonus discount_type mirrors the branch_bonus_settings discount_type
+        // We stored the final bonus value; check the base offer type to determine unit
+        if (rawDiscountType === 'percentage') {
+          notificationBody = `You got a ${bonusDiscountApplied}% discount at ${branchName}! (Loyalty Bonus)`;
+        } else if (rawDiscountType === 'fixed') {
+          notificationBody = `You saved Rs. ${bonusDiscountApplied} at ${branchName}! (Loyalty Bonus)`;
+        } else {
+          // item-type offer with a bonus — free item reward
+          notificationBody = `You earned a free item at ${branchName}! (Loyalty Bonus)`;
+        }
+      } else if (rawDiscountType === 'percentage') {
+        notificationBody = `You got a ${rawDiscountValue}% discount at ${branchName}!`;
+      } else if (rawDiscountType === 'fixed') {
+        notificationBody = `You saved Rs. ${rawDiscountValue} at ${branchName}!`;
+      } else if (rawDiscountType === 'item') {
+        const itemLabel = additionalItem ? `a free ${additionalItem}` : 'a free item';
+        notificationBody = `You got ${itemLabel} at ${branchName}!`;
+      } else {
+        // Fallback — unknown type
+        notificationBody = `You redeemed an offer at ${branchName}!`;
+      }
 
       
       // Get API base URL for image
