@@ -691,6 +691,32 @@ export class OffersService {
     if (updateDto.totalLimit !== undefined) {
       updateData.total_limit = updateDto.totalLimit;
     }
+
+    // Auto-recalculate status when validity dates are being changed.
+    // This runs BEFORE the explicit DTO status override so that an admin
+    // can still force a specific status if they pass one in the request.
+    //
+    // Cases:
+    //  1. New validUntil is in the future + offer was 'expired'
+    //     → reactivate to 'active' (date extension by admin)
+    //  2. New validUntil is in the past + offer is still 'active'/'inactive'
+    //     → expire immediately (no need to wait for the cron)
+    if (updateDto.validUntil !== undefined && updateDto.status === undefined) {
+      const now = new Date();
+      const newValidUntil = new Date(updateDto.validUntil);
+      const newValidFrom = updateDto.validFrom
+        ? new Date(updateDto.validFrom)
+        : offer.valid_from;
+
+      if (newValidUntil > now && newValidFrom <= now && offer.status === 'expired') {
+        // Offer was expired but admin pushed the end date into the future → reactivate
+        updateData.status = 'active';
+      } else if (newValidUntil <= now && (offer.status === 'active' || offer.status === 'inactive')) {
+        // Admin set valid_until to the past/now → expire immediately
+        updateData.status = 'expired' as any;
+      }
+    }
+
     if (updateDto.status !== undefined) {
       updateData.status = updateDto.status;
     }

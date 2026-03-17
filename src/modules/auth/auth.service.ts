@@ -401,7 +401,19 @@ export class AuthService {
             console.error('Supabase fallback verification also failed:', supabaseError?.message);
             return null;
           }
-          // Build result from Supabase user object
+          // Build result from Supabase user object — but still enforce is_active
+          let isActiveFallback = this.activeStatusCache.get(user.id);
+          if (isActiveFallback === undefined) {
+            const userStatus = await this.prisma.public_users.findUnique({
+              where: { id: user.id },
+              select: { is_active: true },
+            });
+            isActiveFallback = userStatus?.is_active ?? false;
+            this.activeStatusCache.set(user.id, isActiveFallback);
+          }
+          if (!isActiveFallback) {
+            return null;
+          }
           const fallbackResult = {
             id: user.id,
             email: user.email,
