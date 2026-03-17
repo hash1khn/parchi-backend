@@ -18,19 +18,31 @@ export class NotificationsService implements OnModuleInit {
   }
 
   private initializeFirebase() {
+    if (admin.apps.length > 0) return; // Already initialized
+
+    // Option 1 (Railway/production): FIREBASE_SERVICE_ACCOUNT_JSON env var (full JSON string)
+    const serviceAccountJson = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT_JSON');
+    // Option 2 (local dev): path to the JSON file
     const firebaseConfigPath = this.configService.get<string>('FIREBASE_CONFIG_PATH');
-    
-    if (!firebaseConfigPath) {
-      this.logger.warn('FIREBASE_CONFIG_PATH not set. Firebase notifications will not work.');
+
+    if (!serviceAccountJson && !firebaseConfigPath) {
+      this.logger.warn('Neither FIREBASE_SERVICE_ACCOUNT_JSON nor FIREBASE_CONFIG_PATH is set. Firebase notifications will not work.');
       return;
     }
 
     try {
-      if (admin.apps.length === 0) {
+      if (serviceAccountJson) {
+        // Parse the JSON string directly — ideal for Railway environment variables
+        const serviceAccount = JSON.parse(serviceAccountJson);
         admin.initializeApp({
-          credential: admin.credential.cert(firebaseConfigPath),
+          credential: admin.credential.cert(serviceAccount),
         });
-        this.logger.log('Firebase Admin initialized successfully');
+        this.logger.log('Firebase Admin initialized from FIREBASE_SERVICE_ACCOUNT_JSON');
+      } else {
+        admin.initializeApp({
+          credential: admin.credential.cert(firebaseConfigPath!),
+        });
+        this.logger.log('Firebase Admin initialized from FIREBASE_CONFIG_PATH');
       }
     } catch (error) {
       this.logger.error('Failed to initialize Firebase Admin', error);
@@ -209,12 +221,24 @@ export class NotificationsService implements OnModuleInit {
     try {
       const skip = (page - 1) * limit;
 
-      // Fetch notifications with read status for this user
+      // Fetch the user's created_at so we can exclude broadcasts that predate their signup.
+      // This prevents new users from seeing notifications that were meant for existing users.
+      const user = await this.prisma.public_users.findUnique({
+        where: { id: userId },
+        select: { created_at: true },
+      });
+
+      const userCreatedAt = user?.created_at ?? new Date(0);
+
+      // Fetch notifications with read status for this user.
+      // Broadcast notifications are filtered to only those created AFTER the user signed up.
+      // Personal notifications targeted at this user are always included.
       const whereCondition = {
         OR: [
-          { type: 'broadcast' },
-          // Also include where target_user_id is null if your broadcast logic relies on it
-          // { target_user_id: null }, 
+          {
+            type: 'broadcast',
+            created_at: { gte: userCreatedAt }, // only broadcasts after user signup
+          },
           { target_user_id: userId },
         ],
       };
@@ -370,15 +394,25 @@ export class NotificationsService implements OnModuleInit {
     try {
       // Logic:
       // Count notifications where:
-      // 1. (type = 'broadcast' OR target_user_id = userId)
+      // 1. (type = 'broadcast' AND created_after_user_signup) OR target_user_id = userId
       // 2. AND NOT EXISTS in user_notification_reads for this userId
-      
+
+      const user = await this.prisma.public_users.findUnique({
+        where: { id: userId },
+        select: { created_at: true },
+      });
+
+      const userCreatedAt = user?.created_at ?? new Date(0);
+
       const unreadCount = await this.prisma.notifications.count({
         where: {
           AND: [
             {
               OR: [
-                { type: 'broadcast' },
+                {
+                  type: 'broadcast',
+                  created_at: { gte: userCreatedAt },
+                },
                 { target_user_id: userId },
               ],
             },

@@ -739,6 +739,7 @@ model notifications {
 
   @@index([type], map: "idx_notifications_type")
   @@index([target_user_id], map: "idx_notifications_target_user")
+  @@index([type, created_at(sort: Desc)], map: "idx_notifications_type_created_at")
   @@schema("public")
 }
 
