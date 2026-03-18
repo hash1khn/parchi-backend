@@ -1387,15 +1387,16 @@ export class RedemptionsService {
       },
     });
 
-    // 3. Leaderboard Position (Rank based on total_savings)
-    const higherSavingsCount = await this.prisma.students.count({
+    // 3. Leaderboard Position (Rank based on total_redemptions — matches /students/leaderboard sort order)
+    const higherRedemptionsCount = await this.prisma.students.count({
       where: {
-        total_savings: {
-          gt: student.total_savings || 0,
+        verification_status: 'approved', // match the leaderboard filter exactly
+        total_redemptions: {
+          gt: student.total_redemptions || 0,
         },
       },
     });
-    const leaderboardPosition = higherSavingsCount + 1;
+    const leaderboardPosition = higherRedemptionsCount + 1;
 
     return {
       totalRedemptions,
