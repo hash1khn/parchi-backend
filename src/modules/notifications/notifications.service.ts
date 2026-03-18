@@ -51,12 +51,14 @@ export class NotificationsService implements OnModuleInit {
 
   async sendBroadcastNotification(createBroadcastDto: CreateBroadcastDto) {
     try {
-      // 1. Save to Database
+      const defaultImageUrl = 'https://zjghfwnrzazmukykgyhh.supabase.co/storage/v1/object/public/logo/parchi-app-icon.png';
+      const imageUrl = createBroadcastDto.imageUrl || defaultImageUrl;
+
       const notification = await this.prisma.notifications.create({
         data: {
           title: createBroadcastDto.title,
           content: createBroadcastDto.content,
-          image_url: createBroadcastDto.imageUrl,
+          image_url: imageUrl,
           link_url: createBroadcastDto.linkUrl,
           type: 'broadcast',
         },
@@ -67,7 +69,7 @@ export class NotificationsService implements OnModuleInit {
         notification: {
           title: createBroadcastDto.title,
           body: createBroadcastDto.content,
-          ...(createBroadcastDto.imageUrl && { imageUrl: createBroadcastDto.imageUrl }),
+          ...(imageUrl && { imageUrl }),
         },
         data: {
           notification_id: notification.id,

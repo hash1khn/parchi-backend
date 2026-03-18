@@ -327,6 +327,7 @@ export class RedemptionsService {
             is_bonus_applied: isBonusApplied,
             bonus_discount_applied: bonusDiscountApplied ?? null,
             verified_by: currentUser.id,
+            image_url: createDto.imageUrl ?? branch?.merchants?.logo_path ?? null,
             notes: strategyNote
               ? createDto.notes ? `${strategyNote} | ${createDto.notes}` : strategyNote
               : createDto.notes || null,
@@ -450,13 +451,8 @@ export class RedemptionsService {
       }
 
       
-      // Get API base URL for image
-      // Note: Assuming API_BASE_URL is set in .env. If running locally on emulator, 
-      // localhost might not be reachable from device unless using IP.
-      const apiBaseUrl = this.configService.get<string>('API_BASE_URL') || 'http://localhost:8080';
-      // Ensure no double slash
-      const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl;
-      const imageUrl = `${baseUrl}/public/notifs-icon.png`;
+      const defaultImageUrl = 'https://zjghfwnrzazmukykgyhh.supabase.co/storage/v1/object/public/logo/parchi-app-icon.png';
+      const imageUrl = createDto.imageUrl ?? branch?.merchants?.logo_path ?? defaultImageUrl;
 
       // We need to access the student's user_id which we added to the select
       const studentUserId = (redemption as any).students?.user_id;
@@ -509,31 +505,41 @@ export class RedemptionsService {
       );
     }
 
-    // Verify offer exists
-    const offer = await this.prisma.offers.findUnique({
-      where: { id: rejectDto.offerId },
-    });
+    // Verify offer exists, student exists, and get branch details for notification
+    const [offer, student, branch] = await Promise.all([
+      this.prisma.offers.findUnique({
+        where: { id: rejectDto.offerId },
+      }),
+      this.prisma.students.findUnique({
+        where: { parchi_id: normalizedParchiId },
+        select: {
+          id: true,
+          parchi_id: true,
+          first_name: true,
+          last_name: true,
+          university: true,
+          cnic: true,
+          user_id: true,
+          verification_status: true,
+        }
+      }),
+      this.prisma.merchant_branches.findUnique({
+        where: { id: branchId },
+        include: {
+          merchants: {
+            select: {
+              logo_path: true,
+            },
+          },
+        },
+      })
+    ]);
 
     if (!offer) {
       throw new NotFoundException(
         API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_FOUND,
       );
     }
-
-    // 1. Find student by parchi ID
-    const student = await this.prisma.students.findUnique({
-      where: { parchi_id: normalizedParchiId },
-      select: {
-        id: true,
-        parchi_id: true,
-        first_name: true,
-        last_name: true,
-        university: true,
-        cnic: true,
-        user_id: true,
-        verification_status: true,
-      }
-    });
 
     if (!student) {
       throw new NotFoundException(
@@ -565,9 +571,8 @@ export class RedemptionsService {
     
     // Send rejection notification
     try {
-        const apiBaseUrl = this.configService.get<string>('API_BASE_URL') || 'http://localhost:8080';
-        const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl;
-        const imageUrl = `${baseUrl}/public/notifs-icon.png`;
+        const defaultImageUrl = 'https://zjghfwnrzazmukykgyhh.supabase.co/storage/v1/object/public/logo/parchi-app-icon.png';
+        const imageUrl = branch?.merchants?.logo_path ?? defaultImageUrl;
 
         await this.notificationsService.sendPersonalNotification(
             student.user_id,

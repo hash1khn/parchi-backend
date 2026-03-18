@@ -12,5 +12,9 @@ export class CreateRedemptionDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string | null;
 }
 
