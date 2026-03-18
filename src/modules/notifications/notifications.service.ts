@@ -331,64 +331,96 @@ export class NotificationsService implements OnModuleInit {
     }
   }
   async sendPersonalNotification(
-    userId: string,
-    title: string,
-    content: string,
-    imageUrl?: string,
-    linkUrl?: string,
-  ) {
-    try {
-      // 1. Get user's fcm_token
-      const user = await this.prisma.public_users.findUnique({
-        where: { id: userId },
-        select: { fcm_token: true },
-      });
+  userId: string,
+  title: string,
+  content: string,
+  imageUrl?: string,
+  linkUrl?: string,
+) {
+  try {
+    // 1. Get user's fcm_token
+    const user = await this.prisma.public_users.findUnique({
+      where: { id: userId },
+      select: { fcm_token: true },
+    });
 
-      if (!user) {
-        throw new NotFoundException('User not found');
-      }
-
-      // 2. Save notification to database with target_user_id
-      const notification = await this.prisma.notifications.create({
-        data: {
-          title,
-          content,
-          image_url: imageUrl,
-          link_url: linkUrl,
-          type: 'personal',
-          target_user_id: userId,
-        },
-      });
-
-      // 3. Send via Firebase if token exists
-      if (user.fcm_token && admin.apps.length > 0) {
-        const message: admin.messaging.Message = {
-          notification: {
-            title,
-            body: content,
-            ...(imageUrl && { imageUrl }),
-          },
-          data: {
-            notification_id: notification.id,
-            click_action: 'FLUTTER_NOTIFICATION_CLICK',
-            ...(linkUrl && { link_url: linkUrl }),
-            type: 'personal',
-          },
-          token: user.fcm_token,
-        };
-
-        const response = await admin.messaging().send(message);
-        this.logger.log(`Successfully sent personal notification to ${userId}: ${response}`);
-        return { success: true, messageId: response, notification };
-      }
-
-      return { success: true, notification, message: 'Notification saved, but not sent (no token or firebase not init)' };
-    } catch (error) {
-      this.logger.error(`Error sending personal notification to ${userId}:`, error);
-      // Don't throw to prevent blocking the main flow (e.g. redemption)
-      return { success: false, error: error.message };
+    if (!user) {
+      throw new NotFoundException('User not found');
     }
+
+    // 2. Save notification to database
+    const notification = await this.prisma.notifications.create({
+      data: {
+        title,
+        content,
+        image_url: imageUrl,
+        link_url: linkUrl,
+        type: 'personal',
+        target_user_id: userId,
+      },
+    });
+
+    // 3. Send via Firebase
+    if (user.fcm_token && admin.apps.length > 0) {
+      const message: admin.messaging.Message = {
+        token: user.fcm_token,
+
+        notification: {
+          title,
+          body: content,
+          ...(imageUrl && { imageUrl }),
+        },
+
+        // ✅ ANDROID CONFIG
+        android: {
+          notification: {
+            sound: 'default', // 🔊 enable sound
+            channelId: 'broadcast_channel', // MUST match Flutter
+          },
+        },
+
+        //  iOS CONFIG
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default', // 🔊 enable sound on iOS
+            },
+          },
+        },
+
+        //  DATA PAYLOAD
+        data: {
+          notification_id: String(notification.id),
+          click_action: 'FLUTTER_NOTIFICATION_CLICK',
+          ...(linkUrl && { link_url: linkUrl }),
+          type: 'personal',
+        },
+      };
+
+      const response = await admin.messaging().send(message);
+
+      this.logger.log(
+        `Successfully sent personal notification to ${userId}: ${response}`
+      );
+
+      return { success: true, messageId: response, notification };
+    }
+
+    return {
+      success: true,
+      notification,
+      message:
+        'Notification saved, but not sent (no token or firebase not init)',
+    };
+  } catch (error) {
+    this.logger.error(
+      `Error sending personal notification to ${userId}:`,
+      error
+    );
+
+    return { success: false, error: error.message };
   }
+}
 
   async hasUnread(userId: string): Promise<boolean> {
     try {
