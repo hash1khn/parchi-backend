@@ -578,6 +578,7 @@ model redemptions {
   verified_by            String?           @db.Uuid
   notes                  String?
   created_at             DateTime?         @default(now()) @db.Timestamptz(6)
+  image_url              String?
   merchant_branches      merchant_branches @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   offers                 offers            @relation(fields: [offer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   students               students          @relation(fields: [student_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
