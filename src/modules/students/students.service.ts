@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   forwardRef,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
@@ -137,6 +138,7 @@ export class StudentsService {
   private readonly ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
   private readonly LOYALTY_BONUS_TITLE = 'Loyalty Bonus Reward';
   private readonly LOYALTY_BONUS_DESCRIPTION = `Congratulations! You've unlocked a loyalty bonus.`;
+  private readonly logger = new Logger(StudentsService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -692,17 +694,25 @@ export class StudentsService {
     });
 
     if (result) {
-      if (approveRejectDto.action === 'approve') {
-        this.mailService.sendStudentApprovedEmail(
-          result.users.email,
-          result.first_name,
-          result.parchi_id!,
-        );
-      } else {
-        this.mailService.sendStudentRejectedEmail(
-          result.users.email,
-          result.first_name,
-          approveRejectDto.reviewNotes || 'Does not meet requirements',
+      try {
+        if (approveRejectDto.action === 'approve') {
+          await this.mailService.sendStudentApprovedEmail(
+            result.users.email,
+            result.first_name,
+            result.parchi_id!,
+          );
+        } else {
+          await this.mailService.sendStudentRejectedEmail(
+            result.users.email,
+            result.first_name,
+            approveRejectDto.reviewNotes || 'Does not meet requirements',
+          );
+        }
+      } catch (emailError: any) {
+        // Log but never block the approval flow
+        this.logger.error(
+          `Failed to send ${approveRejectDto.action} email to ${result.users.email}: ${emailError?.message}`,
+          emailError?.stack,
         );
       }
     }
