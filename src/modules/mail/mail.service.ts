@@ -1,46 +1,81 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
+import * as https from 'https';
 
 @Injectable()
 export class MailService {
-    private transporter: nodemailer.Transporter;
     private readonly logger = new Logger(MailService.name);
 
-    constructor(private readonly configService: ConfigService) {
-        this.transporter = nodemailer.createTransport({
-            host: this.configService.get<string>('SMTP_HOST'),
-            port: this.configService.get<number>('SMTP_PORT'),
-            secure: this.configService.get<boolean>('SMTP_SECURE', false), // true for 465, false for other ports
-            auth: {
-                user: this.configService.get<string>('SMTP_USER'),
-                pass: this.configService.get<string>('SMTP_PASS'),
-            },
+    constructor(private readonly configService: ConfigService) { }
+
+    // ─── Core send via Brevo Transactional Email API (HTTPS, port 443) ──────────
+    // Replaces nodemailer/SMTP entirely. Port 587 is often blocked on cloud hosts.
+    // Docs: https://developers.brevo.com/reference/sendtransacemail
+    async sendMail(to: string, subject: string, html: string): Promise<boolean> {
+        const apiKey = this.configService.get<string>('BREVO_API_KEY');
+        const fromRaw = this.configService.get<string>('SMTP_FROM', '"Parchi" <parchipakistan@gmail.com>');
+
+        if (!apiKey) {
+            this.logger.error('BREVO_API_KEY is not set — cannot send email');
+            return false;
+        }
+
+        // Parse "Display Name <email@example.com>" → { name, email }
+        const fromMatch = fromRaw.match(/^"?([^"<]*)"?\s*<([^>]+)>$/);
+        const fromEmail = fromMatch ? fromMatch[2].trim() : fromRaw.trim();
+        const fromName  = fromMatch ? fromMatch[1].trim() : 'Parchi';
+
+        const body = JSON.stringify({
+            sender:  { name: fromName, email: fromEmail },
+            to:      [{ email: to }],
+            subject,
+            htmlContent: html,
+        });
+
+        return new Promise((resolve) => {
+            const req = https.request(
+                {
+                    hostname: 'api.brevo.com',
+                    path:     '/v3/smtp/email',
+                    method:   'POST',
+                    headers:  {
+                        'Content-Type':  'application/json',
+                        'Content-Length': Buffer.byteLength(body),
+                        'api-key':        apiKey,
+                    },
+                },
+                (res) => {
+                    let data = '';
+                    res.on('data', (chunk) => (data += chunk));
+                    res.on('end', () => {
+                        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                            const parsed = JSON.parse(data || '{}');
+                            this.logger.log(`Email sent to ${to} — messageId: ${parsed.messageId}`);
+                            resolve(true);
+                        } else {
+                            this.logger.error(
+                                `Brevo API error sending to ${to}: HTTP ${res.statusCode} — ${data}`,
+                            );
+                            resolve(false);
+                        }
+                    });
+                },
+            );
+
+            req.on('error', (err) => {
+                this.logger.error(`Network error sending email to ${to}: ${err.message}`, err.stack);
+                resolve(false);
+            });
+
+            req.write(body);
+            req.end();
         });
     }
 
-    async sendMail(to: string, subject: string, html: string) {
-        try {
-            const from = this.configService.get<string>('SMTP_FROM', '"Parchi Support" <no-reply@parchi.com>');
-            const info = await this.transporter.sendMail({
-                from,
-                to,
-                subject,
-                html,
-            });
-            this.logger.log(`Message sent: ${info.messageId}`);
-            return info;
-        } catch (error) {
-            this.logger.error(`Error sending email to ${to}`, error.stack);
-            // We don't want to block the flow if email fails, so we just log it
-            // throwing error is optional depending on requirements
-            return null;
-        }
-    }
+    // ─── Templates (unchanged) ───────────────────────────────────────────────────
 
     async sendStudentAppliedEmail(email: string, name: string) {
         const subject = 'Application Received - Parchi Student Program';
-        // Simple HTML template
         const html = `
       <h1>Hello ${name},</h1>
       <p>Thank you for applying to the Parchi Student Program.</p>
@@ -64,14 +99,14 @@ export class MailService {
         <div style="padding: 30px; background-color: #ffffff;">
           <h2 style="color: #007bff; margin-top: 0;">Congratulations ${name}!</h2>
           <p>We are excited to inform you that your application for the <strong>Parchi Student Program</strong> has been approved.</p>
-          
+
           <div style="background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 15px; margin: 25px 0; text-align: center;">
             <p style="margin: 0; font-size: 14px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Your Unique Parchi ID</p>
             <h3 style="margin: 10px 0 0 0; font-size: 32px; color: #333; letter-spacing: 2px;">${parchiId}</h3>
           </div>
 
           <p>You can now log in to the Parchi app and start accessing exclusive student offers, discounts, and rewards tailored just for you.</p>
-          
+
           <div style="text-align: center; margin-top: 30px;">
             <a href="${appLoginUrl}" style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Login to Parchi</a>
           </div>
