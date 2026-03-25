@@ -1961,8 +1961,13 @@ export class MerchantsService {
         bbs.additional_item         AS bbs_additional_item,
         bbs.is_active               AS bbs_is_active,
 
-        -- Student stats for this branch (NULL if no userId)
-        sbs.redemption_count        AS sbs_redemption_count,
+        -- Direct count of actual redemptions for this student and branch (from history)
+        (
+          SELECT count(*)::int
+          FROM public.redemptions r2
+          WHERE r2.branch_id  = b.id
+            AND r2.student_id = ${studentId ? studentId : null}::uuid
+        )                           AS sbs_redemption_count,
 
         -- Offers assigned to this branch (aggregated as JSON)
         (
@@ -1998,10 +2003,6 @@ export class MerchantsService {
 
       LEFT JOIN public.branch_bonus_settings bbs
         ON bbs.branch_id = b.id
-
-      LEFT JOIN public.student_branch_stats sbs
-        ON sbs.branch_id  = b.id
-       AND sbs.student_id = ${studentId ? studentId : null}::uuid
 
       WHERE m.id = ${merchantId}::uuid
 

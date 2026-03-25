@@ -19,6 +19,7 @@ import { MerchantsService } from './merchants.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { UpdateCorporateAccountDto } from './dto/update-corporate-account.dto';
@@ -96,6 +97,7 @@ export class MerchantsController {
 
   // Student endpoint for merchant details - placed before other :id routes
   @Get(':id/details')
+  @UseGuards(OptionalJwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async getMerchantDetailsForStudents(
     @Param('id', ParseUUIDPipe) id: string,

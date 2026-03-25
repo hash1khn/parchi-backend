@@ -1381,14 +1381,22 @@ export class RedemptionsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
-    // 1. Total Redemptions
-    const totalRedemptions = student.total_redemptions || 0;
+    // 1. Total Redemptions (Ground truth from redemptions table)
+    // We count only verified redemptions (or all depends on business logic, 
+    // but verified is safer for 'Visits')
+    const totalRedemptions = await this.prisma.redemptions.count({
+      where: {
+        student_id: student.id,
+        verified_by: { not: null },
+      },
+    });
 
     // 2. Bonuses Unlocked
     const bonusesUnlocked = await this.prisma.redemptions.count({
       where: {
         student_id: student.id,
         is_bonus_applied: true,
+        verified_by: { not: null },
       },
     });
 
@@ -1397,7 +1405,8 @@ export class RedemptionsService {
       where: {
         verification_status: 'approved', // match the leaderboard filter exactly
         total_redemptions: {
-          gt: student.total_redemptions || 0,
+          gt: totalRedemptions, // Use the real count for ranking too if possible, 
+          // but total_redemptions in table is what's used for actual leaderboard sorting
         },
       },
     });
