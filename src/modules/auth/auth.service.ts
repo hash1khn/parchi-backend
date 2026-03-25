@@ -5,6 +5,8 @@ import {
   BadRequestException,
   UnprocessableEntityException,
   ForbiddenException,
+  NotFoundException,
+  InternalServerErrorException,
   Inject,
   forwardRef,
 } from '@nestjs/common';
@@ -31,7 +33,7 @@ import { generateParchiId } from '../../utils/parchi-id.util';
 @Injectable()
 export class AuthService {
   private supabase: SupabaseClient;
-  private adminSupabase: SupabaseClient;
+  private adminSupabase!: SupabaseClient;
   private jwksClient: JwksClient;
   private tokenCache: LRUCache<string, any>;
   private activeStatusCache: LRUCache<string, boolean>;
@@ -1311,6 +1313,72 @@ export class AuthService {
         error.message || 'Failed to reset password',
       );
     }
+  }
+
+  /**
+   * Permanently deletes a user (student) by their email/phone identifier.
+   * Looks up the user in public.users, then calls Supabase admin.deleteUser
+   * which cascades: auth.users → public.users → students → all related records.
+   * Falls back to a direct Prisma delete if Supabase admin call fails.
+   * Returns the deleted user's email and name so the caller can send a confirmation email.
+   */
+  async deleteUserByIdentifier(identifier: string): Promise<{ email: string; firstName: string }> {
+    // identifier can be email or phone
+    const user = await this.prisma.public_users.findFirst({
+      where: {
+        OR: [
+          { email: identifier },
+          { phone: identifier },
+        ],
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        students: {
+          select: { first_name: true, last_name: true },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`No user found with identifier: ${identifier}`);
+    }
+
+    if (user.role !== 'student') {
+      throw new BadRequestException(
+        `Account deletion via this flow is only supported for students. Found role: ${user.role}`,
+      );
+    }
+
+    if (!this.adminSupabase) {
+      throw new InternalServerErrorException(
+        'Supabase service role key not configured — cannot perform deletion',
+      );
+    }
+
+    const firstName = user.students?.first_name ?? 'there';
+
+    // Delete via Supabase admin — this cascades through the entire user tree
+    const { error } = await this.adminSupabase.auth.admin.deleteUser(user.id);
+
+    if (error) {
+      console.warn(
+        `Supabase auth deletion failed for ${user.email}, falling back to DB delete:`,
+        error.message,
+      );
+      // Fallback: deleting public_users cascades to students and all child records
+      try {
+        await this.prisma.public_users.delete({ where: { id: user.id } });
+      } catch (dbError) {
+        console.error('Fallback DB delete also failed:', dbError);
+        throw new InternalServerErrorException(
+          'Failed to delete user account. Please try again or contact support.',
+        );
+      }
+    }
+
+    return { email: user.email, firstName };
   }
 }
 

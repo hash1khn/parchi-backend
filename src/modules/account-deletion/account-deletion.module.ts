@@ -3,9 +3,10 @@ import { AccountDeletionController } from './account-deletion.controller';
 import { AccountDeletionService } from './account-deletion.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { MailModule } from '../mail/mail.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-    imports: [PrismaModule, MailModule],
+    imports: [PrismaModule, MailModule, AuthModule],
     controllers: [AccountDeletionController],
     providers: [AccountDeletionService],
 })
