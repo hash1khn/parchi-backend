@@ -134,4 +134,46 @@ export class MailService {
     `;
         return this.sendMail(email, subject, html);
     }
+
+    async sendAccountDeletionConfirmationEmail(email: string, name: string) {
+        const subject = 'Your Parchi Account Has Been Deleted';
+        const html = `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
+        <div style="background-color: #1a1a2e; padding: 20px; text-align: center;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 22px;">Account Deletion Confirmed</h1>
+        </div>
+        <div style="padding: 30px; background-color: #ffffff;">
+          <p style="margin-top: 0;">Hi <strong>${name}</strong>,</p>
+          <p>
+            We're writing to confirm that your Parchi account and all associated data have been
+            <strong>permanently deleted</strong> as per your request.
+          </p>
+          <div style="background-color: #fff8f0; border-left: 4px solid #e07b00; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <p style="margin: 0; font-size: 14px; color: #7a4000;">
+              <strong>What has been removed:</strong><br/>
+              • Your account credentials and profile information<br/>
+              • Your student KYC records<br/>
+              • Your redemption history and savings data<br/>
+              • All other personal data linked to your account
+            </p>
+          </div>
+          <p>
+            If you did <strong>not</strong> request this deletion, or if you believe this was done
+            in error, please contact our support team immediately at
+            <a href="mailto:support@parchipakistan.com" style="color: #007bff;">support@parchipakistan.com</a>.
+          </p>
+          <p>
+            We're sorry to see you go. If you'd like to rejoin Parchi in the future, you are
+            welcome to create a new account and re-apply for the student program.
+          </p>
+          <p style="margin-bottom: 0;">Thank you for being part of the Parchi community.</p>
+        </div>
+        <div style="background-color: #f4f4f4; padding: 20px; text-align: center; font-size: 12px; color: #777;">
+          <p style="margin: 0;">© ${new Date().getFullYear()} Parchi. All rights reserved.</p>
+          <p style="margin: 5px 0 0 0;">This is an automated message — please do not reply directly to this email.</p>
+        </div>
+      </div>
+    `;
+        return this.sendMail(email, subject, html);
+    }
 }
