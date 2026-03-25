@@ -397,7 +397,15 @@ export class RedemptionsService {
               select: { id: true, title: true, discount_type: true, discount_value: true, image_url: true, additional_item: true },
             },
             merchant_branches: {
-              select: { id: true, branch_name: true, address: true, city: true },
+              select: { 
+                id: true, 
+                branch_name: true, 
+                address: true, 
+                city: true,
+                merchants: {
+                  select: { business_name: true }
+                }
+              },
             },
             students: {
               select: { id: true, parchi_id: true, first_name: true, last_name: true, user_id: true },
@@ -423,7 +431,9 @@ export class RedemptionsService {
       const isBonusApplied = (redemption as any).is_bonus_applied === true;
       const additionalItem: string | null = rawOffer?.additional_item ?? null;
 
-      const branchName = formattedRedemption.branch?.branchName || 'Parchi Partner';
+      const merchantName = (redemption as any).merchant_branches?.merchants?.business_name || 'Parchi Partner';
+      const branchNameOnly = (redemption as any).merchant_branches?.branch_name || '';
+      const branchName = branchNameOnly ? `${merchantName} - ${branchNameOnly}` : merchantName;
       const notificationTitle = 'Parchi lag gayi!';
       let notificationBody: string;
 
@@ -526,11 +536,12 @@ export class RedemptionsService {
       this.prisma.merchant_branches.findUnique({
         where: { id: branchId },
         include: {
-          merchants: {
-            select: {
-              logo_path: true,
+            merchants: {
+                select: {
+                    business_name: true,
+                    logo_path: true,
+                },
             },
-          },
         },
       })
     ]);
@@ -574,10 +585,14 @@ export class RedemptionsService {
         const defaultImageUrl = 'https://zjghfwnrzazmukykgyhh.supabase.co/storage/v1/object/public/logo/parchi-app-icon.png';
         const imageUrl = branch?.merchants?.logo_path ?? defaultImageUrl;
 
+        const merchantName = branch?.merchants?.business_name || 'Parchi Partner';
+        const branchNameOnly = branch?.branch_name || '';
+        const branchName = branchNameOnly ? `${merchantName} - ${branchNameOnly}` : merchantName;
+
         await this.notificationsService.sendPersonalNotification(
             student.user_id,
             'Parchi nahi lag payi :(',
-            `Your redemption was rejected. Reason: ${rejectDto.rejectionReason}`,
+            `Your redemption at ${branchName} was rejected. Reason: ${rejectDto.rejectionReason}`,
             imageUrl
         );
     } catch (error) {
