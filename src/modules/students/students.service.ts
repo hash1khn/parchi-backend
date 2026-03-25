@@ -986,6 +986,8 @@ export class StudentsService {
       this.prisma.students.findMany({
         where: leaderboardWhere,
         select: {
+          id: true,
+          parchi_id: true,
           first_name: true,
           last_name: true,
           university: true,
@@ -1003,6 +1005,8 @@ export class StudentsService {
     const items = students.map((student, index) => ({
       rank: skip + index + 1,
       name: `${student.first_name} ${student.last_name}`,
+      userId: student.id,
+      parchiId: student.parchi_id,
       university: student.university,
       redemptions: student.total_redemptions || 0,
     }));
