@@ -12,6 +12,7 @@ export const API_RESPONSE_MESSAGES = {
     EMAIL_NOT_VERIFIED: 'Email not verified',
     ACCOUNT_PENDING: 'Account is pending approval',
     ACCOUNT_REJECTED: 'Account has been rejected',
+    ACCOUNT_DEACTIVATED_CONTACT: 'For assistance, contact +92 328 5272244.',
     EMAIL_ALREADY_REGISTERED: 'Email already registered', // [NEW]
     STUDENT_SIGNUP_SUCCESS:
       'Student signup request submitted successfully. Verification pending.',

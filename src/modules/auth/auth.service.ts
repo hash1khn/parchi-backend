@@ -225,7 +225,7 @@ export class AuthService {
         // Check if there is a specific deactivation reason
         if (publicUser.deactivation_reason) {
           throw new ForbiddenException(
-            `Your account has been deactivated. Reason: ${publicUser.deactivation_reason}`,
+            `Your account has been deactivated. Reason: ${publicUser.deactivation_reason}. ${API_RESPONSE_MESSAGES.AUTH.ACCOUNT_DEACTIVATED_CONTACT}`,
           );
         }
         // Check specifically for students who are rejected
@@ -569,7 +569,7 @@ export class AuthService {
         // Check if there is a specific deactivation reason (admin deactivated)
         if (publicUser.deactivation_reason) {
           throw new ForbiddenException(
-            `Your account has been deactivated. Reason: ${publicUser.deactivation_reason}`,
+            `Your account has been deactivated. Reason: ${publicUser.deactivation_reason}. ${API_RESPONSE_MESSAGES.AUTH.ACCOUNT_DEACTIVATED_CONTACT}`,
           );
         }
         // Check specifically for students who are rejected
