@@ -19,6 +19,15 @@ import {
   calculateSkip,
   PaginationMeta,
 } from '../../utils/pagination.util';
+import {
+  addPakistanCalendarDays,
+  endOfPakistanDay,
+  getHourInPakistan,
+  getPakistanCalendarDate,
+  pakistanYesterdayRange,
+  startOfPakistanDay,
+  zonedWallTimePakistanToUtc,
+} from '../../utils/pakistan-time.util';
 import { SohoStrategy } from './strategies/soho.strategy';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -1578,16 +1587,9 @@ export class RedemptionsService {
     const branchId = currentUser.branch_id;
     const now = new Date();
 
-    // Today's range (00:00:00 to now)
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-
-    // Yesterday's range (00:00:00 to 23:59:59)
-    const startOfYesterday = new Date(startOfToday);
-    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-
-    const endOfYesterday = new Date(startOfToday);
-    endOfYesterday.setMilliseconds(-1);
+    const startOfToday = startOfPakistanDay(now);
+    const { start: startOfYesterday, end: endOfYesterday } =
+      pakistanYesterdayRange(now);
 
     const [todayCount, yesterdayCount] = await Promise.all([
       this.prisma.redemptions.count({
@@ -1644,9 +1646,7 @@ export class RedemptionsService {
     const branchId = currentUser.branch_id;
     const now = new Date();
 
-    // Today's range (00:00:00 to now)
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
+    const startOfToday = startOfPakistanDay(now);
 
     const redemptions = await this.prisma.redemptions.findMany({
       where: {
@@ -1730,19 +1730,13 @@ export class RedemptionsService {
     const branchId = currentUser.branch_id;
     const now = new Date();
 
-    // 1. Standard "Today" Range (00:00:00 to 23:59:59) for Summary Metrics
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
+    const startOfToday = startOfPakistanDay(now);
+    const endOfToday = endOfPakistanDay(now);
 
-    // 2. Hourly Chart Range (Today 06:00 to Tomorrow 02:00)
-    const chartStart = new Date(now);
-    chartStart.setHours(6, 0, 0, 0);
-
-    const chartEnd = new Date(now);
-    chartEnd.setDate(chartEnd.getDate() + 1); // Tomorrow
-    chartEnd.setHours(2, 0, 0, 0);
+    const { y, m, day } = getPakistanCalendarDate(now);
+    const chartStart = zonedWallTimePakistanToUtc(y, m, day, 6, 0, 0, 0);
+    const next = addPakistanCalendarDays(now, 1);
+    const chartEnd = zonedWallTimePakistanToUtc(next.y, next.m, next.day, 2, 0, 0, 0);
 
     // --- Parallel Queries ---
     const [todayRedemptions, chartRedemptions] = await Promise.all([
@@ -1794,7 +1788,7 @@ export class RedemptionsService {
 
     chartRedemptions.forEach((r) => {
       if (r.created_at) {
-        const h = new Date(r.created_at).getHours();
+        const h = getHourInPakistan(new Date(r.created_at));
         if (hourlyMap.has(h)) {
           hourlyMap.set(h, (hourlyMap.get(h) || 0) + 1);
         }
