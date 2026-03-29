@@ -1,8 +1,7 @@
-import { IsString, IsUrl, IsNotEmpty } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 
 export class UpdateProfilePictureDto {
   @IsString()
-  @IsNotEmpty()
-  @IsUrl()
-  imageUrl: string;
+  @IsOptional()
+  imageUrl?: string;
 }
