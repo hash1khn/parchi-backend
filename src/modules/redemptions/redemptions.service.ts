@@ -144,6 +144,9 @@ export class RedemptionsService {
               business_name: true,
               logo_path: true,
               category: true,
+              merchant_branches: {
+                select: { id: true }
+              }
             },
           },
         },
@@ -376,26 +379,28 @@ export class RedemptionsService {
               last_redemption_at: now,
             },
           }),
-          tx.student_branch_stats.upsert({
-            where: {
-              student_id_branch_id: {
-                student_id: student.id,
-                branch_id: branchId,
+          ...(branch.merchants.merchant_branches || []).map((mb) =>
+            tx.student_branch_stats.upsert({
+              where: {
+                student_id_branch_id: {
+                  student_id: student.id,
+                  branch_id: mb.id,
+                },
               },
-            },
-            update: {
-              redemption_count: { increment: 1 },
-              total_savings: { increment: totalSavings },
-              last_redemption_at: now,
-            },
-            create: {
-              student_id: student.id,
-              branch_id: branchId,
-              redemption_count: 1,
-              total_savings: totalSavings,
-              last_redemption_at: now,
-            },
-          }),
+              update: {
+                redemption_count: { increment: 1 },
+                total_savings: { increment: totalSavings },
+                last_redemption_at: now,
+              },
+              create: {
+                student_id: student.id,
+                branch_id: mb.id,
+                redemption_count: 1,
+                total_savings: totalSavings,
+                last_redemption_at: now,
+              },
+            })
+          ),
         ]);
 
         // Return redemption with relations for the response
@@ -1168,6 +1173,12 @@ export class RedemptionsService {
       });
 
       if (merchantBranch) {
+        const allBranches = await tx.merchant_branches.findMany({
+          where: { merchant_id: merchantBranch.merchant_id },
+          select: { id: true },
+        });
+        const branchIds = allBranches.map(b => b.id);
+
         await tx.student_merchant_stats.updateMany({
           where: {
             student_id: existingRedemption.student_id,
@@ -1182,23 +1193,23 @@ export class RedemptionsService {
             },
           },
         });
-      }
 
-      // Revert student_branch_stats
-      await tx.student_branch_stats.updateMany({
-        where: {
-          student_id: existingRedemption.student_id,
-          branch_id: existingRedemption.branch_id,
-        },
-        data: {
-          redemption_count: {
-            decrement: 1,
+        // Revert student_branch_stats
+        await tx.student_branch_stats.updateMany({
+          where: {
+            student_id: existingRedemption.student_id,
+            branch_id: { in: branchIds },
           },
-          total_savings: {
-            decrement: totalSavings,
+          data: {
+            redemption_count: {
+              decrement: 1,
+            },
+            total_savings: {
+              decrement: totalSavings,
+            },
           },
-        },
-      });
+        });
+      }
 
       return updatedRedemption;
     });
