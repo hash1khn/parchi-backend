@@ -514,8 +514,19 @@ export class AuthService {
     }
   }
 
-  async logout(accessToken: string): Promise<null> {
+  async logout(accessToken: string, userId: string): Promise<null> {
     try {
+      // Clear FCM token so the device stops receiving personal push notifications
+      try {
+        await this.prisma.public_users.update({
+          where: { id: userId },
+          data: { fcm_token: null } as any,
+        });
+      } catch (e) {
+        // Non-fatal — proceed with logout even if FCM clear fails
+        console.warn('Failed to clear FCM token on logout:', e);
+      }
+
       // Create a client with the user's token to sign them out
       const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
       const supabaseAnonKey = this.configService.get<string>('SUPABASE_ANON_KEY');

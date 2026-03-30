@@ -139,9 +139,9 @@ export class AuthController {
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async logout(@Request() req) {
+  async logout(@Request() req, @CurrentUser() user: any) {
     const token = this.extractTokenFromHeader(req);
-    await this.authService.logout(token);
+    await this.authService.logout(token, user.id);
     return createApiResponse(null, API_RESPONSE_MESSAGES.AUTH.LOGOUT_SUCCESS);
   }
 
