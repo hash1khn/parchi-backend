@@ -467,6 +467,7 @@ export class AuthService {
             profile_picture: true,
             is_founders_club: true,
             verification_status: true, // [NEW]
+            has_seen_app_intro: true,
           },
         });
       } else if (publicUser.role === ROLES.MERCHANT_CORPORATE) {

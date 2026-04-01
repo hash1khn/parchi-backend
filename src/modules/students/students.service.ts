@@ -1016,5 +1016,15 @@ export class StudentsService {
       pagination: calculatePaginationMeta(total, page, limit),
     };
   }
+
+  /**
+   * Mark the app intro as seen for a student
+   */
+  async markAppIntroSeen(userId: string): Promise<void> {
+    await this.prisma.students.update({
+      where: { user_id: userId },
+      data: { has_seen_app_intro: true },
+    });
+  }
 }
 

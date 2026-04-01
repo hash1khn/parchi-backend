@@ -1,14 +1,21 @@
 import {
   Controller,
   Get,
+  Patch,
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { StudentsService } from './students.service';
 import { QueryLeaderboardDto } from './dto/query-leaderboard.dto';
-import { createPaginatedResponse } from '../../utils/serializer.util';
+import { createPaginatedResponse, createApiResponse } from '../../utils/serializer.util';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../decorators/roles.decorator';
+import { ROLES } from '../../constants/app.constants';
+import { CurrentUser } from '../../decorators/current-user.decorator';
 
 @Controller('students')
 export class StudentsController {
@@ -28,6 +35,15 @@ export class StudentsController {
       result.pagination,
       API_RESPONSE_MESSAGES.STUDENT.LEADERBOARD_SUCCESS,
     );
+  }
+
+  @Patch('app-intro')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async markAppIntroSeen(@CurrentUser() user: any) {
+    await this.studentsService.markAppIntroSeen(user.id);
+    return createApiResponse(null, 'App intro marked as seen');
   }
 }
 

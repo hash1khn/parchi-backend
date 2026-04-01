@@ -665,6 +665,7 @@ model students {
   verified_by              String?                  @db.Uuid
   cnic                     String?                  @unique @db.VarChar(13)
   date_of_birth            DateTime?                @db.Date
+  has_seen_app_intro       Boolean?                 @default(false)
   redemptions              redemptions[]
   student_branch_stats     student_branch_stats[]
   student_kyc              student_kyc[]
