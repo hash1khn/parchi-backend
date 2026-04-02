@@ -110,7 +110,22 @@ export interface MerchantDetailsForStudentsResponse {
   bannerUrl: string | null;
   category: string | null;
   termsAndConditions: string | null;
-  branches: BranchWithBonusSettings[];
+  bonusSettings: {
+    redemptionsRequired: number;
+    currentRedemptions?: number;
+    discountDescription: string;
+    isActive: boolean;
+  } | null;
+  offers: BranchOffer[];
+  branches: {
+    id: string;
+    branchName: string;
+    address: string;
+    city: string;
+    latitude: number | null;
+    longitude: number | null;
+    contactPhone: string | null;
+  }[];
 }
 
 @Injectable()
@@ -1916,6 +1931,8 @@ export class MerchantsService {
       m_verification_status: string | null;
       m_is_active: boolean | null;
       m_user_role: string;
+      m_redemption_count: number | null; // Unified merchant count
+      m_offers_json: string | null; // Unified merchant offers
       b_id: string | null;
       b_branch_name: string | null;
       b_address: string | null;
@@ -1928,8 +1945,6 @@ export class MerchantsService {
       bbs_discount_value: string | null;
       bbs_additional_item: string | null;
       bbs_is_active: boolean | null;
-      sbs_redemption_count: number | null;
-      offers_json: string | null; // JSON array of offers for this branch
     };
 
     const rows = await this.prisma.$queryRaw<RawRow[]>`
@@ -1945,31 +1960,15 @@ export class MerchantsService {
         m.is_active                 AS m_is_active,
         u.role::text                AS m_user_role,
 
-        -- Branch
-        b.id                        AS b_id,
-        b.branch_name               AS b_branch_name,
-        b.address                   AS b_address,
-        b.city                      AS b_city,
-        b.latitude::text            AS b_latitude,
-        b.longitude::text           AS b_longitude,
-        b.contact_phone             AS b_contact_phone,
-
-        -- Bonus settings
-        bbs.redemptions_required    AS bbs_redemptions_required,
-        bbs.discount_type           AS bbs_discount_type,
-        bbs.discount_value::text    AS bbs_discount_value,
-        bbs.additional_item         AS bbs_additional_item,
-        bbs.is_active               AS bbs_is_active,
-
-        -- Direct count of actual redemptions for this student and branch (from history)
+        -- Merchant stats from student_merchant_stats
         (
-          SELECT count(*)::int
-          FROM public.redemptions r2
-          WHERE r2.branch_id  = b.id
-            AND r2.student_id = ${studentId ? studentId : null}::uuid
-        )                           AS sbs_redemption_count,
+          SELECT sms.redemption_count::int
+          FROM public.student_merchant_stats sms
+          WHERE sms.merchant_id = m.id
+            AND sms.student_id = ${studentId ? studentId : null}::uuid
+        )                           AS m_redemption_count,
 
-        -- Offers assigned to this branch (aggregated as JSON)
+        -- All active offers for this merchant
         (
           SELECT json_agg(
             json_build_object(
@@ -1983,15 +1982,28 @@ export class MerchantsService {
             )
             ORDER BY o.created_at DESC
           )
-          FROM public.offer_branches ob2
-          JOIN public.offers o
-            ON o.id = ob2.offer_id
-           AND o.merchant_id    = ${merchantId}::uuid
-           AND o.status         = 'active'
-           AND o.valid_from    <= ${now}
-           AND o.valid_until   >= ${now}
-          WHERE ob2.branch_id = b.id
-        )                           AS offers_json
+          FROM public.offers o
+          WHERE o.merchant_id    = m.id
+            AND o.status         = 'active'
+            AND o.valid_from    <= ${now}
+            AND o.valid_until   >= ${now}
+        )                           AS m_offers_json,
+
+        -- Branch details
+        b.id                        AS b_id,
+        b.branch_name               AS b_branch_name,
+        b.address                   AS b_address,
+        b.city                      AS b_city,
+        b.latitude::text            AS b_latitude,
+        b.longitude::text           AS b_longitude,
+        b.contact_phone             AS b_contact_phone,
+
+        -- Bonus settings (Still keyed by branch, picked first available in formatting)
+        bbs.redemptions_required    AS bbs_redemptions_required,
+        bbs.discount_type           AS bbs_discount_type,
+        bbs.discount_value::text    AS bbs_discount_value,
+        bbs.additional_item         AS bbs_additional_item,
+        bbs.is_active               AS bbs_is_active
 
       FROM public.merchants m
       JOIN public.users u
@@ -2023,106 +2035,103 @@ export class MerchantsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
     }
 
-    // ── Assemble response in-memory (no extra DB calls) ───────────────────
-    const formattedBranches: BranchWithBonusSettings[] = rows
+    // ── Assemble response in-memory ───────────────────
+    const merchantRedemptions = first.m_redemption_count ?? 0;
+
+    // Parse unified offers JSON
+    type RawOffer = {
+      id: string;
+      title: string;
+      imageUrl: string | null;
+      discountType: string;
+      discountValue: string;
+      additionalItem: string | null;
+      redemptionStrategy: string | null;
+    };
+    const rawOffers: RawOffer[] =
+      first.m_offers_json
+        ? (typeof first.m_offers_json === 'string'
+          ? JSON.parse(first.m_offers_json)
+          : first.m_offers_json) as RawOffer[]
+        : [];
+
+    const merchantOffers: BranchOffer[] = rawOffers.map((o) => {
+      let formattedDiscount: string;
+      if (o.discountType === 'percentage') {
+        formattedDiscount = `${Number(o.discountValue)}% OFF`;
+      } else if (o.additionalItem && o.additionalItem.trim() !== '') {
+        formattedDiscount = o.additionalItem;
+      } else {
+        formattedDiscount = `Rs. ${Number(o.discountValue)} OFF`;
+      }
+      return {
+        id: o.id,
+        title: o.title,
+        imageUrl: o.imageUrl,
+        discountType: o.discountType,
+        discountValue: Number(o.discountValue),
+        formattedDiscount,
+      };
+    });
+
+    // Determine unified bonus settings (pick first branch with settings)
+    let unifiedBonusSettings: MerchantDetailsForStudentsResponse['bonusSettings'] = null;
+    const branchWithSettings = rows.find(r => r.bbs_discount_type !== null);
+
+    if (branchWithSettings) {
+      let discountDescription: string;
+      if (branchWithSettings.bbs_discount_type === 'percentage') {
+        discountDescription = `${branchWithSettings.bbs_discount_value}% OFF`;
+      } else if (branchWithSettings.bbs_discount_type === 'fixed') {
+        discountDescription = `Rs.${branchWithSettings.bbs_discount_value} OFF`;
+      } else if (branchWithSettings.bbs_additional_item) {
+        discountDescription = branchWithSettings.bbs_additional_item;
+      } else {
+        discountDescription = 'Bonus Reward';
+      }
+      unifiedBonusSettings = {
+        redemptionsRequired: branchWithSettings.bbs_redemptions_required ?? 5,
+        currentRedemptions: merchantRedemptions,
+        discountDescription,
+        isActive: branchWithSettings.bbs_is_active ?? true,
+      };
+    }
+
+    // Soho hierarchical strategy fallback (if no bonus settings)
+    if (!unifiedBonusSettings) {
+      const hasSoho = rawOffers.some(o => o.redemptionStrategy === 'soho_hierarchical');
+      if (hasSoho) {
+        const count = merchantRedemptions;
+        let target: number;
+        let description: string;
+        if (count < 2) {
+          target = 2; description = '30% OFF';
+        } else if (count === 2) {
+          target = 3; description = '40% OFF';
+        } else {
+          target = count + 1; description = '40% OFF (Streak)';
+        }
+        unifiedBonusSettings = {
+          redemptionsRequired: target,
+          currentRedemptions: count,
+          discountDescription: description,
+          isActive: true,
+        };
+      }
+    }
+
+    // Simplified branch list
+    const branchLocations = rows
       .filter((r) => r.b_id !== null)
-      .map((r) => {
-        const currentStats = r.sbs_redemption_count ?? 0;
-
-        // Parse offers JSON aggregated by Postgres
-        type RawOffer = {
-          id: string;
-          title: string;
-          imageUrl: string | null;
-          discountType: string;
-          discountValue: string;
-          additionalItem: string | null;
-          redemptionStrategy: string | null;
-        };
-        const rawOffers: RawOffer[] =
-          r.offers_json
-            ? (typeof r.offers_json === 'string'
-                ? JSON.parse(r.offers_json)
-                : r.offers_json) as RawOffer[]
-            : [];
-
-        const offers: BranchOffer[] = rawOffers.map((o) => {
-          let formattedDiscount: string;
-          if (o.discountType === 'percentage') {
-            formattedDiscount = `${Number(o.discountValue)}% OFF`;
-          } else if (o.additionalItem && o.additionalItem.trim() !== '') {
-            formattedDiscount = o.additionalItem;
-          } else {
-            formattedDiscount = `Rs. ${Number(o.discountValue)} OFF`;
-          }
-          return {
-            id: o.id,
-            title: o.title,
-            imageUrl: o.imageUrl,
-            discountType: o.discountType,
-            discountValue: Number(o.discountValue),
-            formattedDiscount,
-          };
-        });
-
-        // Bonus settings
-        let bonusSettings: BranchWithBonusSettings['bonusSettings'] = null;
-        if (r.bbs_discount_type !== null) {
-          let discountDescription: string;
-          if (r.bbs_discount_type === 'percentage') {
-            discountDescription = `${r.bbs_discount_value}% OFF`;
-          } else if (r.bbs_discount_type === 'fixed') {
-            discountDescription = `Rs.${r.bbs_discount_value} OFF`;
-          } else if (r.bbs_additional_item) {
-            discountDescription = r.bbs_additional_item;
-          } else {
-            discountDescription = 'Bonus Reward';
-          }
-          bonusSettings = {
-            redemptionsRequired: r.bbs_redemptions_required ?? 5,
-            currentRedemptions: currentStats,
-            discountDescription,
-            isActive: r.bbs_is_active ?? true,
-          };
-        }
-
-        // Soho hierarchical strategy fallback
-        if (!bonusSettings) {
-          const hasSoho = rawOffers.some(
-            (o) => o.redemptionStrategy === 'soho_hierarchical',
-          );
-          if (hasSoho) {
-            const count = currentStats;
-            let target: number;
-            let description: string;
-            if (count < 2) {
-              target = 2; description = '30% OFF';
-            } else if (count === 2) {
-              target = 3; description = '40% OFF';
-            } else {
-              target = count + 1; description = '40% OFF (Streak)';
-            }
-            bonusSettings = {
-              redemptionsRequired: target,
-              currentRedemptions: count,
-              discountDescription: description,
-              isActive: true,
-            };
-          }
-        }
-
-        return {
-          id: r.b_id!,
-          name: r.b_branch_name!,
-          address: r.b_address!,
-          city: r.b_city!,
-          latitude: r.b_latitude ? Number(r.b_latitude) : null,
-          longitude: r.b_longitude ? Number(r.b_longitude) : null,
-          contactPhone: r.b_contact_phone,
-          bonusSettings,
-          offers,
-        };
-      });
+      .map((r) => ({
+        id: r.b_id!,
+        branchName: r.b_branch_name!,
+        address: r.b_address!,
+        city: r.b_city!,
+        latitude: r.b_latitude ? Number(r.b_latitude) : null,
+        longitude: r.b_longitude ? Number(r.b_longitude) : null,
+        contactPhone: r.b_contact_phone,
+      }));
 
     return {
       id: first.m_id,
@@ -2131,7 +2140,9 @@ export class MerchantsService {
       bannerUrl: first.m_banner_url,
       category: first.m_category,
       termsAndConditions: first.m_terms,
-      branches: formattedBranches,
+      bonusSettings: unifiedBonusSettings,
+      offers: merchantOffers,
+      branches: branchLocations,
     };
   }
 

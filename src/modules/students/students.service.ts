@@ -346,12 +346,12 @@ export class StudentsService {
     // Parallelize independent queries for better performance
     const now = new Date();
     const [studentStats, bonusSettings, defaultOffer] = await Promise.all([
-      // 1. Get student stats for this branch to check bonus eligibility
-      this.prisma.student_branch_stats.findUnique({
+      // 1. Get student stats for this merchant to check bonus eligibility
+      this.prisma.student_merchant_stats.findUnique({
         where: {
-          student_id_branch_id: {
+          student_id_merchant_id: {
             student_id: student.id,
-            branch_id: branchId,
+            merchant_id: merchantId,
           },
         },
         select: {
