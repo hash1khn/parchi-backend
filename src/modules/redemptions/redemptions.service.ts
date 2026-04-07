@@ -248,15 +248,30 @@ export class RedemptionsService {
     startOfDay.setHours(0, 0, 0, 0);
     const recentWindow = new Date(now.getTime() - this.DUPLICATE_PREVENTION_WINDOW_MS);
 
-    const [bonusSettings, studentMerchantStats] = await Promise.all([
-      this.prisma.branch_bonus_settings.findUnique({
-        where: { branch_id: branchId },
+    const [loyaltyPrograms, studentMerchantStats, studentOfferStats] = await Promise.all([
+      (this.prisma as any).loyalty_programs.findMany({
+        where: {
+          merchant_id: branch.merchant_id,
+          OR: [
+            { scope: 'merchant' },
+            { scope: 'offer', offer_id: createDto.offerId }
+          ],
+          is_active: true
+        }
       }),
-      this.prisma.student_merchant_stats.findUnique({
+      (this.prisma as any).student_merchant_stats.findUnique({
         where: {
           student_id_merchant_id: {
             student_id: student.id,
             merchant_id: branch.merchant_id,
+          },
+        },
+      }),
+      (this.prisma as any).student_offer_stats.findUnique({
+        where: {
+          student_id_offer_id: {
+            student_id: student.id,
+            offer_id: createDto.offerId,
           },
         },
       }),
@@ -313,19 +328,30 @@ export class RedemptionsService {
           isBonusApplied = true;
         }
 
-        if (!(offer as any).redemption_strategy && bonusSettings && bonusSettings.is_active) {
-          const redemptionCount = studentMerchantStats?.redemption_count || 0;
-          if ((redemptionCount + 1) % bonusSettings.redemptions_required === 0) {
-            isBonusApplied = true;
-            if (bonusSettings.discount_type === 'percentage') {
-              bonusDiscountApplied = Number(bonusSettings.discount_value);
-              if (bonusSettings.max_discount_amount) {
-                bonusDiscountApplied = Math.min(bonusDiscountApplied, Number(bonusSettings.max_discount_amount));
+        if (!(offer as any).redemption_strategy && loyaltyPrograms.length > 0) {
+          // Priority: 1. Offer-specific program, 2. Merchant-wide program
+          const activeOfferProgram = loyaltyPrograms.find(p => p.scope === 'offer' && p.offer_id === createDto.offerId);
+          const activeMerchantProgram = loyaltyPrograms.find(p => p.scope === 'merchant');
+          
+          const activeProgram = activeOfferProgram || activeMerchantProgram;
+
+          if (activeProgram) {
+            const redemptionCount = activeProgram.scope === 'offer' 
+              ? (studentOfferStats?.redemption_count || 0)
+              : (studentMerchantStats?.redemption_count || 0);
+
+            if ((redemptionCount + 1) % activeProgram.redemptions_required === 0) {
+              isBonusApplied = true;
+              if (activeProgram.discount_type === 'percentage') {
+                bonusDiscountApplied = Number(activeProgram.discount_value);
+                if (activeProgram.max_discount_amount) {
+                  bonusDiscountApplied = Math.min(bonusDiscountApplied, Number(activeProgram.max_discount_amount));
+                }
+              } else if (activeProgram.discount_type === 'fixed') {
+                bonusDiscountApplied = Number(activeProgram.discount_value);
+              } else if (activeProgram.discount_type === 'item') {
+                bonusDiscountApplied = 0;
               }
-            } else if (bonusSettings.discount_type === 'fixed') {
-              bonusDiscountApplied = Number(bonusSettings.discount_value);
-            } else if (bonusSettings.discount_type === 'item') {
-              bonusDiscountApplied = 0;
             }
           }
         }
@@ -366,7 +392,7 @@ export class RedemptionsService {
               total_savings: { increment: totalSavings },
             },
           }),
-          tx.student_merchant_stats.upsert({
+          (tx as any).student_merchant_stats.upsert({
             where: {
               student_id_merchant_id: {
                 student_id: student.id,
@@ -408,7 +434,7 @@ export class RedemptionsService {
               },
             })
           ),
-          tx.student_offer_stats.upsert({
+          (tx as any).student_offer_stats.upsert({
             where: {
               student_id_offer_id: {
                 student_id: student.id,
@@ -503,7 +529,7 @@ export class RedemptionsService {
 
       
       const defaultImageUrl = 'https://zjghfwnrzazmukykgyhh.supabase.co/storage/v1/object/public/logo/parchi-app-icon.png';
-      const imageUrl = createDto.imageUrl ?? branch?.merchants?.logo_path ?? defaultImageUrl;
+      const imageUrl = createDto.imageUrl ?? (branch as any)?.merchants?.logo_path ?? defaultImageUrl;
 
       // We need to access the student's user_id which we added to the select
       const studentUserId = (redemption as any).students?.user_id;
