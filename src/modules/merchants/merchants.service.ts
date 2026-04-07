@@ -1981,7 +1981,7 @@ export class MerchantsService {
       bbs_discount_value: string | null;
       bbs_additional_item: string | null;
       bbs_is_active: boolean | null;
-      sbs_redemption_count: number | null;
+      sms_redemption_count: number | null;
       offers_json: string | null; // JSON array of offers for this branch
     };
 
@@ -2014,13 +2014,8 @@ export class MerchantsService {
         bbs.additional_item         AS bbs_additional_item,
         bbs.is_active               AS bbs_is_active,
 
-        -- Direct count of actual redemptions for this student and branch (from history)
-        (
-          SELECT count(*)::int
-          FROM public.redemptions r2
-          WHERE r2.branch_id  = b.id
-            AND r2.student_id = ${studentId ? studentId : null}::uuid
-        )                           AS sbs_redemption_count,
+        -- Merchant-wide loyalty count
+        sms.redemption_count        AS sms_redemption_count,
 
         -- Offers assigned to this branch (aggregated as JSON)
         (
@@ -2049,6 +2044,10 @@ export class MerchantsService {
       FROM public.merchants m
       JOIN public.users u
         ON u.id = m.user_id
+
+      LEFT JOIN public.student_merchant_stats sms
+        ON sms.merchant_id = m.id
+       AND sms.student_id  = ${studentId ? studentId : null}::uuid
 
       LEFT JOIN public.merchant_branches b
         ON b.merchant_id = m.id
@@ -2080,7 +2079,7 @@ export class MerchantsService {
     const formattedBranches: BranchWithBonusSettings[] = rows
       .filter((r) => r.b_id !== null)
       .map((r) => {
-        const currentStats = r.sbs_redemption_count ?? 0;
+        const currentStats = r.sms_redemption_count ?? 0;
 
         // Parse offers JSON aggregated by Postgres
         type RawOffer = {

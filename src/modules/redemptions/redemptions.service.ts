@@ -408,6 +408,26 @@ export class RedemptionsService {
               },
             })
           ),
+          tx.student_offer_stats.upsert({
+            where: {
+              student_id_offer_id: {
+                student_id: student.id,
+                offer_id: createDto.offerId,
+              },
+            },
+            update: {
+              redemption_count: { increment: 1 },
+              total_savings: { increment: totalSavings },
+              last_redemption_at: now,
+            },
+            create: {
+              student_id: student.id,
+              offer_id: createDto.offerId,
+              redemption_count: 1,
+              total_savings: totalSavings,
+              last_redemption_at: now,
+            },
+          }),
         ]);
 
         // Return redemption with relations for the response
