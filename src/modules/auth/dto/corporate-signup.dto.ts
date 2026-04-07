@@ -36,6 +36,10 @@ export class CorporateSignupDto {
   @IsString()
   category?: string;
 
+  @IsOptional()
+  @IsString()
+  subCategory?: string;
+
   @IsNotEmpty()
   @IsString()
   email: string; // Calculated: emailPrefix + "@parchipakistan.com"

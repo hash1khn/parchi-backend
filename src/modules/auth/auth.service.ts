@@ -861,6 +861,7 @@ export class AuthService {
             contact_phone: signupDto.contact,
             logo_path: signupDto.logo_path,
             category: signupDto.category || null,
+            sub_category: signupDto.subCategory || null,
             verification_status: 'approved',
           },
         });
@@ -887,6 +888,7 @@ export class AuthService {
         emailPrefix: result.merchant.email_prefix,
         contactEmail: result.merchant.contact_email,
         category: result.merchant.category,
+        subCategory: result.merchant.sub_category,
         verificationStatus: result.merchant.verification_status,
         createdAt: result.merchant.created_at,
       };

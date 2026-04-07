@@ -33,6 +33,7 @@ export interface CorporateMerchantResponse {
   contactPhone: string;
   logoPath: string | null;
   category: string | null;
+  subCategory: string | null;
   verificationStatus: string | null;
   verifiedAt: Date | null;
   isActive: boolean | null;
@@ -109,6 +110,7 @@ export interface MerchantDetailsForStudentsResponse {
   logoPath: string | null;
   bannerUrl: string | null;
   category: string | null;
+  subCategory: string | null;
   termsAndConditions: string | null;
   branches: BranchWithBonusSettings[];
 }
@@ -167,6 +169,7 @@ export class MerchantsService {
         contactPhone: merchant.contact_phone,
         logoPath: merchant.logo_path,
         category: merchant.category,
+        subCategory: merchant.sub_category,
         verificationStatus: merchant.verification_status || 'pending',
         verifiedAt: merchant.verified_at,
         isActive: merchant.is_active,
@@ -381,6 +384,7 @@ export class MerchantsService {
       contactPhone: merchant.contact_phone,
       logoPath: merchant.logo_path,
       category: merchant.category,
+      subCategory: merchant.sub_category,
       verificationStatus: merchant.verification_status || 'pending',
       verifiedAt: merchant.verified_at,
       isActive: merchant.is_active,
@@ -460,6 +464,9 @@ export class MerchantsService {
     if (updateDto.category !== undefined) {
       updateData.category = updateDto.category;
     }
+    if (updateDto.subCategory !== undefined) {
+      updateData.sub_category = updateDto.subCategory;
+    }
     if (updateDto.bannerUrl !== undefined) {
       updateData.banner_url = updateDto.bannerUrl;
     }
@@ -520,7 +527,7 @@ export class MerchantsService {
             // Update all branch users to inactive
             const branchUserIds = branches
               .map((b) => b.user_id)
-              .filter((id) => id !== null);
+              .filter((id): id is string => id !== null);
             if (branchUserIds.length > 0) {
               await tx.public_users.updateMany({
                 where: { id: { in: branchUserIds } },
@@ -541,6 +548,7 @@ export class MerchantsService {
       contactPhone: updatedMerchant.contact_phone,
       logoPath: updatedMerchant.logo_path,
       category: updatedMerchant.category,
+      subCategory: updatedMerchant.sub_category,
       verificationStatus: updatedMerchant.verification_status || 'pending',
       verifiedAt: updatedMerchant.verified_at,
       isActive:
@@ -619,7 +627,7 @@ export class MerchantsService {
           // Update all branch users to inactive
           const branchUserIds = branches
             .map((b) => b.user_id)
-            .filter((userId) => userId !== null);
+            .filter((userId): userId is string => userId !== null);
           if (branchUserIds.length > 0) {
             await tx.public_users.updateMany({
               where: { id: { in: branchUserIds } },
@@ -651,6 +659,7 @@ export class MerchantsService {
       contactPhone: updatedMerchant.contact_phone,
       logoPath: updatedMerchant.logo_path,
       category: updatedMerchant.category,
+      subCategory: updatedMerchant.sub_category,
       verificationStatus: updatedMerchant.verification_status || 'pending',
       verifiedAt: updatedMerchant.verified_at,
       isActive: updatedMerchant.is_active,
@@ -1965,6 +1974,7 @@ export class MerchantsService {
       m_logo_path: string | null;
       m_banner_url: string | null;
       m_category: string | null;
+      m_sub_category: string | null;
       m_terms: string | null;
       m_verification_status: string | null;
       m_is_active: boolean | null;
@@ -1993,6 +2003,7 @@ export class MerchantsService {
         m.logo_path                 AS m_logo_path,
         m.banner_url                AS m_banner_url,
         m.category                  AS m_category,
+        m.sub_category              AS m_sub_category,
         m.terms_and_conditions      AS m_terms,
         m.verification_status::text AS m_verification_status,
         m.is_active                 AS m_is_active,
@@ -2182,6 +2193,7 @@ export class MerchantsService {
       logoPath: first.m_logo_path,
       bannerUrl: first.m_banner_url,
       category: first.m_category,
+      subCategory: first.m_sub_category,
       termsAndConditions: first.m_terms,
       branches: formattedBranches,
     };

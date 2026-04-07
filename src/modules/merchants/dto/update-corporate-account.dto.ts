@@ -38,6 +38,10 @@ export class UpdateCorporateAccountDto {
   category?: string;
 
   @IsOptional()
+  @IsString()
+  subCategory?: string;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
