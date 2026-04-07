@@ -687,9 +687,36 @@ export class MerchantsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
     }
 
-    // Delete will cascade to branches and other related records
-    await this.prisma.merchants.delete({
-      where: { id },
+    const branchUsers = await this.prisma.merchant_branches.findMany({
+      where: { merchant_id: id },
+      select: { user_id: true },
+    });
+
+    const userIdsToDelete = [
+      merchant.user_id,
+      ...branchUsers
+        .map((b) => b.user_id)
+        .filter((uid): uid is string => Boolean(uid)),
+    ];
+
+    await this.prisma.$transaction(async (tx) => {
+      // Delete merchant -> cascades branches and related branch records.
+      await tx.merchants.delete({
+        where: { id },
+      });
+
+      if (userIdsToDelete.length > 0) {
+        // Avoid FK issues from audit log history.
+        await tx.audit_logs.updateMany({
+          where: { user_id: { in: userIdsToDelete } },
+          data: { user_id: null },
+        });
+
+        // Remove linked users (corporate + branch users).
+        await tx.public_users.deleteMany({
+          where: { id: { in: userIdsToDelete } },
+        });
+      }
     });
 
     return null;
@@ -1086,9 +1113,22 @@ export class MerchantsService {
     }
 
     try {
-      // Delete branch (cascade will handle related records)
-      await this.prisma.merchant_branches.delete({
-        where: { id },
+      await this.prisma.$transaction(async (tx) => {
+        // Delete branch first, then linked user.
+        await tx.merchant_branches.delete({
+          where: { id },
+        });
+
+        if (branch.user_id) {
+          await tx.audit_logs.updateMany({
+            where: { user_id: branch.user_id },
+            data: { user_id: null },
+          });
+
+          await tx.public_users.delete({
+            where: { id: branch.user_id },
+          });
+        }
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {

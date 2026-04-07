@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
+  BadRequestException,
   Inject,
   forwardRef,
   Logger,
@@ -14,6 +16,7 @@ import { CurrentUser } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { ROLES, VerificationStatus } from '../../constants/app.constants';
 import { ApproveRejectStudentDto } from './dto/approve-reject-student.dto';
+import { UpdateStudentAdminDto } from './dto/update-student-admin.dto';
 import {
   calculatePaginationMeta,
   calculateSkip,
@@ -91,6 +94,8 @@ export interface StudentKycResponse {
   cnic?: string;
   dateOfBirth?: Date | null;
   isActive: boolean;
+  profilePicture?: string | null;
+  verificationSelfiePath?: string | null;
   kyc?: {
     id: string;
     studentIdCardFrontPath: string;
@@ -159,11 +164,25 @@ export class StudentsService {
     sort: 'asc' | 'desc' = 'asc',
   ): Promise<{ items: StudentListResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
+    const verifiedEmailWhere: Prisma.studentsWhereInput = {
+      users: {
+        is: {
+          users: {
+            is: {
+              email_confirmed_at: {
+                not: null,
+              },
+            },
+          },
+        },
+      },
+    };
 
     const [students, total] = await Promise.all([
       this.prisma.students.findMany({
         where: {
           verification_status: 'pending',
+          ...verifiedEmailWhere,
         },
         include: {
           users: {
@@ -185,6 +204,7 @@ export class StudentsService {
       this.prisma.students.count({
         where: {
           verification_status: 'pending',
+          ...verifiedEmailWhere,
         },
       }),
     ]);
@@ -214,6 +234,19 @@ export class StudentsService {
 
     const whereClause: Prisma.studentsWhereInput = {};
     const conditions: Prisma.studentsWhereInput[] = [];
+    conditions.push({
+      users: {
+        is: {
+          users: {
+            is: {
+              email_confirmed_at: {
+                not: null,
+              },
+            },
+          },
+        },
+      },
+    });
 
     if (status) {
       conditions.push({ verification_status: status });
@@ -533,6 +566,14 @@ export class StudentsService {
             id: true,
             email: true,
             phone: true,
+            is_active: true,
+          },
+        },
+        verified_by_user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
           },
         },
         student_kyc: {
@@ -557,6 +598,184 @@ export class StudentsService {
     }
 
     return this.formatStudentDetailResponse(student);
+  }
+
+  /**
+   * Update student profile and account fields (admin). Parchi ID cannot be changed.
+   */
+  async updateStudentByAdmin(
+    id: string,
+    dto: UpdateStudentAdminDto,
+  ): Promise<StudentDetailResponse> {
+    const dtoKeys = Object.keys(dto) as (keyof UpdateStudentAdminDto)[];
+    if (!dtoKeys.some((k) => dto[k] !== undefined)) {
+      throw new BadRequestException('No fields to update');
+    }
+
+    const student = await this.prisma.students.findUnique({
+      where: { id },
+      include: {
+        users: true,
+      },
+    });
+
+    if (!student) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
+    }
+
+    const userUpdates: Prisma.public_usersUpdateInput = {};
+
+    if (dto.email !== undefined) {
+      const normalized = dto.email.trim().toLowerCase();
+      if (normalized !== student.users.email.toLowerCase()) {
+        const conflict = await this.prisma.public_users.findFirst({
+          where: {
+            email: normalized,
+            NOT: { id: student.user_id },
+          },
+        });
+        if (conflict) {
+          throw new ConflictException('Email already in use');
+        }
+        const admin = this.authService.getAdminSupabaseClient();
+        const { error } = await admin.auth.admin.updateUserById(student.user_id, {
+          email: normalized,
+        });
+        if (error) {
+          throw new BadRequestException(
+            error.message || 'Failed to update email in auth provider',
+          );
+        }
+        userUpdates.email = normalized;
+      }
+    }
+
+    if (dto.phone !== undefined) {
+      userUpdates.phone = dto.phone === '' ? null : dto.phone;
+    }
+
+    if (dto.isActive !== undefined) {
+      userUpdates.is_active = dto.isActive;
+    }
+
+    const studentUpdates: Prisma.studentsUpdateInput = {};
+
+    if (dto.firstName !== undefined) {
+      studentUpdates.first_name = dto.firstName;
+    }
+    if (dto.lastName !== undefined) {
+      studentUpdates.last_name = dto.lastName;
+    }
+    if (dto.university !== undefined) {
+      studentUpdates.university = dto.university;
+    }
+    if (dto.graduationYear !== undefined) {
+      studentUpdates.graduation_year = dto.graduationYear;
+    }
+    if (dto.isFoundersClub !== undefined) {
+      studentUpdates.is_founders_club = dto.isFoundersClub;
+    }
+    if (dto.totalSavings !== undefined) {
+      studentUpdates.total_savings = dto.totalSavings;
+    }
+    if (dto.totalRedemptions !== undefined) {
+      studentUpdates.total_redemptions = dto.totalRedemptions;
+    }
+    if (dto.verificationStatus !== undefined) {
+      studentUpdates.verification_status = dto.verificationStatus;
+    }
+    if (dto.verificationExpiresAt !== undefined) {
+      studentUpdates.verification_expires_at =
+        dto.verificationExpiresAt === null ||
+          dto.verificationExpiresAt === ''
+          ? null
+          : new Date(dto.verificationExpiresAt);
+    }
+    if (dto.cnic !== undefined) {
+      const next = dto.cnic === '' ? null : dto.cnic;
+      if (next) {
+        const taken = await this.prisma.students.findFirst({
+          where: {
+            cnic: next,
+            NOT: { id },
+          },
+        });
+        if (taken) {
+          throw new ConflictException(
+            'CNIC already registered to another student',
+          );
+        }
+      }
+      studentUpdates.cnic = next;
+    }
+    if (dto.dateOfBirth !== undefined) {
+      studentUpdates.date_of_birth =
+        !dto.dateOfBirth || dto.dateOfBirth === ''
+          ? null
+          : new Date(dto.dateOfBirth);
+    }
+    if (dto.profilePicture !== undefined) {
+      studentUpdates.profile_picture =
+        dto.profilePicture === '' ? null : dto.profilePicture;
+    }
+    if (dto.verificationSelfiePath !== undefined) {
+      studentUpdates.verification_selfie_path =
+        dto.verificationSelfiePath === '' ? null : dto.verificationSelfiePath;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (Object.keys(userUpdates).length > 0) {
+        await tx.public_users.update({
+          where: { id: student.user_id },
+          data: {
+            ...userUpdates,
+            updated_at: new Date(),
+          },
+        });
+      }
+      if (Object.keys(studentUpdates).length > 0) {
+        await tx.students.update({
+          where: { id },
+          data: {
+            ...studentUpdates,
+            updated_at: new Date(),
+          },
+        });
+      }
+    });
+
+    return this.getStudentDetailsForReview(id);
+  }
+
+  /**
+   * Delete student and linked public user.
+   * Deleting public_users cascades to students and dependent student records.
+   */
+  async deleteStudentByAdmin(id: string): Promise<null> {
+    const student = await this.prisma.students.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        user_id: true,
+      },
+    });
+
+    if (!student) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.audit_logs.updateMany({
+        where: { user_id: student.user_id },
+        data: { user_id: null },
+      });
+
+      await tx.public_users.delete({
+        where: { id: student.user_id },
+      });
+    });
+
+    return null;
   }
 
   /**
@@ -872,6 +1091,8 @@ export class StudentsService {
       cnic: student.cnic,
       dateOfBirth: student.date_of_birth,
       isActive: student.users.is_active ?? false,
+      profilePicture: student.profile_picture ?? null,
+      verificationSelfiePath: student.verification_selfie_path ?? null,
     };
   }
 
@@ -932,6 +1153,8 @@ export class StudentsService {
       cnic: student.cnic,
       dateOfBirth: student.date_of_birth,
       isActive: student.users.is_active ?? false,
+      profilePicture: student.profile_picture ?? null,
+      verificationSelfiePath: student.verification_selfie_path ?? null,
     };
   }
 

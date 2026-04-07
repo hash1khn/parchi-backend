@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Delete,
   Param,
   Body,
   Query,
@@ -21,6 +22,7 @@ import { ApproveRejectStudentDto } from './dto/approve-reject-student.dto';
 import { QueryStudentsDto } from './dto/query-students.dto';
 import { QueryPendingStudentsDto } from './dto/query-pending-students.dto';
 import { UpdateStudentStatusDto } from './dto/update-student-status.dto';
+import { UpdateStudentAdminDto } from './dto/update-student-admin.dto';
 import { CurrentUser } from '../../decorators/current-user.decorator';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { Audit } from '../../decorators/audit.decorator';
@@ -97,6 +99,32 @@ export class AdminStudentsController {
   async getStudentDetailsForReview(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.studentsService.getStudentDetailsForReview(id);
     return createApiResponse(data, API_RESPONSE_MESSAGES.STUDENT.GET_SUCCESS);
+  }
+
+  @Put(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'UPDATE_STUDENT_ADMIN', tableName: 'students', recordIdParam: 'id' })
+  async updateStudentAdmin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateStudentAdminDto,
+  ) {
+    const data = await this.studentsService.updateStudentByAdmin(id, dto);
+    return createApiResponse(
+      data,
+      API_RESPONSE_MESSAGES.STUDENT.UPDATE_SUCCESS,
+    );
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'DELETE_STUDENT_ADMIN', tableName: 'students', recordIdParam: 'id' })
+  async deleteStudentAdmin(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.studentsService.deleteStudentByAdmin(id);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.STUDENT.DELETE_SUCCESS);
   }
 
   @Put(':id/approve-reject')
