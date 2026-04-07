@@ -248,10 +248,17 @@ export class RedemptionsService {
     startOfDay.setHours(0, 0, 0, 0);
     const recentWindow = new Date(now.getTime() - this.DUPLICATE_PREVENTION_WINDOW_MS);
 
-    const [bonusSettings, studentBranchStats] = await Promise.all([
-      this.prisma.branch_bonus_settings.findUnique({ where: { branch_id: branchId } }),
-      this.prisma.student_branch_stats.findUnique({
-        where: { student_id_branch_id: { student_id: student.id, branch_id: branchId } },
+    const [bonusSettings, studentMerchantStats] = await Promise.all([
+      this.prisma.branch_bonus_settings.findUnique({
+        where: { branch_id: branchId },
+      }),
+      this.prisma.student_merchant_stats.findUnique({
+        where: {
+          student_id_merchant_id: {
+            student_id: student.id,
+            merchant_id: branch.merchant_id,
+          },
+        },
       }),
     ]);
 
@@ -307,7 +314,7 @@ export class RedemptionsService {
         }
 
         if (!(offer as any).redemption_strategy && bonusSettings && bonusSettings.is_active) {
-          const redemptionCount = studentBranchStats?.redemption_count || 0;
+          const redemptionCount = studentMerchantStats?.redemption_count || 0;
           if ((redemptionCount + 1) % bonusSettings.redemptions_required === 0) {
             isBonusApplied = true;
             if (bonusSettings.discount_type === 'percentage') {
