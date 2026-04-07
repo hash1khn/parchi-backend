@@ -321,14 +321,7 @@ export class OffersService {
       });
 
       if (branchesToAssign.length > 0) {
-        // Enforce uniqueness: Remove these branches from any other offers first
-        // This effectively "steals" the branch for the new offer
-        await tx.offer_branches.deleteMany({
-          where: {
-            branch_id: { in: branchesToAssign.map(b => b.id) },
-          },
-        });
-
+        // Assign this offer to the target branches
         await tx.offer_branches.createMany({
           data: branchesToAssign.map((branch) => ({
             offer_id: newOffer.id,
@@ -779,13 +772,6 @@ export class OffersService {
       }
 
       if (syncBranchIds.length > 0) {
-        // Enforce uniqueness: Remove these branches from any other offers first
-        await tx.offer_branches.deleteMany({
-          where: {
-            branch_id: { in: syncBranchIds },
-          },
-        });
-
         // Re-assign this offer to the target branches
         await tx.offer_branches.createMany({
           data: syncBranchIds.map((branchId) => ({

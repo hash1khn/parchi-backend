@@ -406,18 +406,13 @@ export class StudentsService {
           is_active: true
         }
       }),
-      // 4. Get all active offers for the branch
+      // 4. Get all active offers for the merchant (available to all its branches)
       this.prisma.offers.findMany({
         where: {
           merchant_id: merchantId,
           status: 'active',
           valid_from: { lte: now },
           valid_until: { gte: now },
-          offer_branches: {
-            some: {
-              branch_id: branchId,
-            },
-          },
         },
         orderBy: { created_at: 'desc' },
       }),

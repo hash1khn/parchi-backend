@@ -199,7 +199,7 @@ export class RedemptionsService {
     if (offer.valid_from > now || offer.valid_until < now) {
       throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_ACTIVE);
     }
-    if (!offer.offer_branches || offer.offer_branches.length === 0) {
+    if (offer.merchant_id !== branch.merchant_id) {
       throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_AVAILABLE_AT_BRANCH);
     }
 
