@@ -1373,7 +1373,7 @@ export class OffersService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.OFFER.NOT_FOUND);
     }
 
-    // Delete offer (cascade will handle related records)
+    // DB-level cascade should handle dependent rows.
     await this.prisma.offers.delete({
       where: { id },
     });
