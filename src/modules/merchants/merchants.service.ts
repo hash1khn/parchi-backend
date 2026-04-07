@@ -687,19 +687,28 @@ export class MerchantsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
     }
 
-    const branchUsers = await this.prisma.merchant_branches.findMany({
+    const branches = await this.prisma.merchant_branches.findMany({
       where: { merchant_id: id },
-      select: { user_id: true },
+      select: { id: true, user_id: true },
     });
+
+    const branchIds = branches.map((b) => b.id);
 
     const userIdsToDelete = [
       merchant.user_id,
-      ...branchUsers
+      ...branches
         .map((b) => b.user_id)
         .filter((uid): uid is string => Boolean(uid)),
     ];
 
     await this.prisma.$transaction(async (tx) => {
+      if (branchIds.length > 0) {
+        // Hard-delete dependent redemption history first.
+        await tx.redemptions.deleteMany({
+          where: { branch_id: { in: branchIds } },
+        });
+      }
+
       // Delete merchant -> cascades branches and related branch records.
       await tx.merchants.delete({
         where: { id },
@@ -1114,6 +1123,11 @@ export class MerchantsService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        // Hard-delete dependent redemption history first.
+        await tx.redemptions.deleteMany({
+          where: { branch_id: id },
+        });
+
         // Delete branch first, then linked user.
         await tx.merchant_branches.delete({
           where: { id },
@@ -1133,9 +1147,8 @@ export class MerchantsService {
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2003') {
-          // Foreign key constraint violation
           throw new BadRequestException(
-            'Cannot delete this branch because it has associated records (e.g., Redemptions). Please contact support or deactivate the branch instead.',
+            'Cannot delete this branch because of related records.',
           );
         }
       }
