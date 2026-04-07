@@ -1,3 +1,4 @@
+// Rebuild trigger
 import {
   Controller,
   Get,
@@ -29,6 +30,7 @@ import { ApproveRejectBranchDto } from './dto/approve-reject-branch.dto';
 import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
+import { UpdateLoyaltyProgramDto } from './dto/update-loyalty-program.dto';
 import { SetFeaturedBrandsDto } from './dto/set-featured-brands.dto';
 import { Audit } from '../../decorators/audit.decorator';
 import { createApiResponse, createPaginatedResponse } from '../../utils/serializer.util';
@@ -270,6 +272,34 @@ export class MerchantsController {
   ) {
     const data = await this.merchantsService.updateBranchBonusSettings(branchId, updateDto, currentUser);
     return createApiResponse(data, 'Bonus settings updated successfully');
+  }
+
+  // ========== Loyalty Program Endpoints (Corporate & Admin) ==========
+
+  @Get(':id/loyalty')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  async getLoyaltyProgram(
+    @Param('id') id: string,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    const data = await this.merchantsService.getMerchantLoyaltyProgram(id, currentUser);
+    return createApiResponse(data, 'Loyalty program retrieved successfully');
+  }
+
+  @Put(':id/loyalty')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN, ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'UPDATE_LOYALTY_PROGRAM', tableName: 'loyalty_programs', recordIdParam: 'id' })
+  async updateLoyaltyProgram(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateLoyaltyProgramDto,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    const data = await this.merchantsService.updateMerchantLoyaltyProgram(id, updateDto, currentUser);
+    return createApiResponse(data, 'Loyalty program updated successfully');
   }
 
   // ========== Branch Endpoints (Admin & Corporate) ==========

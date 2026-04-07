@@ -32,15 +32,17 @@ export interface StudentVerificationResponse {
   university: string;
   verificationStatus: string;
   verificationSelfie: string | null;
-  offer: {
+  offers: {
     id: string;
     title: string;
     description: string | null;
     discountType: string;
     discountValue: number;
     maxDiscountAmount: number | null;
+    additionalItem?: string | null;
     isBonus: boolean;
-  } | null;
+  }[];
+  merchantLogoUrl?: string | null;
 }
 
 export interface StudentListResponse {
@@ -378,82 +380,76 @@ export class StudentsService {
     }
     // Parallelize independent queries for better performance
     const now = new Date();
-    const [studentStats, bonusSettings, defaultOffer] = await Promise.all([
-      // 1. Get student stats for this merchant to check bonus eligibility
-      this.prisma.student_merchant_stats.findUnique({
+    const [studentMerchantStats, studentOfferStats, loyaltyPrograms, branchOffers] = await Promise.all([
+      // 1. Get student merchant-wide stats
+      (this.prisma as any).student_merchant_stats.findUnique({
         where: {
           student_id_merchant_id: {
             student_id: student.id,
             merchant_id: merchantId,
           },
         },
-        select: {
-          redemption_count: true,
-        },
+        select: { redemption_count: true },
       }),
-      // 2. Get bonus settings
-      this.prisma.branch_bonus_settings.findUnique({
-        where: { branch_id: branchId },
-        select: {
-          is_active: true,
-          redemptions_required: true,
-          discount_type: true,
-          discount_value: true,
-          max_discount_amount: true,
-          additional_item: true, // <--- ADDED THIS
+      // 2. Get student offer-specific stats
+      (this.prisma as any).student_offer_stats.findMany({
+        where: {
+          student_id: student.id,
+          offers: { merchant_id: merchantId }
         },
+        select: { offer_id: true, redemption_count: true }
       }),
-      // 3. Get active default offer for the branch
-      this.prisma.offers.findFirst({
+      // 3. Get all active loyalty programs for this merchant
+      (this.prisma as any).loyalty_programs.findMany({
+        where: {
+          merchant_id: merchantId,
+          is_active: true
+        }
+      }),
+      // 4. Get all active offers for the merchant (available to all its branches)
+      this.prisma.offers.findMany({
         where: {
           merchant_id: merchantId,
           status: 'active',
           valid_from: { lte: now },
           valid_until: { gte: now },
-          offer_branches: {
-            some: {
-              branch_id: branchId,
-            },
-          },
         },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          discount_type: true,
-          discount_value: true,
-          max_discount_amount: true,
-          additional_item: true,
-          redemption_strategy: true,
-        },
-        orderBy: {
-          created_at: 'desc',
-        },
+        orderBy: { created_at: 'desc' },
       }),
     ]);
-    // Check for custom strategy
-    let strategyDiscount: number | null = null;
-    let strategyNote: string | null = null;
 
-    if (defaultOffer?.redemption_strategy === 'soho_hierarchical') {
-      const result = await this.sohoStrategy.calculateDiscount({
-        studentId: student.id,
-        merchantId: merchantId,
-        offerId: defaultOffer.id,
-        tx: this.prisma,
-      });
-      strategyDiscount = result.discountValue;
-      strategyNote = result.note ?? null;
-    }
+    // Map offer stats for easy lookup
+    const offerStatsMap = new Map(studentOfferStats.map(s => [s.offer_id, s.redemption_count]));
 
-    // Determine applicable offer
-    const applicableOffer = this.determineApplicableOffer(
-      studentStats,
-      bonusSettings,
-      defaultOffer,
-      strategyDiscount,
-      strategyNote,
-    );
+    // Determine applicable offers
+    const offers = await Promise.all(branchOffers.map(async (offer) => {
+      let strategyDiscount: number | null = null;
+      let strategyNote: string | null = null;
+
+      if (offer.redemption_strategy === 'soho_hierarchical') {
+        const result = await this.sohoStrategy.calculateDiscount({
+          studentId: student.id,
+          merchantId: merchantId,
+          offerId: offer.id,
+          tx: this.prisma,
+        });
+        strategyDiscount = result.discountValue;
+        strategyNote = result.note ?? null;
+      }
+
+      const currentOfferRedemptions = (offerStatsMap.get(offer.id) as any) ?? 0;
+      const currentMerchantRedemptions = (studentMerchantStats as any)?.redemption_count ?? 0;
+
+      return this.determineOfferStatus(
+        offer,
+        currentMerchantRedemptions,
+        currentOfferRedemptions,
+        loyaltyPrograms,
+        strategyDiscount,
+        strategyNote
+      );
+    }));
+
     return {
       parchiId: student.parchi_id || parchiId,
       firstName: student.first_name,
@@ -461,92 +457,66 @@ export class StudentsService {
       university: student.university,
       verificationStatus: student.verification_status || 'pending',
       verificationSelfie: student.verification_selfie_path,
-      offer: applicableOffer,
+      offers: offers.filter(o => o !== null),
     };
   }
+
   /**
-   * Determine the applicable offer based on student stats, bonus settings, and default offer
-   * Returns bonus offer if eligible, otherwise default offer
+   * Determine the status of a specific offer for a student
    */
-  private determineApplicableOffer(
-    studentStats: { redemption_count: number | null } | null,
-    bonusSettings: {
-      is_active: boolean | null;
-      redemptions_required: number;
-      discount_type: string;
-      discount_value: any; // Prisma Decimal type
-      max_discount_amount: any | null; // Prisma Decimal type
-      additional_item: string | null; // <--- ADDED THIS
-    } | null,
-    defaultOffer: {
-      id: string;
-      title: string;
-      description: string | null;
-      discount_type: string;
-      discount_value: any; // Prisma Decimal type
-      max_discount_amount: any | null; // Prisma Decimal type
-      additional_item: string | null;  // <--- ADDED THIS
-    } | null,
+  private determineOfferStatus(
+    offer: any,
+    merchantRedemptions: number,
+    offerRedemptions: number,
+    loyaltyPrograms: any[],
     strategyDiscount?: number | null,
     strategyNote?: string | null,
-  ): {
-    id: string;
-    title: string;
-    description: string | null;
-    discountType: string;
-    discountValue: number;
-    maxDiscountAmount: number | null;
-    additionalItem?: string | null; // <--- ADDED THIS
-    isBonus: boolean;
-  } | null {
-    if (!defaultOffer) {
-      return null;
-    }
-
-    // Strategy Override (Highest Priority)
+  ) {
+    // Strategy Override
     if (strategyDiscount !== null && strategyDiscount !== undefined) {
       return {
-        id: defaultOffer.id,
-        title: defaultOffer.title,
-        description: strategyNote || defaultOffer.description,
-        discountType: defaultOffer.discount_type,
+        id: offer.id,
+        title: offer.title,
+        description: strategyNote || offer.description,
+        discountType: offer.discount_type,
         discountValue: strategyDiscount,
-        maxDiscountAmount: defaultOffer.max_discount_amount
-          ? Number(defaultOffer.max_discount_amount)
-          : null,
+        maxDiscountAmount: offer.max_discount_amount ? Number(offer.max_discount_amount) : null,
         isBonus: true,
       };
     }
-    const currentRedemptions = studentStats?.redemption_count ?? 0;
-    const isBonusEligible =
-      bonusSettings?.is_active === true &&
-      (currentRedemptions + 1) % bonusSettings.redemptions_required === 0;
-    if (isBonusEligible && bonusSettings) {
-      // Construct bonus offer using bonus settings and default offer's validity
-      return {
-        id: defaultOffer.id, // Use real offer ID so it can be looked up during redemption
-        title: this.LOYALTY_BONUS_TITLE,
-        description: this.LOYALTY_BONUS_DESCRIPTION,
-        discountType: bonusSettings.discount_type,
-        discountValue: Number(bonusSettings.discount_value),
-        maxDiscountAmount: bonusSettings.max_discount_amount
-          ? Number(bonusSettings.max_discount_amount)
-          : null,
-        additionalItem: bonusSettings.additional_item, // <--- ADDED THIS
-        isBonus: true,
-      };
+
+    // Priority: 1. Offer-specific program, 2. Merchant-wide program
+    const offerProgram = loyaltyPrograms.find(p => p.scope === 'offer' && p.offer_id === offer.id);
+    const merchantProgram = loyaltyPrograms.find(p => p.scope === 'merchant');
+
+    const activeProgram = offerProgram || merchantProgram;
+
+    if (activeProgram) {
+      const redemptions = activeProgram.scope === 'offer' ? offerRedemptions : merchantRedemptions;
+      const isBonus = (redemptions + 1) % activeProgram.redemptions_required === 0;
+
+      if (isBonus) {
+        return {
+          id: offer.id,
+          title: activeProgram.scope === 'offer' ? `${offer.title} (Bonus)` : "Loyalty Bonus",
+          description: offer.description,
+          discountType: activeProgram.discount_type,
+          discountValue: Number(activeProgram.discount_value),
+          maxDiscountAmount: activeProgram.max_discount_amount ? Number(activeProgram.max_discount_amount) : null,
+          additionalItem: activeProgram.additional_item,
+          isBonus: true,
+        };
+      }
     }
-    // Use default offer
+
     return {
-      id: defaultOffer.id,
-      title: defaultOffer.title,
-      description: defaultOffer.description,
-      discountType: defaultOffer.discount_type,
-      discountValue: Number(defaultOffer.discount_value),
-      maxDiscountAmount: defaultOffer.max_discount_amount
-        ? Number(defaultOffer.max_discount_amount)
-        : null,
-      additionalItem: defaultOffer.additional_item,
+      id: offer.id,
+      title: offer.title,
+      description: offer.description,
+      discountType: offer.discount_type,
+      discountValue: Number(offer.discount_value),
+      maxDiscountAmount: offer.max_discount_amount ? Number(offer.max_discount_amount) : null,
+      additionalItem: offer.additional_item,
       isBonus: false,
     };
   }

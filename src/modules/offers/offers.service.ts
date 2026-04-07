@@ -202,10 +202,16 @@ export class OffersService {
       targetBranchIds = branches.map((b) => b.id);
       targetBranchIds = branches.map((b) => b.id);
     } else {
-      // If no branches selected (e.g. from UI popup that says "Assign later"),
-      // we create the offer as INACTIVE and unassigned.
-      // This prevents "Global Conflict" with existing active offers.
-      targetBranchIds = [];
+      // If no branches selected, we assume this is a merchant-wide offer
+      // and apply it to ALL active branches of this merchant.
+      const allActiveBranches = await this.prisma.merchant_branches.findMany({
+        where: {
+          merchant_id: merchantId,
+          is_active: true,
+        },
+        select: { id: true },
+      });
+      targetBranchIds = allActiveBranches.map((b) => b.id);
     }
 
     // Check for "One Active Offer" rule - verify branches don't already have active offers
@@ -315,14 +321,7 @@ export class OffersService {
       });
 
       if (branchesToAssign.length > 0) {
-        // Enforce uniqueness: Remove these branches from any other offers first
-        // This effectively "steals" the branch for the new offer
-        await tx.offer_branches.deleteMany({
-          where: {
-            branch_id: { in: branchesToAssign.map(b => b.id) },
-          },
-        });
-
+        // Assign this offer to the target branches
         await tx.offer_branches.createMany({
           data: branchesToAssign.map((branch) => ({
             offer_id: newOffer.id,
@@ -746,9 +745,47 @@ export class OffersService {
     }
 
     // Update offer
-    const updatedOffer = await this.prisma.offers.update({
-      where: { id },
-      data: updateData,
+    // Update offer and its branch associations in a transaction
+    const updatedOffer = await this.prisma.$transaction(async (tx) => {
+      const offerObj = await tx.offers.update({
+        where: { id },
+        data: updateData,
+      });
+
+      // Handle branch synchronization if branchIds are provided or if this is a global update
+      // For merchant-wide architecture, if no specific branches provided, we sync with ALL active branches
+      const branchIds = updateDto.branchIds;
+      let syncBranchIds: string[] = [];
+
+      if (branchIds && branchIds.length > 0) {
+        syncBranchIds = branchIds;
+      } else {
+        // If no specifically provided branchIds, we automatically sync with ALL active branches of the merchant
+        const activeBranches = await tx.merchant_branches.findMany({
+          where: {
+            merchant_id: offer.merchant_id,
+            is_active: true,
+          },
+          select: { id: true },
+        });
+        syncBranchIds = activeBranches.map((b) => b.id);
+      }
+
+      if (syncBranchIds.length > 0) {
+        // Re-assign this offer to the target branches
+        await tx.offer_branches.createMany({
+          data: syncBranchIds.map((branchId) => ({
+            offer_id: id,
+            branch_id: branchId,
+          })),
+        });
+      }
+
+      return offerObj;
+    });
+
+    const offerWithRelations = await this.prisma.offers.findUnique({
+      where: { id: updatedOffer.id },
       include: {
         offer_branches: {
           include: {
@@ -764,7 +801,7 @@ export class OffersService {
       },
     });
 
-    return this.formatOfferResponse(updatedOffer);
+    return this.formatOfferResponse(offerWithRelations);
   }
 
   /**
@@ -1322,7 +1359,7 @@ export class OffersService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.OFFER.NOT_FOUND);
     }
 
-    // Delete offer (cascade will handle related records)
+    // DB-level cascade should handle dependent rows.
     await this.prisma.offers.delete({
       where: { id },
     });

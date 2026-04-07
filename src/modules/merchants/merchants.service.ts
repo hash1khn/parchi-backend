@@ -17,6 +17,7 @@ import { ROLES } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
 import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
+import { UpdateLoyaltyProgramDto } from './dto/update-loyalty-program.dto';
 import { SetFeaturedBrandsDto } from './dto/set-featured-brands.dto';
 import {
   calculatePaginationMeta,
@@ -78,6 +79,27 @@ export interface BonusSettingsResponse {
   imageUrl: string | null;
 }
 
+export interface LoyaltyProgramResponse {
+  id: string;
+  merchantId: string;
+  offerId: string | null;
+  scope: 'merchant' | 'offer';
+  redemptionsRequired: number;
+  discountType: string;
+  discountValue: number;
+  maxDiscountAmount: number | null;
+  additionalItem: string | null;
+  isActive: boolean | null;
+}
+
+/** Loyalty reward summary (merchant-wide or per-offer) */
+export interface LoyaltySummaryInMerchantDetails {
+  redemptionsRequired: number;
+  currentRedemptions?: number;
+  discountDescription: string;
+  isActive: boolean;
+}
+
 export interface BranchOffer {
   id: string;
   title: string;
@@ -85,23 +107,18 @@ export interface BranchOffer {
   discountType: string;
   discountValue: number;
   formattedDiscount: string;
+  /** Active loyalty program scoped to this offer (not merchant-wide) */
+  offerLoyalty?: LoyaltySummaryInMerchantDetails | null;
 }
 
-export interface BranchWithBonusSettings {
+export interface BranchBase {
   id: string;
-  name: string;
+  branchName: string;
   address: string;
   city: string;
   latitude: number | null;
   longitude: number | null;
   contactPhone: string | null;
-  bonusSettings: {
-    redemptionsRequired: number;
-    currentRedemptions?: number;
-    discountDescription: string;
-    isActive: boolean;
-  } | null;
-  offers: BranchOffer[];
 }
 
 export interface MerchantDetailsForStudentsResponse {
@@ -112,13 +129,146 @@ export interface MerchantDetailsForStudentsResponse {
   category: string | null;
   subCategory: string | null;
   termsAndConditions: string | null;
-  branches: BranchWithBonusSettings[];
+  /** Merchant-wide vs per-offer loyalty are explicit: `loyalty.merchant` vs `offers[].offerLoyalty` */
+  loyalty: {
+    merchant: LoyaltySummaryInMerchantDetails | null;
+  };
+  offers: BranchOffer[];
+  branches: BranchBase[];
 }
 
 @Injectable()
 export class MerchantsService {
   constructor(private readonly prisma: PrismaService) { }
   private readonly logger = new Logger(MerchantsService.name);
+
+  /**
+   * Get loyalty programs for a merchant
+   * Corporate and Admin
+   */
+  async getMerchantLoyaltyProgram(
+    merchantId: string,
+    currentUser: CurrentUser,
+  ): Promise<LoyaltyProgramResponse[]> {
+    // Authorization check
+    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      if (
+        !currentUser.merchant_id ||
+        merchantId !== currentUser.merchant_id
+      ) {
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+      }
+    } else if (currentUser.role !== ROLES.ADMIN) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+
+    const programs = await this.prisma.loyalty_programs.findMany({
+      where: { merchant_id: merchantId },
+    });
+
+    return programs.map((p) => ({
+      id: p.id,
+      merchantId: p.merchant_id,
+      offerId: p.offer_id,
+      scope: p.scope as 'merchant' | 'offer',
+      redemptionsRequired: p.redemptions_required,
+      discountType: p.discount_type,
+      discountValue: Number(p.discount_value),
+      maxDiscountAmount: p.max_discount_amount
+        ? Number(p.max_discount_amount)
+        : null,
+      additionalItem: p.additional_item,
+      isActive: p.is_active,
+    }));
+  }
+
+  /**
+   * Update loyalty program for a merchant
+   * Corporate and Admin
+   */
+  async updateMerchantLoyaltyProgram(
+    merchantId: string,
+    dto: UpdateLoyaltyProgramDto,
+    currentUser: CurrentUser,
+  ): Promise<LoyaltyProgramResponse> {
+    // Authorization check
+    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
+      if (
+        !currentUser.merchant_id ||
+        merchantId !== currentUser.merchant_id
+      ) {
+        throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+      }
+    } else if (currentUser.role !== ROLES.ADMIN) {
+      throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
+    }
+
+    // Verify merchant exists
+    const merchant = await this.prisma.merchants.findUnique({
+      where: { id: merchantId },
+    });
+
+    if (!merchant) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+    }
+
+    // If scope is 'offer', verify offer exists
+    if (dto.scope === 'offer' && dto.offerId) {
+      const offer = await this.prisma.offers.findUnique({
+        where: { id: dto.offerId },
+      });
+      if (!offer || offer.merchant_id !== merchantId) {
+        throw new BadRequestException('Invalid offer ID for this merchant');
+      }
+    }
+
+    const whereCondition = dto.scope === 'merchant'
+      ? { merchant_id: merchantId, scope: 'merchant' } as any
+      : { merchant_id: merchantId, scope: 'offer', offer_id: dto.offerId } as any;
+
+    const existing = await this.prisma.loyalty_programs.findFirst({
+      where: whereCondition
+    });
+
+    const data = {
+      merchant_id: merchantId,
+      offer_id: dto.scope === 'offer' ? dto.offerId : null,
+      scope: dto.scope as any,
+      redemptions_required: dto.redemptionsRequired,
+      discount_type: dto.discountType,
+      discount_value: dto.discountType === 'item' ? 0 : dto.discountValue,
+      max_discount_amount: dto.discountType === 'item' ? null : (dto.maxDiscountAmount || null),
+      additional_item: dto.additionalItem || null,
+      is_active: dto.isActive !== undefined ? dto.isActive : true,
+    };
+
+    let program;
+    if (existing) {
+      program = await this.prisma.loyalty_programs.update({
+        where: { id: existing.id },
+        data,
+      });
+    } else {
+      program = await this.prisma.loyalty_programs.create({
+        data,
+      });
+    }
+
+    return {
+      id: program.id,
+      merchantId: program.merchant_id,
+      offerId: program.offer_id,
+      scope: program.scope as 'merchant' | 'offer',
+      redemptionsRequired: program.redemptions_required,
+      discountType: program.discount_type,
+      discountValue: Number(program.discount_value),
+      maxDiscountAmount: program.max_discount_amount
+        ? Number(program.max_discount_amount)
+        : null,
+      additionalItem: program.additional_item,
+      isActive: program.is_active,
+    };
+  }
 
   /**
    * Get all corporate merchants
@@ -169,7 +319,7 @@ export class MerchantsService {
         contactPhone: merchant.contact_phone,
         logoPath: merchant.logo_path,
         category: merchant.category,
-        subCategory: merchant.sub_category,
+        subCategory: (merchant as any).sub_category,
         verificationStatus: merchant.verification_status || 'pending',
         verifiedAt: merchant.verified_at,
         isActive: merchant.is_active,
@@ -384,7 +534,7 @@ export class MerchantsService {
       contactPhone: merchant.contact_phone,
       logoPath: merchant.logo_path,
       category: merchant.category,
-      subCategory: merchant.sub_category,
+      subCategory: (merchant as any).sub_category,
       verificationStatus: merchant.verification_status || 'pending',
       verifiedAt: merchant.verified_at,
       isActive: merchant.is_active,
@@ -465,7 +615,8 @@ export class MerchantsService {
       updateData.category = updateDto.category;
     }
     if (updateDto.subCategory !== undefined) {
-      updateData.sub_category = updateDto.subCategory;
+      // Cast to any to bypass stale Prisma client types for sub_category
+      (updateData as any).sub_category = updateDto.subCategory;
     }
     if (updateDto.bannerUrl !== undefined) {
       updateData.banner_url = updateDto.bannerUrl;
@@ -548,7 +699,7 @@ export class MerchantsService {
       contactPhone: updatedMerchant.contact_phone,
       logoPath: updatedMerchant.logo_path,
       category: updatedMerchant.category,
-      subCategory: updatedMerchant.sub_category,
+      subCategory: (updatedMerchant as any).sub_category,
       verificationStatus: updatedMerchant.verification_status || 'pending',
       verifiedAt: updatedMerchant.verified_at,
       isActive:
@@ -659,7 +810,7 @@ export class MerchantsService {
       contactPhone: updatedMerchant.contact_phone,
       logoPath: updatedMerchant.logo_path,
       category: updatedMerchant.category,
-      subCategory: updatedMerchant.sub_category,
+      subCategory: (updatedMerchant as any).sub_category,
       verificationStatus: updatedMerchant.verification_status || 'pending',
       verifiedAt: updatedMerchant.verified_at,
       isActive: updatedMerchant.is_active,
@@ -1932,6 +2083,26 @@ export class MerchantsService {
   }
 
   /**
+   * Human-readable reward line for loyalty program (merchant-wide or per-offer).
+   */
+  private buildLoyaltyBonusDescription(
+    discountType: string,
+    discountValue: Prisma.Decimal | number | string | null | undefined,
+    additionalItem: string | null,
+  ): string {
+    if (discountType === 'percentage') {
+      return `${Number(discountValue)}% OFF`;
+    }
+    if (discountType === 'fixed') {
+      return `Rs.${Number(discountValue)} OFF`;
+    }
+    if (additionalItem?.trim()) {
+      return additionalItem;
+    }
+    return 'Bonus Reward';
+  }
+
+  /**
    * Get merchant details for students
    * Includes branches with bonus settings
    * Student only
@@ -1979,6 +2150,17 @@ export class MerchantsService {
       m_verification_status: string | null;
       m_is_active: boolean | null;
       m_user_role: string;
+      
+      /* Merchant-wide loyalty program */
+      lp_id: string | null;
+      lp_scope: string | null;
+      lp_redemptions_required: number | null;
+      lp_discount_type: string | null;
+      lp_discount_value: string | null;
+      lp_additional_item: string | null;
+      lp_is_active: boolean | null;
+
+      /* Branches info */
       b_id: string | null;
       b_branch_name: string | null;
       b_address: string | null;
@@ -1986,18 +2168,16 @@ export class MerchantsService {
       b_latitude: string | null;
       b_longitude: string | null;
       b_contact_phone: string | null;
-      bbs_redemptions_required: number | null;
-      bbs_discount_type: string | null;
-      bbs_discount_value: string | null;
-      bbs_additional_item: string | null;
-      bbs_is_active: boolean | null;
+
+      /* Merchant-wide student stats */
       sms_redemption_count: number | null;
-      offers_json: string | null; // JSON array of offers for this branch
+
+      /* Distinct offers for the merchant */
+      merchant_offers_json: string | null;
     };
 
     const rows = await this.prisma.$queryRaw<RawRow[]>`
       SELECT
-        -- Merchant
         m.id                        AS m_id,
         m.business_name             AS m_business_name,
         m.logo_path                 AS m_logo_path,
@@ -2009,6 +2189,18 @@ export class MerchantsService {
         m.is_active                 AS m_is_active,
         u.role::text                AS m_user_role,
 
+        -- Loyalty Program (Merchant scope)
+        lp.id                       AS lp_id,
+        lp.scope::text              AS lp_scope,
+        lp.redemptions_required     AS lp_redemptions_required,
+        lp.discount_type            AS lp_discount_type,
+        lp.discount_value::text     AS lp_discount_value,
+        lp.additional_item          AS lp_additional_item,
+        lp.is_active                AS lp_is_active,
+
+        -- Merchant-wide loyalty count
+        sms.redemption_count        AS sms_redemption_count,
+
         -- Branch
         b.id                        AS b_id,
         b.branch_name               AS b_branch_name,
@@ -2018,17 +2210,7 @@ export class MerchantsService {
         b.longitude::text           AS b_longitude,
         b.contact_phone             AS b_contact_phone,
 
-        -- Bonus settings
-        bbs.redemptions_required    AS bbs_redemptions_required,
-        bbs.discount_type           AS bbs_discount_type,
-        bbs.discount_value::text    AS bbs_discount_value,
-        bbs.additional_item         AS bbs_additional_item,
-        bbs.is_active               AS bbs_is_active,
-
-        -- Merchant-wide loyalty count
-        sms.redemption_count        AS sms_redemption_count,
-
-        -- Offers assigned to this branch (aggregated as JSON)
+        -- All active offers for this merchant (consolidated)
         (
           SELECT json_agg(
             json_build_object(
@@ -2037,38 +2219,23 @@ export class MerchantsService {
               'imageUrl',            o.image_url,
               'discountType',        o.discount_type,
               'discountValue',       o.discount_value::text,
-              'additionalItem',      o.additional_item,
-              'redemptionStrategy',  o.redemption_strategy
+              'additionalItem',      o.additional_item
             )
             ORDER BY o.created_at DESC
           )
-          FROM public.offer_branches ob2
-          JOIN public.offers o
-            ON o.id = ob2.offer_id
-           AND o.merchant_id    = ${merchantId}::uuid
-           AND o.status         = 'active'
-           AND o.valid_from    <= ${now}
-           AND o.valid_until   >= ${now}
-          WHERE ob2.branch_id = b.id
-        )                           AS offers_json
+          FROM public.offers o
+          WHERE o.merchant_id    = m.id
+            AND o.status         = 'active'
+            AND o.valid_from    <= ${now}
+            AND o.valid_until   >= ${now}
+        )                           AS merchant_offers_json
 
       FROM public.merchants m
-      JOIN public.users u
-        ON u.id = m.user_id
-
-      LEFT JOIN public.student_merchant_stats sms
-        ON sms.merchant_id = m.id
-       AND sms.student_id  = ${studentId ? studentId : null}::uuid
-
-      LEFT JOIN public.merchant_branches b
-        ON b.merchant_id = m.id
-       AND b.is_active = true
-
-      LEFT JOIN public.branch_bonus_settings bbs
-        ON bbs.branch_id = b.id
-
+      JOIN public.users u ON u.id = m.user_id
+      LEFT JOIN public.loyalty_programs lp ON lp.merchant_id = m.id AND lp.scope = 'merchant' AND lp.is_active = true
+      LEFT JOIN public.student_merchant_stats sms ON sms.merchant_id = m.id AND sms.student_id = ${studentId ? studentId : null}::uuid
+      LEFT JOIN public.merchant_branches b ON b.merchant_id = m.id AND b.is_active = true
       WHERE m.id = ${merchantId}::uuid
-
       ORDER BY b.branch_name ASC
     `;
 
@@ -2078,7 +2245,6 @@ export class MerchantsService {
 
     const first = rows[0];
 
-    // Validate merchant
     if (first.m_user_role !== ROLES.MERCHANT_CORPORATE) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
     }
@@ -2086,106 +2252,119 @@ export class MerchantsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
     }
 
-    // ── Assemble response in-memory (no extra DB calls) ───────────────────
-    const formattedBranches: BranchWithBonusSettings[] = rows
-      .filter((r) => r.b_id !== null)
-      .map((r) => {
-        const currentStats = r.sms_redemption_count ?? 0;
+    // Consolidated offers
+    const rawOffers: any[] = first.merchant_offers_json
+      ? (typeof first.merchant_offers_json === 'string'
+          ? JSON.parse(first.merchant_offers_json)
+          : first.merchant_offers_json) as any[]
+      : [];
 
-        // Parse offers JSON aggregated by Postgres
-        type RawOffer = {
-          id: string;
-          title: string;
-          imageUrl: string | null;
-          discountType: string;
-          discountValue: string;
-          additionalItem: string | null;
-          redemptionStrategy: string | null;
-        };
-        const rawOffers: RawOffer[] =
-          r.offers_json
-            ? (typeof r.offers_json === 'string'
-                ? JSON.parse(r.offers_json)
-                : r.offers_json) as RawOffer[]
-            : [];
+    let offers: BranchOffer[] = rawOffers.map((o) => {
+      let formattedDiscount: string;
+      if (o.discountType === 'percentage') {
+        formattedDiscount = `${Number(o.discountValue)}% OFF`;
+      } else if (o.additionalItem && o.additionalItem.trim() !== '') {
+        formattedDiscount = o.additionalItem;
+      } else {
+        formattedDiscount = `Rs. ${Number(o.discountValue)} OFF`;
+      }
+      return {
+        id: o.id,
+        title: o.title,
+        imageUrl: o.imageUrl,
+        discountType: o.discountType,
+        discountValue: Number(o.discountValue),
+        formattedDiscount,
+      };
+    });
 
-        const offers: BranchOffer[] = rawOffers.map((o) => {
-          let formattedDiscount: string;
-          if (o.discountType === 'percentage') {
-            formattedDiscount = `${Number(o.discountValue)}% OFF`;
-          } else if (o.additionalItem && o.additionalItem.trim() !== '') {
-            formattedDiscount = o.additionalItem;
-          } else {
-            formattedDiscount = `Rs. ${Number(o.discountValue)} OFF`;
-          }
-          return {
-            id: o.id,
-            title: o.title,
-            imageUrl: o.imageUrl,
-            discountType: o.discountType,
-            discountValue: Number(o.discountValue),
-            formattedDiscount,
-          };
+    const offerLoyaltyPrograms = await this.prisma.loyalty_programs.findMany({
+      where: {
+        merchant_id: merchantId,
+        scope: 'offer',
+        is_active: true,
+      },
+    });
+
+    if (offerLoyaltyPrograms.length > 0) {
+      const loyaltyByOfferId = new Map(
+        offerLoyaltyPrograms
+          .filter((p) => p.offer_id)
+          .map((p) => [p.offer_id as string, p]),
+      );
+
+      let offerRedemptionMap = new Map<string, number>();
+      if (studentId) {
+        const offerIds = [...loyaltyByOfferId.keys()];
+        const offerStats = await this.prisma.student_offer_stats.findMany({
+          where: {
+            student_id: studentId,
+            offer_id: { in: offerIds },
+          },
+          select: { offer_id: true, redemption_count: true },
         });
+        offerRedemptionMap = new Map(
+          offerStats.map((s) => [s.offer_id, s.redemption_count ?? 0]),
+        );
+      }
 
-        // Bonus settings
-        let bonusSettings: BranchWithBonusSettings['bonusSettings'] = null;
-        if (r.bbs_discount_type !== null) {
-          let discountDescription: string;
-          if (r.bbs_discount_type === 'percentage') {
-            discountDescription = `${r.bbs_discount_value}% OFF`;
-          } else if (r.bbs_discount_type === 'fixed') {
-            discountDescription = `Rs.${r.bbs_discount_value} OFF`;
-          } else if (r.bbs_additional_item) {
-            discountDescription = r.bbs_additional_item;
-          } else {
-            discountDescription = 'Bonus Reward';
-          }
-          bonusSettings = {
-            redemptionsRequired: r.bbs_redemptions_required ?? 5,
-            currentRedemptions: currentStats,
-            discountDescription,
-            isActive: r.bbs_is_active ?? true,
-          };
+      offers = offers.map((offer) => {
+        const lp = loyaltyByOfferId.get(offer.id);
+        if (!lp) {
+          return offer;
         }
-
-        // Soho hierarchical strategy fallback
-        if (!bonusSettings) {
-          const hasSoho = rawOffers.some(
-            (o) => o.redemptionStrategy === 'soho_hierarchical',
-          );
-          if (hasSoho) {
-            const count = currentStats;
-            let target: number;
-            let description: string;
-            if (count < 2) {
-              target = 2; description = '30% OFF';
-            } else if (count === 2) {
-              target = 3; description = '40% OFF';
-            } else {
-              target = count + 1; description = '40% OFF (Streak)';
-            }
-            bonusSettings = {
-              redemptionsRequired: target,
-              currentRedemptions: count,
-              discountDescription: description,
-              isActive: true,
-            };
-          }
-        }
-
+        const discountDescription = this.buildLoyaltyBonusDescription(
+          lp.discount_type,
+          lp.discount_value,
+          lp.additional_item,
+        );
         return {
-          id: r.b_id!,
-          name: r.b_branch_name!,
-          address: r.b_address!,
-          city: r.b_city!,
-          latitude: r.b_latitude ? Number(r.b_latitude) : null,
-          longitude: r.b_longitude ? Number(r.b_longitude) : null,
-          contactPhone: r.b_contact_phone,
-          bonusSettings,
-          offers,
+          ...offer,
+          offerLoyalty: {
+            redemptionsRequired: lp.redemptions_required ?? 5,
+            ...(studentId
+              ? {
+                  currentRedemptions: offerRedemptionMap.get(offer.id) ?? 0,
+                }
+              : {}),
+            discountDescription,
+            isActive: lp.is_active ?? true,
+          },
         };
       });
+    }
+
+    // Merchant-wide loyalty (scope = merchant)
+    let merchantLoyalty: LoyaltySummaryInMerchantDetails | null = null;
+    if (first.lp_id) {
+      const discountDescription = this.buildLoyaltyBonusDescription(
+        first.lp_discount_type ?? 'percentage',
+        first.lp_discount_value,
+        first.lp_additional_item,
+      );
+      merchantLoyalty = {
+        redemptionsRequired: first.lp_redemptions_required ?? 5,
+        currentRedemptions: first.sms_redemption_count ?? 0,
+        discountDescription,
+        isActive: first.lp_is_active ?? true,
+      };
+    }
+
+    // Branches list
+    const branches: BranchBase[] = rows
+      .filter((r) => r.b_id !== null)
+      .map((r) => ({
+        id: r.b_id!,
+        branchName: r.b_branch_name!,
+        address: r.b_address!,
+        city: r.b_city!,
+        latitude: r.b_latitude ? Number(r.b_latitude) : null,
+        longitude: r.b_longitude ? Number(r.b_longitude) : null,
+        contactPhone: r.b_contact_phone,
+      }));
+
+    // Deduplicate branches (since raw query might return duplicate merchant-level data per branch)
+    const uniqueBranches = Array.from(new Map(branches.map(b => [b.id, b])).values());
 
     return {
       id: first.m_id,
@@ -2195,7 +2374,11 @@ export class MerchantsService {
       category: first.m_category,
       subCategory: first.m_sub_category,
       termsAndConditions: first.m_terms,
-      branches: formattedBranches,
+      loyalty: {
+        merchant: merchantLoyalty,
+      },
+      offers,
+      branches: uniqueBranches,
     };
   }
 
