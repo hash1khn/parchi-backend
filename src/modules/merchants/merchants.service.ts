@@ -92,6 +92,14 @@ export interface LoyaltyProgramResponse {
   isActive: boolean | null;
 }
 
+/** Loyalty reward summary (merchant-wide or per-offer) */
+export interface LoyaltySummaryInMerchantDetails {
+  redemptionsRequired: number;
+  currentRedemptions?: number;
+  discountDescription: string;
+  isActive: boolean;
+}
+
 export interface BranchOffer {
   id: string;
   title: string;
@@ -99,6 +107,8 @@ export interface BranchOffer {
   discountType: string;
   discountValue: number;
   formattedDiscount: string;
+  /** Active loyalty program scoped to this offer (not merchant-wide) */
+  offerLoyalty?: LoyaltySummaryInMerchantDetails | null;
 }
 
 export interface BranchBase {
@@ -119,12 +129,10 @@ export interface MerchantDetailsForStudentsResponse {
   category: string | null;
   subCategory: string | null;
   termsAndConditions: string | null;
-  bonusSettings: {
-    redemptionsRequired: number;
-    currentRedemptions?: number;
-    discountDescription: string;
-    isActive: boolean;
-  } | null;
+  /** Merchant-wide vs per-offer loyalty are explicit: `loyalty.merchant` vs `offers[].offerLoyalty` */
+  loyalty: {
+    merchant: LoyaltySummaryInMerchantDetails | null;
+  };
   offers: BranchOffer[];
   branches: BranchBase[];
 }
@@ -2075,6 +2083,26 @@ export class MerchantsService {
   }
 
   /**
+   * Human-readable reward line for loyalty program (merchant-wide or per-offer).
+   */
+  private buildLoyaltyBonusDescription(
+    discountType: string,
+    discountValue: Prisma.Decimal | number | string | null | undefined,
+    additionalItem: string | null,
+  ): string {
+    if (discountType === 'percentage') {
+      return `${Number(discountValue)}% OFF`;
+    }
+    if (discountType === 'fixed') {
+      return `Rs.${Number(discountValue)} OFF`;
+    }
+    if (additionalItem?.trim()) {
+      return additionalItem;
+    }
+    return 'Bonus Reward';
+  }
+
+  /**
    * Get merchant details for students
    * Includes branches with bonus settings
    * Student only
@@ -2231,7 +2259,7 @@ export class MerchantsService {
           : first.merchant_offers_json) as any[]
       : [];
 
-    const offers: BranchOffer[] = rawOffers.map((o) => {
+    let offers: BranchOffer[] = rawOffers.map((o) => {
       let formattedDiscount: string;
       if (o.discountType === 'percentage') {
         formattedDiscount = `${Number(o.discountValue)}% OFF`;
@@ -2250,20 +2278,71 @@ export class MerchantsService {
       };
     });
 
-    // Merchant-wide bonus settings
-    let bonusSettings: MerchantDetailsForStudentsResponse['bonusSettings'] = null;
-    if (first.lp_id) {
-      let discountDescription: string;
-      if (first.lp_discount_type === 'percentage') {
-        discountDescription = `${first.lp_discount_value}% OFF`;
-      } else if (first.lp_discount_type === 'fixed') {
-        discountDescription = `Rs.${first.lp_discount_value} OFF`;
-      } else if (first.lp_additional_item) {
-        discountDescription = first.lp_additional_item;
-      } else {
-        discountDescription = 'Bonus Reward';
+    const offerLoyaltyPrograms = await this.prisma.loyalty_programs.findMany({
+      where: {
+        merchant_id: merchantId,
+        scope: 'offer',
+        is_active: true,
+      },
+    });
+
+    if (offerLoyaltyPrograms.length > 0) {
+      const loyaltyByOfferId = new Map(
+        offerLoyaltyPrograms
+          .filter((p) => p.offer_id)
+          .map((p) => [p.offer_id as string, p]),
+      );
+
+      let offerRedemptionMap = new Map<string, number>();
+      if (studentId) {
+        const offerIds = [...loyaltyByOfferId.keys()];
+        const offerStats = await this.prisma.student_offer_stats.findMany({
+          where: {
+            student_id: studentId,
+            offer_id: { in: offerIds },
+          },
+          select: { offer_id: true, redemption_count: true },
+        });
+        offerRedemptionMap = new Map(
+          offerStats.map((s) => [s.offer_id, s.redemption_count ?? 0]),
+        );
       }
-      bonusSettings = {
+
+      offers = offers.map((offer) => {
+        const lp = loyaltyByOfferId.get(offer.id);
+        if (!lp) {
+          return offer;
+        }
+        const discountDescription = this.buildLoyaltyBonusDescription(
+          lp.discount_type,
+          lp.discount_value,
+          lp.additional_item,
+        );
+        return {
+          ...offer,
+          offerLoyalty: {
+            redemptionsRequired: lp.redemptions_required ?? 5,
+            ...(studentId
+              ? {
+                  currentRedemptions: offerRedemptionMap.get(offer.id) ?? 0,
+                }
+              : {}),
+            discountDescription,
+            isActive: lp.is_active ?? true,
+          },
+        };
+      });
+    }
+
+    // Merchant-wide loyalty (scope = merchant)
+    let merchantLoyalty: LoyaltySummaryInMerchantDetails | null = null;
+    if (first.lp_id) {
+      const discountDescription = this.buildLoyaltyBonusDescription(
+        first.lp_discount_type ?? 'percentage',
+        first.lp_discount_value,
+        first.lp_additional_item,
+      );
+      merchantLoyalty = {
         redemptionsRequired: first.lp_redemptions_required ?? 5,
         currentRedemptions: first.sms_redemption_count ?? 0,
         discountDescription,
@@ -2295,7 +2374,9 @@ export class MerchantsService {
       category: first.m_category,
       subCategory: first.m_sub_category,
       termsAndConditions: first.m_terms,
-      bonusSettings,
+      loyalty: {
+        merchant: merchantLoyalty,
+      },
       offers,
       branches: uniqueBranches,
     };
