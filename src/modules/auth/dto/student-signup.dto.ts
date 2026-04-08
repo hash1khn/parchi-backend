@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import {
   IsEmail,
   IsNotEmpty,
@@ -34,6 +35,9 @@ export class StudentSignupDto {
 
   @IsNotEmpty()
   @IsString()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') : value,
+  )
   @Length(13, 13, { message: 'CNIC must be exactly 13 digits' })
   @IsNumberString({}, { message: 'CNIC must contain only numbers' })
   cnic: string;
