@@ -43,6 +43,14 @@ export class StudentSignupDto {
   cnic: string;
 
   @IsNotEmpty()
+  @Transform(({ value }) => {
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+    if (!match) return trimmed;
+    const [, dd, mm, yyyy] = match;
+    return `${yyyy}-${mm}-${dd}`;
+  })
   @IsISO8601()
   dateOfBirth: string;
 
