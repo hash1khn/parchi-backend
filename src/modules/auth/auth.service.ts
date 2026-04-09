@@ -637,6 +637,11 @@ export class AuthService {
     signupDto: StudentSignupDto,
   ): Promise<any> {
     try {
+      const signupEmailRedirectUrl =
+        this.configService.get<string>('SIGNUP_EMAIL_REDIRECT_URL') ||
+        this.configService.get<string>('PASSWORD_RESET_REDIRECT_URL') ||
+        'parchi://auth-callback';
+
       // 1. Check if email already exists
       const existingUser = await this.prisma.public_users.findUnique({
         where: { email: signupDto.email },
@@ -708,7 +713,7 @@ export class AuthService {
               phone: signupDto.phone,
               first_name: signupDto.firstName,
             },
-            emailRedirectTo: 'parchi://auth-callback',
+            emailRedirectTo: signupEmailRedirectUrl,
           },
         });
 
