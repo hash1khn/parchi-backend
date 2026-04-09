@@ -11,7 +11,10 @@ import {
   UnauthorizedException,
   BadRequestException,
   Param,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
@@ -22,6 +25,7 @@ import { BranchSignupDto } from './dto/branch-signup.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
+import { StudentSignupWithFilesDto } from './dto/student-signup-with-files.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
@@ -53,6 +57,59 @@ export class AuthController {
   async studentSignup(@Body() studentSignupDto: StudentSignupDto) {
     const data = await this.authService.studentSignup(studentSignupDto);
     return createApiResponse(data, API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_SUCCESS, HttpStatus.CREATED);
+  }
+
+  @Post('student/signup-with-files')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'studentIdCardFront', maxCount: 1 },
+      { name: 'studentIdCardBack', maxCount: 1 },
+      { name: 'cnicFrontImage', maxCount: 1 },
+      { name: 'cnicBackImage', maxCount: 1 },
+      { name: 'selfieImage', maxCount: 1 },
+    ]),
+  )
+  @HttpCode(HttpStatus.CREATED)
+  async studentSignupWithFiles(
+    @Body() signupDto: StudentSignupWithFilesDto,
+    @UploadedFiles()
+    files: {
+      studentIdCardFront?: any[];
+      studentIdCardBack?: any[];
+      cnicFrontImage?: any[];
+      cnicBackImage?: any[];
+      selfieImage?: any[];
+    },
+  ) {
+    const studentIdCardFront = files?.studentIdCardFront?.[0];
+    const studentIdCardBack = files?.studentIdCardBack?.[0];
+    const cnicFrontImage = files?.cnicFrontImage?.[0];
+    const cnicBackImage = files?.cnicBackImage?.[0];
+    const selfieImage = files?.selfieImage?.[0];
+
+    if (
+      !studentIdCardFront ||
+      !studentIdCardBack ||
+      !cnicFrontImage ||
+      !cnicBackImage ||
+      !selfieImage
+    ) {
+      throw new BadRequestException('All required KYC images must be uploaded');
+    }
+
+    const data = await this.authService.studentSignupWithFiles(signupDto, {
+      studentIdCardFront,
+      studentIdCardBack,
+      cnicFrontImage,
+      cnicBackImage,
+      selfieImage,
+    });
+    return createApiResponse(
+      data,
+      API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_SUCCESS,
+      HttpStatus.CREATED,
+    );
   }
 
   @Post('corporate/signup')

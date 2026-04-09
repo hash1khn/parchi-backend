@@ -29,6 +29,8 @@ import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response
 import { ROLES, UserRole } from '../../constants/app.constants';
 import { JwtPayload } from '../../types/global.types';
 import { generateParchiId } from '../../utils/parchi-id.util';
+import { StudentSignupWithFilesDto } from './dto/student-signup-with-files.dto';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -631,6 +633,96 @@ export class AuthService {
       throw new Error('Admin Supabase client not initialized. SUPABASE_SERVICE_ROLE_KEY is required.');
     }
     return this.adminSupabase;
+  }
+
+  private isUploadedFile(file: any): file is { buffer: Buffer; mimetype?: string } {
+    return !!file && Buffer.isBuffer(file.buffer);
+  }
+
+  private async uploadStudentKycFile(
+    file: { buffer: Buffer; mimetype?: string },
+    folder: string,
+    signupKey: string,
+  ): Promise<string> {
+    const bucket = this.configService.get<string>('STUDENT_KYC_BUCKET') || 'student-kyc';
+    const mime = file.mimetype || 'application/octet-stream';
+    const ext = mime.includes('/') ? mime.split('/')[1] : 'jpg';
+    const path = `${folder}/${signupKey}/${Date.now()}-${randomUUID()}.${ext}`;
+
+    const { error } = await this.getAdminSupabaseClient()
+      .storage
+      .from(bucket)
+      .upload(path, file.buffer, {
+        contentType: mime,
+        upsert: false,
+      });
+
+    if (error) {
+      throw new BadRequestException(`Failed to upload ${folder} image`);
+    }
+
+    return this.getAdminSupabaseClient().storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  }
+
+  async studentSignupWithFiles(
+    signupDto: StudentSignupWithFilesDto,
+    files: {
+      studentIdCardFront: any;
+      studentIdCardBack: any;
+      cnicFrontImage: any;
+      cnicBackImage: any;
+      selfieImage: any;
+    },
+  ): Promise<any> {
+    if (
+      !this.isUploadedFile(files.studentIdCardFront) ||
+      !this.isUploadedFile(files.studentIdCardBack) ||
+      !this.isUploadedFile(files.cnicFrontImage) ||
+      !this.isUploadedFile(files.cnicBackImage) ||
+      !this.isUploadedFile(files.selfieImage)
+    ) {
+      throw new BadRequestException('All required KYC images must be uploaded');
+    }
+
+    const signupKey = signupDto.email
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '_');
+
+    const studentIdCardFrontUrl = await this.uploadStudentKycFile(
+      files.studentIdCardFront,
+      'student-id',
+      signupKey,
+    );
+    const studentIdCardBackUrl = await this.uploadStudentKycFile(
+      files.studentIdCardBack,
+      'student-id-back',
+      signupKey,
+    );
+    const cnicFrontImageUrl = await this.uploadStudentKycFile(
+      files.cnicFrontImage,
+      'cnic-front',
+      signupKey,
+    );
+    const cnicBackImageUrl = await this.uploadStudentKycFile(
+      files.cnicBackImage,
+      'cnic-back',
+      signupKey,
+    );
+    const selfieImageUrl = await this.uploadStudentKycFile(
+      files.selfieImage,
+      'selfie',
+      signupKey,
+    );
+
+    return this.studentSignup({
+      ...signupDto,
+      phone: signupDto.phone ?? '',
+      studentIdCardFrontUrl,
+      studentIdCardBackUrl,
+      cnicFrontImageUrl,
+      cnicBackImageUrl,
+      selfieImageUrl,
+    });
   }
 
   async studentSignup(
