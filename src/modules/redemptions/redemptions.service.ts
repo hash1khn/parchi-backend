@@ -1488,14 +1488,26 @@ export class RedemptionsService {
       },
     });
 
-    // 3. Leaderboard Position (Rank based on total_redemptions — matches /students/leaderboard sort order)
+    // 3. Leaderboard Position
+    // Must match /students/leaderboard ordering exactly:
+    //   1) total_redemptions DESC
+    //   2) id ASC (stable tie-breaker)
     const higherRedemptionsCount = await this.prisma.students.count({
       where: {
-        verification_status: 'approved', // match the leaderboard filter exactly
-        total_redemptions: {
-          gt: totalRedemptions, // Use the real count for ranking too if possible, 
-          // but total_redemptions in table is what's used for actual leaderboard sorting
-        },
+        verification_status: 'approved',
+        OR: [
+          {
+            total_redemptions: {
+              gt: student.total_redemptions || 0,
+            },
+          },
+          {
+            total_redemptions: student.total_redemptions || 0,
+            id: {
+              lt: student.id,
+            },
+          },
+        ],
       },
     });
     const leaderboardPosition = higherRedemptionsCount + 1;

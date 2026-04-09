@@ -1186,9 +1186,11 @@ export class StudentsService {
           university: true,
           total_redemptions: true,
         },
-        orderBy: {
-          total_redemptions: 'desc',
-        },
+        orderBy: [
+          { total_redemptions: 'desc' },
+          // Stable tie-breaker so rank ordering is deterministic.
+          { id: 'asc' },
+        ],
         skip,
         take: limit,
       }),
