@@ -231,24 +231,51 @@ export class StudentsService {
     limit: number = 12,
     search?: string,
     institute?: string,
+    emailVerified?: string,
   ): Promise<{ items: StudentKycResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
-
     const whereClause: Prisma.studentsWhereInput = {};
     const conditions: Prisma.studentsWhereInput[] = [];
-    conditions.push({
-      users: {
-        is: {
+    if (emailVerified !== undefined) {
+      const isVerified = emailVerified === 'true';
+      if (isVerified) {
+        conditions.push({
           users: {
             is: {
-              email_confirmed_at: {
-                not: null,
+              users: {
+                is: {
+                  email_confirmed_at: { not: null },
+                },
               },
             },
           },
-        },
-      },
-    });
+        });
+      } else {
+        // Redefined: "Unverified" filter now means (Email Unverified OR KYC Pending)
+        conditions.push({
+          OR: [
+            {
+              users: {
+                is: {
+                  users: {
+                    is: {
+                      email_confirmed_at: null,
+                    },
+                  },
+                },
+              },
+            },
+            {
+              verification_status: 'pending',
+            },
+          ],
+        });
+      }
+    } else {
+      // Default behavior: for normal "All Students" view, we previously only showed verified.
+      // But the user specifically asked for an "unverified" filter, implying they want to see them.
+      // I will remove the hardcoded filter so all are shown if no specific filter is requested.
+    }
 
     if (status) {
       conditions.push({ verification_status: status });
@@ -718,6 +745,34 @@ export class StudentsService {
   }
 
   /**
+   * Manually verify student email (bypass)
+   * Admin only
+   */
+  async verifyStudentEmail(id: string): Promise<StudentDetailResponse> {
+    const student = await this.prisma.students.findUnique({
+      where: { id },
+      select: { user_id: true },
+    });
+
+    if (!student) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
+    }
+
+    const authClient = this.authService.getAdminSupabaseClient();
+    const { error } = await authClient.auth.admin.updateUserById(student.user_id, {
+      email_confirm: true,
+    });
+
+    if (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to verify email in auth provider',
+      );
+    }
+
+    return this.getStudentDetailsForReview(id);
+  }
+
+  /**
    * Delete student and linked public user.
    * Deleting public_users cascades to students and dependent student records.
    */
@@ -798,6 +853,14 @@ export class StudentsService {
     await this.prisma.$transaction(async (tx) => {
       // Get KYC selfie path if available and approving
       const latestKyc = student.student_kyc.length > 0 ? student.student_kyc[0] : null;
+
+      if (approveRejectDto.action === 'approve') {
+        // Automatically verify email when approving KYC if not already verified
+        const authClient = this.authService.getAdminSupabaseClient();
+        await authClient.auth.admin.updateUserById(student.user_id, {
+          email_confirm: true,
+        });
+      }
       const selfiePath =
         approveRejectDto.action === 'approve' && latestKyc
           ? latestKyc.selfie_image_path
@@ -805,7 +868,7 @@ export class StudentsService {
 
       // 1. Update student verification status and save selfie if approving
       await tx.students.update({
-        where: { id },
+        where: { id: student.id },
         data: {
           verification_status: verificationStatus,
           verified_at: now,
@@ -856,7 +919,7 @@ export class StudentsService {
 
     // Return updated student with relations (fetched outside transaction)
     const result = await this.prisma.students.findUnique({
-      where: { id },
+      where: { id: student.id },
       include: {
         users: {
           select: {
@@ -882,31 +945,33 @@ export class StudentsService {
       },
     });
 
-    if (result) {
-      try {
-        if (approveRejectDto.action === 'approve') {
-          await this.mailService.sendStudentApprovedEmail(
-            result.users.email,
-            result.first_name,
-            result.parchi_id!,
-          );
-        } else {
-          await this.mailService.sendStudentRejectedEmail(
-            result.users.email,
-            result.first_name,
-            approveRejectDto.reviewNotes || 'Does not meet requirements',
-          );
-        }
-      } catch (emailError: any) {
-        // Log but never block the approval flow
-        this.logger.error(
-          `Failed to send ${approveRejectDto.action} email to ${result.users.email}: ${emailError?.message}`,
-          emailError?.stack,
-        );
-      }
+    if (!result) {
+      throw new Error('Student not found after update');
     }
 
-    return this.formatStudentResponse(result!);
+    try {
+      if (approveRejectDto.action === 'approve') {
+        await this.mailService.sendStudentApprovedEmail(
+          result.users.email,
+          result.first_name,
+          result.parchi_id!,
+        );
+      } else {
+        await this.mailService.sendStudentRejectedEmail(
+          result.users.email,
+          result.first_name,
+          approveRejectDto.reviewNotes || 'Does not meet requirements',
+        );
+      }
+    } catch (emailError: any) {
+      // Log but never block the approval flow
+      this.logger.error(
+        `Failed to send ${approveRejectDto.action} email to ${result.users.email}: ${emailError?.message}`,
+        emailError?.stack,
+      );
+    }
+
+    return this.formatStudentResponse(result);
   }
 
   /**

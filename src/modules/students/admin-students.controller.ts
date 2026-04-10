@@ -72,6 +72,7 @@ export class AdminStudentsController {
       limit,
       queryDto.search,
       queryDto.institute,
+      queryDto.emailVerified,
     );
     return createPaginatedResponse(
       result.items,
@@ -169,6 +170,16 @@ export class AdminStudentsController {
         ? API_RESPONSE_MESSAGES.STUDENT.ACTIVATE_SUCCESS
         : API_RESPONSE_MESSAGES.STUDENT.DEACTIVATE_SUCCESS,
     );
+  }
+
+  @Put(':id/verify-email')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'VERIFY_STUDENT_EMAIL', tableName: 'students', recordIdParam: 'id' })
+  async verifyStudentEmail(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.studentsService.verifyStudentEmail(id);
+    return createApiResponse(data, API_RESPONSE_MESSAGES.STUDENT.UPDATE_SUCCESS);
   }
 }
 
