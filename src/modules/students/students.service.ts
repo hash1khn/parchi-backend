@@ -43,6 +43,7 @@ export interface StudentVerificationResponse {
     isBonus: boolean;
   }[];
   merchantLogoUrl?: string | null;
+  lastBranchRedemptionAt?: Date | null;
 }
 
 export interface StudentListResponse {
@@ -407,7 +408,7 @@ export class StudentsService {
     }
     // Parallelize independent queries for better performance
     const now = new Date();
-    const [studentMerchantStats, studentOfferStats, loyaltyPrograms, branchOffers] = await Promise.all([
+    const [studentMerchantStats, studentOfferStats, loyaltyPrograms, branchOffers, lastRedemption] = await Promise.all([
       // 1. Get student merchant-wide stats
       (this.prisma as any).student_merchant_stats.findUnique({
         where: {
@@ -442,6 +443,19 @@ export class StudentsService {
           valid_until: { gte: now },
         },
         orderBy: { created_at: 'desc' },
+      }),
+      // 5. Get last redemption at this branch
+      this.prisma.redemptions.findFirst({
+        where: {
+          student_id: student.id,
+          branch_id: branchId,
+        },
+        orderBy: {
+          created_at: 'desc',
+        },
+        select: {
+          created_at: true,
+        },
       }),
     ]);
 
@@ -485,6 +499,7 @@ export class StudentsService {
       verificationStatus: student.verification_status || 'pending',
       verificationSelfie: student.verification_selfie_path,
       offers: offers.filter(o => o !== null),
+      lastBranchRedemptionAt: lastRedemption?.created_at || null,
     };
   }
 
