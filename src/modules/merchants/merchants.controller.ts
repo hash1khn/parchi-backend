@@ -85,12 +85,16 @@ export class MerchantsController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
     @Query('month') month?: string,
     @Query('search') search?: string,
+    @Query('category') category?: string,
+    @Query('subCategory') subCategory?: string,
   ) {
     const data = await this.merchantsService.getAllMerchantsForStudents(
       page,
       limit,
       month,
       search,
+      category,
+      subCategory,
     );
     return createPaginatedResponse(
       data.items,
