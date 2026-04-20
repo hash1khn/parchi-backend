@@ -84,11 +84,13 @@ export class MerchantsController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
     @Query('month') month?: string,
+    @Query('search') search?: string,
   ) {
     const data = await this.merchantsService.getAllMerchantsForStudents(
       page,
       limit,
       month,
+      search,
     );
     return createPaginatedResponse(
       data.items,

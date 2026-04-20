@@ -1434,12 +1434,36 @@ export class AuthService {
    * Returns the deleted user's email and name so the caller can send a confirmation email.
    */
   async deleteUserByIdentifier(identifier: string): Promise<{ email: string; firstName: string }> {
+    const trimmedIdentifier = identifier.trim();
     // identifier can be email or phone
+    // Normalize phone identifier for more resilient lookup (especially for Pakistani formats)
+    const possibleIdentifiers = [trimmedIdentifier];
+
+    if (!trimmedIdentifier.includes('@')) {
+      const digitsOnly = trimmedIdentifier.replace(/\D/g, '');
+      if (digitsOnly.length === 11 && digitsOnly.startsWith('0')) {
+        // Local format: 03321055899
+        const base = digitsOnly.substring(1);
+        possibleIdentifiers.push(`+92${base}`);
+        possibleIdentifiers.push(`92${base}`);
+      } else if (digitsOnly.length === 12 && digitsOnly.startsWith('92')) {
+        // Format: 923321055899
+        const base = digitsOnly.substring(2);
+        possibleIdentifiers.push(`+92${base}`);
+        possibleIdentifiers.push(`0${base}`);
+      } else if (digitsOnly.length === 10 && !digitsOnly.startsWith('0')) {
+        // Format without leading zero: 3321055899
+        possibleIdentifiers.push(`0${digitsOnly}`);
+        possibleIdentifiers.push(`92${digitsOnly}`);
+        possibleIdentifiers.push(`+92${digitsOnly}`);
+      }
+    }
+
     const user = await this.prisma.public_users.findFirst({
       where: {
         OR: [
-          { email: identifier },
-          { phone: identifier },
+          { email: { equals: trimmedIdentifier, mode: 'insensitive' } },
+          { phone: { in: possibleIdentifiers } },
         ],
       },
       select: {
@@ -1452,14 +1476,42 @@ export class AuthService {
       },
     });
 
-    if (!user) {
-      throw new NotFoundException(`No user found with identifier: ${identifier}`);
+    let userId: string;
+    let userEmail: string;
+    let firstName: string;
+    let userRole: string;
+    let hasPublicProfile = false;
+
+    if (user) {
+      userId = user.id;
+      userEmail = user.email;
+      firstName = user.students?.first_name ?? 'there';
+      userRole = user.role;
+      hasPublicProfile = true;
+    } else {
+      // Fallback: Check auth_users table (Supabase internal schema)
+      const authUser = await this.prisma.auth_users.findFirst({
+        where: {
+          OR: [
+            { email: { equals: trimmedIdentifier, mode: 'insensitive' } },
+            { phone: { in: possibleIdentifiers } },
+          ],
+        },
+        select: { id: true, email: true },
+      });
+
+      if (!authUser) {
+        throw new NotFoundException(`No user found with identifier: ${identifier}`);
+      }
+
+      userId = authUser.id;
+      userEmail = authUser.email ?? identifier;
+      firstName = 'there';
+      userRole = 'student'; // Assume student for deletion flow if orphaned
     }
 
-    if (user.role !== 'student') {
-      throw new BadRequestException(
-        `Account deletion via this flow is only supported for students. Found role: ${user.role}`,
-      );
+    if (userRole === 'admin') {
+      throw new BadRequestException('Admin accounts cannot be deleted via this flow.');
     }
 
     if (!this.adminSupabase) {
@@ -1468,28 +1520,28 @@ export class AuthService {
       );
     }
 
-    const firstName = user.students?.first_name ?? 'there';
-
     // Delete via Supabase admin — this cascades through the entire user tree
-    const { error } = await this.adminSupabase.auth.admin.deleteUser(user.id);
+    const { error } = await this.adminSupabase.auth.admin.deleteUser(userId);
 
     if (error) {
-      console.warn(
-        `Supabase auth deletion failed for ${user.email}, falling back to DB delete:`,
-        error.message,
-      );
-      // Fallback: deleting public_users cascades to students and all child records
-      try {
-        await this.prisma.public_users.delete({ where: { id: user.id } });
-      } catch (dbError) {
-        console.error('Fallback DB delete also failed:', dbError);
+      // Fallback: If auth deletion fails, try deleting public profile if it exists
+      if (hasPublicProfile) {
+        try {
+          await this.prisma.public_users.delete({ where: { id: userId } });
+        } catch (dbError) {
+          console.error('Fallback DB delete also failed:', dbError);
+          throw new InternalServerErrorException(
+            'Failed to delete user account. Please try again or contact support.',
+          );
+        }
+      } else {
         throw new InternalServerErrorException(
-          'Failed to delete user account. Please try again or contact support.',
+          `Failed to delete user account: ${error.message}`,
         );
       }
     }
 
-    return { email: user.email, firstName };
+    return { email: userEmail, firstName };
   }
 }
 

@@ -397,6 +397,7 @@ export class MerchantsService {
     page: number = 1,
     limit: number = 10,
     month?: string,
+    search?: string,
   ): Promise<{ items: any[]; pagination: PaginationMeta }> {
     const { page: normalizedPage, limit: normalizedLimit } =
       normalizePaginationParams(page, limit);
@@ -438,6 +439,14 @@ export class MerchantsService {
         users: {
           role: 'merchant_corporate',
         },
+        ...(search
+          ? {
+              OR: [
+                { business_name: { contains: search, mode: 'insensitive' } },
+                { category: { contains: search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
       },
       select: {
         id: true,
