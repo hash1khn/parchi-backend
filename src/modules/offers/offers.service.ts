@@ -280,8 +280,8 @@ export class OffersService {
           terms_conditions: createDto.termsConditions || null,
           valid_from: validFrom,
           valid_until: validUntil,
-          daily_limit: createDto.dailyLimit || null,
-          total_limit: createDto.totalLimit || null,
+          daily_limit: createDto.dailyLimit ?? null,
+          total_limit: createDto.totalLimit ?? null,
           current_redemptions: 0,
           // Always create as 'active', even if unassigned.
           // Unassigned offers (no branches) won't cause conflicts.
@@ -752,33 +752,38 @@ export class OffersService {
         data: updateData,
       });
 
-      // Handle branch synchronization if branchIds are provided or if this is a global update
-      // For merchant-wide architecture, if no specific branches provided, we sync with ALL active branches
+      // Handle branch synchronization ONLY if branchIds are provided
       const branchIds = updateDto.branchIds;
-      let syncBranchIds: string[] = [];
-
-      if (branchIds && branchIds.length > 0) {
-        syncBranchIds = branchIds;
-      } else {
-        // If no specifically provided branchIds, we automatically sync with ALL active branches of the merchant
-        const activeBranches = await tx.merchant_branches.findMany({
-          where: {
-            merchant_id: offer.merchant_id,
-            is_active: true,
-          },
-          select: { id: true },
+      if (branchIds !== undefined) {
+        // Clear existing assignments first to avoid unique constraint errors
+        await tx.offer_branches.deleteMany({
+          where: { offer_id: id },
         });
-        syncBranchIds = activeBranches.map((b) => b.id);
-      }
 
-      if (syncBranchIds.length > 0) {
-        // Re-assign this offer to the target branches
-        await tx.offer_branches.createMany({
-          data: syncBranchIds.map((branchId) => ({
-            offer_id: id,
-            branch_id: branchId,
-          })),
-        });
+        let syncBranchIds: string[] = [];
+        if (branchIds.length > 0) {
+          syncBranchIds = branchIds;
+        } else {
+          // If empty array provided, we automatically sync with ALL active branches of the merchant
+          const activeBranches = await tx.merchant_branches.findMany({
+            where: {
+              merchant_id: offer.merchant_id,
+              is_active: true,
+            },
+            select: { id: true },
+          });
+          syncBranchIds = activeBranches.map((b) => b.id);
+        }
+
+        if (syncBranchIds.length > 0) {
+          // Re-assign this offer to the target branches
+          await tx.offer_branches.createMany({
+            data: syncBranchIds.map((branchId) => ({
+              offer_id: id,
+              branch_id: branchId,
+            })),
+          });
+        }
       }
 
       return offerObj;

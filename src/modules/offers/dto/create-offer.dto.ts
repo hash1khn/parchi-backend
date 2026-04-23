@@ -69,12 +69,12 @@ export class CreateOfferDto {
 
   @IsOptional()
   @IsNumber()
-  @Min(1)
+  @Min(0)
   dailyLimit?: number;
 
   @IsOptional()
   @IsNumber()
-  @Min(1)
+  @Min(0)
   totalLimit?: number;
 
   @IsOptional()
