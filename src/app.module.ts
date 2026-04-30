@@ -19,6 +19,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { InstitutesModule } from './modules/institutes/institutes.module';
 import { AccountDeletionModule } from './modules/account-deletion/account-deletion.module';
 import { SystemConfigModule } from './modules/system-config/system-config.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+
 
 
 @Module({
@@ -52,6 +54,7 @@ import { SystemConfigModule } from './modules/system-config/system-config.module
     InstitutesModule,
     AccountDeletionModule,
     SystemConfigModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -30,6 +30,16 @@ export interface UniversityStats {
   percentage: number;
 }
 
+export interface FunnelStat {
+  step: string;
+  count: number;
+}
+
+export interface PlatformStat {
+  platform: string;
+  count: number;
+}
+
 export interface AdminDashboardStatsResponse {
   platformOverview: PlatformOverview;
   userManagement: UserManagement;
@@ -37,4 +47,8 @@ export interface AdminDashboardStatsResponse {
   universityDistribution: UniversityStats[];
   leaderboardTopPerformers: number; // students with 10+ redemptions
   foundersClubMembers: number;
+  funnelStats?: FunnelStat[];
+  onboardingDropoff?: FunnelStat[];
+  platformDistribution?: PlatformStat[];
 }
+

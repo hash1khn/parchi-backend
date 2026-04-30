@@ -1,38 +1,71 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminDashboardStatsResponse } from './dto/dashboard-stats-response.dto';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
 export class AdminDashboardService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly analyticsService: AnalyticsService,
+    ) { }
+
 
     async getDashboardStats(startDate?: Date, endDate?: Date): Promise<AdminDashboardStatsResponse> {
-        // Run all queries in parallel for performance
-        const [
-            platformOverview,
-            userManagement,
-            topMerchants,
-            universityDist,
-            leaderboard,
-            foundersClub,
-        ] = await Promise.all([
-            this.getPlatformOverview(startDate, endDate),
-            this.getUserManagement(),
-            this.getTopMerchants(startDate, endDate),
-            this.getUniversityDistribution(),
-            this.getLeaderboardCount(),
-            this.getFoundersClubCount(),
-        ]);
+        try {
+            console.log('Fetching dashboard stats...', { startDate, endDate });
+            
+            // Run all queries in parallel for performance
+            const [
+                platformOverview,
+                userManagement,
+                topMerchants,
+                universityDist,
+                leaderboard,
+                foundersClub,
+                funnelStats,
+                onboardingDropoff,
+                platformDistribution,
+            ] = await Promise.all([
+                this.getPlatformOverview(startDate, endDate).catch(e => { console.error('PlatformOverview Error:', e); throw e; }),
+                this.getUserManagement().catch(e => { console.error('UserManagement Error:', e); throw e; }),
+                this.getTopMerchants(startDate, endDate).catch(e => { console.error('TopMerchants Error:', e); throw e; }),
+                this.getUniversityDistribution().catch(e => { console.error('UniversityDist Error:', e); throw e; }),
+                this.getLeaderboardCount().catch(e => { console.error('Leaderboard Error:', e); throw e; }),
+                this.getFoundersClubCount().catch(e => { console.error('FoundersClub Error:', e); throw e; }),
+                this.analyticsService.getFunnelStats(startDate, endDate).catch(e => {
+                    console.error('Analytics Error (Funnel):', e);
+                    return [];
+                }),
+                this.analyticsService.getOnboardingDropoff(startDate, endDate).catch(e => {
+                    console.error('Analytics Error (Dropoff):', e);
+                    return [];
+                }),
+                this.analyticsService.getPlatformDistribution(startDate, endDate).catch(e => {
+                    console.error('Analytics Error (Platform):', e);
+                    return [];
+                }),
+            ]);
 
-        return {
-            platformOverview,
-            userManagement,
-            topPerformingMerchants: topMerchants,
-            universityDistribution: universityDist,
-            leaderboardTopPerformers: leaderboard,
-            foundersClubMembers: foundersClub,
-        };
+
+
+            return {
+                platformOverview,
+                userManagement,
+                topPerformingMerchants: topMerchants,
+                universityDistribution: universityDist,
+                leaderboardTopPerformers: leaderboard,
+                foundersClubMembers: foundersClub,
+                funnelStats,
+                onboardingDropoff,
+                platformDistribution,
+            };
+        } catch (error) {
+            console.error('CRITICAL: getDashboardStats failed:', error);
+            throw error;
+        }
     }
+
 
     private async getPlatformOverview(startDate?: Date, endDate?: Date) {
         const now = new Date();
