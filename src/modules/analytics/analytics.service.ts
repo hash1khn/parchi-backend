@@ -28,12 +28,12 @@ export class AnalyticsService {
     // Define funnel steps mapping: { displayName: eventName }
     const funnelSteps = [
       { label: 'App Opened', event: 'app_opened' },
-      { label: 'Signup Started', event: 'signup_step_1_start' },
-      { label: 'Signup Completed', event: 'signup_step_2_complete' },
+      { label: 'Student Info Started', event: 'signup_step_1_start' },
+      { label: 'Student Info Complete', event: 'signup_step_1_complete' },
+      { label: 'Document Upload Complete', event: 'signup_step_2_complete' },
       { label: 'Kyc Submitted', event: 'kyc_submitted' },
       { label: 'Account Verified', event: 'signup_verification_verified' },
       { label: 'First Redemption', event: 'first_redemption' },
-
     ];
 
     const stats = await Promise.all(
@@ -54,12 +54,12 @@ export class AnalyticsService {
 
   async getOnboardingDropoff(startDate?: Date, endDate?: Date) {
     const steps = [
-      'signup_step_1_start',
-      'signup_step_1_complete',
-      'signup_step_2_start',
-      'signup_step_2_complete',
-      'signup_verification_sent',
-      'signup_verification_verified',
+      { label: 'Student Info Start', event: 'signup_step_1_start' },
+      { label: 'Student Info Complete', event: 'signup_step_1_complete' },
+      { label: 'Document Upload Start', event: 'signup_step_2_start' },
+      { label: 'Document Upload Complete', event: 'signup_step_2_complete' },
+      { label: 'Verification Sent', event: 'signup_verification_sent' },
+      { label: 'Verification Verified', event: 'signup_verification_verified' },
     ];
 
     const where: any = {};
@@ -74,15 +74,16 @@ export class AnalyticsService {
         const count = await this.prisma.analytics_events.count({
           where: {
             ...where,
-            event_name: step,
+            event_name: step.event,
           },
         });
-        return { step, count };
+        return { step: step.label, count };
       }),
     );
 
     return stats;
   }
+
 
   async getPlatformDistribution(startDate?: Date, endDate?: Date) {
     const where: any = {};
