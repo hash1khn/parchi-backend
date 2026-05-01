@@ -50,6 +50,7 @@ export interface AdminDashboardStatsResponse {
   funnelStats?: FunnelStat[];
   onboardingDropoff?: FunnelStat[];
   platformDistribution?: PlatformStat[];
+  dailyPlatformDistribution?: { date: string; ios: number; android: number }[];
   kycPerformance?: {
     medianDaysToFirstRedemption: number;
   };

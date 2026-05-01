@@ -32,6 +32,7 @@ export class AdminDashboardService {
                 funnelStats,
                 onboardingDropoff,
                 platformDistribution,
+                dailyPlatformDistribution,
                 kycPerformance,
             ] = await Promise.all([
                 this.getPlatformOverview(startDate, endDate).catch(e => { console.error('PlatformOverview Error:', e); throw e; }),
@@ -50,6 +51,10 @@ export class AdminDashboardService {
                 }),
                 this.analyticsService.getPlatformDistribution(startDate, endDate).catch(e => {
                     console.error('Analytics Error (Platform):', e);
+                    return [];
+                }),
+                this.analyticsService.getDailyPlatformDistribution(startDate, endDate).catch(e => {
+                    console.error('Analytics Error (DailyPlatform):', e);
                     return [];
                 }),
                 this.getKycPerformance().catch(e => {
@@ -71,6 +76,7 @@ export class AdminDashboardService {
                 funnelStats,
                 onboardingDropoff,
                 platformDistribution,
+                dailyPlatformDistribution,
                 kycPerformance,
             };
 

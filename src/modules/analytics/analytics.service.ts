@@ -109,4 +109,50 @@ export class AnalyticsService {
       count: item._count.platform,
     }));
   }
+
+  async getDailyPlatformDistribution(startDate?: Date, endDate?: Date) {
+    const where: any = {};
+    if (startDate || endDate) {
+      where.created_at = {};
+      if (startDate) where.created_at.gte = startDate;
+      if (endDate) where.created_at.lte = endDate;
+    }
+
+    const distribution = await this.prisma.analytics_events.groupBy({
+      by: ['created_at', 'platform'],
+      where: {
+        ...where,
+        event_name: 'app_opened',
+      },
+      _count: {
+        platform: true,
+      },
+      orderBy: {
+        created_at: 'asc',
+      },
+    });
+
+    // Group by date
+    const dailyData: { date: string; ios: number; android: number }[] = [];
+    const dateMap = new Map<string, { ios: number; android: number }>();
+
+    distribution.forEach((item) => {
+      const dateStr = item.created_at.toISOString().split('T')[0];
+      const platform = (item.platform || 'unknown').toLowerCase();
+      
+      if (!dateMap.has(dateStr)) {
+        dateMap.set(dateStr, { ios: 0, android: 0 });
+      }
+      
+      const counts = dateMap.get(dateStr)!;
+      if (platform === 'ios') counts.ios += item._count.platform;
+      else if (platform === 'android') counts.android += item._count.platform;
+    });
+
+    dateMap.forEach((counts, date) => {
+      dailyData.push({ date, ...counts });
+    });
+
+    return dailyData.sort((a, b) => a.date.localeCompare(b.date));
+  }
 }

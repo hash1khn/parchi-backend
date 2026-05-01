@@ -830,9 +830,10 @@ export class AuthService {
             last_name: signupDto.lastName,
             university: signupDto.university,
             verification_status: 'pending',
-            educational_grade: signupDto.educationalGrade,
-            date_of_birth: new Date(signupDto.dateOfBirth),
-          },
+             educational_grade: signupDto.educationalGrade,
+             date_of_birth: new Date(signupDto.dateOfBirth),
+             platform: signupDto.platform,
+           },
         });
 
 
