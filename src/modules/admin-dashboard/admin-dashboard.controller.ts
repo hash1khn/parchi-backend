@@ -112,4 +112,13 @@ export class AdminDashboardController {
             'Corporate redemptions retrieved successfully',
         );
     }
+
+    @Get('redemption-analytics')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async getRedemptionAnalytics() {
+        const data = await this.adminDashboardService.getRedemptionAnalytics();
+        return createApiResponse(data, 'Redemption analytics retrieved successfully');
+    }
 }

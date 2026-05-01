@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminDashboardStatsResponse } from './dto/dashboard-stats-response.dto';
+import { RedemptionAnalyticsResponse } from './dto/redemption-analytics-response.dto';
 import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
@@ -543,5 +544,198 @@ export class AdminDashboardService {
                 : (daysToRedeem[mid - 1] + daysToRedeem[mid]) / 2;
 
         return { medianDaysToFirstRedemption: Math.round(median * 10) / 10 };
+    }
+
+    async getRedemptionAnalytics(): Promise<RedemptionAnalyticsResponse> {
+        const [
+            uniqueRedeemersResult,
+            dailyTrends,
+            weeklyTrends,
+            monthlyTrends,
+            histogramResult,
+            repeatRatesResult,
+            bonusResult,
+        ] = await Promise.all([
+            // 1. Unique redeemers (verified, non-rejected)
+            this.prisma.$queryRaw<[{ count: number }]>`
+                SELECT COUNT(DISTINCT student_id)::int AS count
+                FROM redemptions
+                WHERE verified_by IS NOT NULL
+                  AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+            `,
+            // 2. Daily volume – last 30 days (PKT timezone)
+            this.prisma.$queryRaw<Array<{ date: string; count: number }>>`
+                SELECT
+                    TO_CHAR(created_at AT TIME ZONE 'Asia/Karachi', 'YYYY-MM-DD') AS date,
+                    COUNT(*)::int AS count
+                FROM redemptions
+                WHERE verified_by IS NOT NULL
+                  AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                  AND created_at >= NOW() - INTERVAL '30 days'
+                GROUP BY date
+                ORDER BY date
+            `,
+            // 3. Weekly volume – last 12 weeks
+            this.prisma.$queryRaw<Array<{ date: string; count: number }>>`
+                SELECT
+                    TO_CHAR(DATE_TRUNC('week', created_at AT TIME ZONE 'Asia/Karachi'), 'YYYY-MM-DD') AS date,
+                    COUNT(*)::int AS count
+                FROM redemptions
+                WHERE verified_by IS NOT NULL
+                  AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                  AND created_at >= NOW() - INTERVAL '12 weeks'
+                GROUP BY date
+                ORDER BY date
+            `,
+            // 4. Monthly volume – last 12 months
+            this.prisma.$queryRaw<Array<{ date: string; count: number }>>`
+                SELECT
+                    TO_CHAR(DATE_TRUNC('month', created_at AT TIME ZONE 'Asia/Karachi'), 'YYYY-MM') AS date,
+                    COUNT(*)::int AS count
+                FROM redemptions
+                WHERE verified_by IS NOT NULL
+                  AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                  AND created_at >= NOW() - INTERVAL '12 months'
+                GROUP BY date
+                ORDER BY date
+            `,
+            // 5. User behavior histogram (1, 2, 3, 4+ redemptions per user)
+            this.prisma.$queryRaw<[{
+                exactly_one: number;
+                exactly_two: number;
+                exactly_three: number;
+                four_or_more: number;
+            }]>`
+                WITH user_counts AS (
+                    SELECT student_id, COUNT(*) AS redemption_count
+                    FROM redemptions
+                    WHERE verified_by IS NOT NULL
+                      AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                    GROUP BY student_id
+                )
+                SELECT
+                    COALESCE(SUM(CASE WHEN redemption_count = 1  THEN 1 ELSE 0 END), 0)::int AS exactly_one,
+                    COALESCE(SUM(CASE WHEN redemption_count = 2  THEN 1 ELSE 0 END), 0)::int AS exactly_two,
+                    COALESCE(SUM(CASE WHEN redemption_count = 3  THEN 1 ELSE 0 END), 0)::int AS exactly_three,
+                    COALESCE(SUM(CASE WHEN redemption_count >= 4 THEN 1 ELSE 0 END), 0)::int AS four_or_more
+                FROM user_counts
+            `,
+            // 6. Repeat rates within 7 / 30 / 90 days of first redemption
+            this.prisma.$queryRaw<[{
+                total_redeemers: number;
+                repeat_7:  number;
+                repeat_30: number;
+                repeat_90: number;
+            }]>`
+                WITH first_redemptions AS (
+                    SELECT student_id, MIN(created_at) AS first_at
+                    FROM redemptions
+                    WHERE verified_by IS NOT NULL
+                      AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                    GROUP BY student_id
+                )
+                SELECT
+                    COUNT(DISTINCT fr.student_id)::int AS total_redeemers,
+                    COUNT(DISTINCT CASE
+                        WHEN r2.created_at > fr.first_at
+                         AND r2.created_at <= fr.first_at + INTERVAL '7 days'
+                        THEN fr.student_id
+                    END)::int AS repeat_7,
+                    COUNT(DISTINCT CASE
+                        WHEN r2.created_at > fr.first_at
+                         AND r2.created_at <= fr.first_at + INTERVAL '30 days'
+                        THEN fr.student_id
+                    END)::int AS repeat_30,
+                    COUNT(DISTINCT CASE
+                        WHEN r2.created_at > fr.first_at
+                         AND r2.created_at <= fr.first_at + INTERVAL '90 days'
+                        THEN fr.student_id
+                    END)::int AS repeat_90
+                FROM first_redemptions fr
+                LEFT JOIN redemptions r2
+                    ON  r2.student_id = fr.student_id
+                    AND r2.verified_by IS NOT NULL
+                    AND (r2.notes IS NULL OR r2.notes NOT ILIKE 'REJECTED%')
+            `,
+            // 7. 5th-bonus trigger stats
+            this.prisma.$queryRaw<[{
+                total_bonus_triggers:       number;
+                unique_students_triggered:  number;
+                users_returned_after_bonus: number;
+            }]>`
+                WITH bonus_events AS (
+                    SELECT id, student_id, created_at
+                    FROM redemptions
+                    WHERE is_bonus_applied = true
+                      AND verified_by IS NOT NULL
+                      AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                )
+                SELECT
+                    COUNT(be.id)::int                       AS total_bonus_triggers,
+                    COUNT(DISTINCT be.student_id)::int       AS unique_students_triggered,
+                    COUNT(DISTINCT CASE
+                        WHEN r.created_at > be.created_at
+                         AND r.created_at <= be.created_at + INTERVAL '30 days'
+                        THEN be.student_id
+                    END)::int                               AS users_returned_after_bonus
+                FROM bonus_events be
+                LEFT JOIN redemptions r
+                    ON  r.student_id      = be.student_id
+                    AND r.verified_by     IS NOT NULL
+                    AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
+                    AND r.is_bonus_applied = false
+            `,
+        ]);
+
+        // --- Transform results (handle both number and bigint returns depending on PG driver) ---
+        const uniqueRedeemers = Number(uniqueRedeemersResult[0]?.count ?? 0);
+
+        const hist = histogramResult[0];
+        const behaviorHistogram = [
+            { bucket: '1',  userCount: Number(hist?.exactly_one   ?? 0) },
+            { bucket: '2',  userCount: Number(hist?.exactly_two   ?? 0) },
+            { bucket: '3',  userCount: Number(hist?.exactly_three ?? 0) },
+            { bucket: '4+', userCount: Number(hist?.four_or_more  ?? 0) },
+        ];
+
+        const rr = repeatRatesResult[0];
+        const totalRedeemers = Number(rr?.total_redeemers ?? 0);
+        const repeatRates = ([7, 30, 90] as const).map((days) => {
+            const key = `repeat_${days}` as 'repeat_7' | 'repeat_30' | 'repeat_90';
+            const repeatCount = Number(rr?.[key] ?? 0);
+            return {
+                windowDays: days,
+                repeatCount,
+                totalRedeemers,
+                repeatRate: totalRedeemers > 0
+                    ? Math.round((repeatCount / totalRedeemers) * 1000) / 10
+                    : 0,
+            };
+        });
+
+        const bonus = bonusResult[0];
+        const totalBonusTriggers      = Number(bonus?.total_bonus_triggers       ?? 0);
+        const uniqueStudentsTriggered = Number(bonus?.unique_students_triggered  ?? 0);
+        const usersReturnedAfterBonus = Number(bonus?.users_returned_after_bonus ?? 0);
+        const fifthBonusStats = {
+            totalBonusTriggers,
+            uniqueStudentsTriggered,
+            usersReturnedAfterBonus,
+            conversionRate: uniqueStudentsTriggered > 0
+                ? Math.round((usersReturnedAfterBonus / uniqueStudentsTriggered) * 1000) / 10
+                : 0,
+        };
+
+        return {
+            uniqueRedeemers,
+            volumeTrends: {
+                daily:   dailyTrends.map(r   => ({ date: r.date,   count: Number(r.count) })),
+                weekly:  weeklyTrends.map(r  => ({ date: r.date,   count: Number(r.count) })),
+                monthly: monthlyTrends.map(r => ({ date: r.date,   count: Number(r.count) })),
+            },
+            behaviorHistogram,
+            repeatRates,
+            fifthBonusStats,
+        };
     }
 }
