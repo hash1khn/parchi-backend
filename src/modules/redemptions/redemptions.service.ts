@@ -31,6 +31,7 @@ import {
 import { SohoStrategy } from './strategies/soho.strategy';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 export interface RedemptionResponse {
   id: string;
@@ -88,6 +89,7 @@ export class RedemptionsService {
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
     private readonly configService: ConfigService,
+    private readonly analyticsService: AnalyticsService,
   ) { }
 
   /**
@@ -485,6 +487,14 @@ export class RedemptionsService {
     );
 
     const formattedRedemption = await this.formatRedemptionResponse(redemption);
+
+    // Fire first_redemption analytics event if this is the student's first ever redemption.
+    // student.total_redemptions reflects the count BEFORE the transaction incremented it.
+    if ((student.total_redemptions ?? 0) === 0) {
+      this.analyticsService
+        .logEvent(student.user_id, { eventName: 'first_redemption', metadata: {} })
+        .catch(() => { /* non-critical, swallow */ });
+    }
 
     // Send personal notification to the student
     try {

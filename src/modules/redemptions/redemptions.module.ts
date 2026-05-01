@@ -5,11 +5,12 @@ import { RedemptionsService } from './redemptions.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 
 import { SohoStrategy } from './strategies/soho.strategy';
 
 @Module({
-  imports: [PrismaModule, AuthModule, NotificationsModule],
+  imports: [PrismaModule, AuthModule, NotificationsModule, AnalyticsModule],
   controllers: [RedemptionsController, AdminRedemptionsController],
   providers: [RedemptionsService, SohoStrategy],
   exports: [RedemptionsService, SohoStrategy],
