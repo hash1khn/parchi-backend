@@ -69,6 +69,7 @@ export interface StudentListResponse {
   dateOfBirth?: Date | null;
   isActive: boolean;
   platform?: string | null;
+  reviewNotes: string | null;
 }
 
 export interface StudentKycResponse {
@@ -101,6 +102,7 @@ export interface StudentKycResponse {
   profilePicture?: string | null;
   verificationSelfiePath?: string | null;
   platform?: string | null;
+  reviewNotes: string | null;
   kyc?: {
     id: string;
     studentIdCardFrontPath: string;
@@ -235,7 +237,12 @@ export class StudentsService {
     search?: string,
     institute?: string,
     emailVerified?: string,
-  ): Promise<{ items: StudentKycResponse[]; pagination: PaginationMeta }> {
+    groupBy?: 'university' | 'city',
+  ): Promise<{ items: any[]; pagination: PaginationMeta }> {
+    if (groupBy) {
+      return this.getStudentSegmentation(groupBy);
+    }
+
     const skip = calculateSkip(page, limit);
     const whereClause: Prisma.studentsWhereInput = {};
     const conditions: Prisma.studentsWhereInput[] = [];
@@ -1078,6 +1085,58 @@ export class StudentsService {
   }
 
   /**
+   * Get student segmentation by university or city
+   */
+  private async getStudentSegmentation(groupBy: 'university' | 'city' = 'university') {
+    const students = await this.prisma.students.findMany({
+      select: {
+        university: true,
+        verification_status: true,
+      },
+    });
+
+    const groups = new Map<string, any>();
+
+    students.forEach(s => {
+      let key = s.university || 'Other';
+      if (groupBy === 'city' && s.university) {
+        const parts = s.university.split(',');
+        key = parts.length > 1 ? parts[parts.length - 1].trim() : 'Other';
+      }
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          group: key,
+          total: 0,
+          pending: 0,
+          approved: 0,
+          rejected: 0,
+        });
+      }
+
+      const group = groups.get(key);
+      group.total++;
+      if (s.verification_status === 'pending') group.pending++;
+      if (s.verification_status === 'approved') group.approved++;
+      if (s.verification_status === 'rejected') group.rejected++;
+    });
+
+    const items = Array.from(groups.values()).sort((a, b) => b.total - a.total);
+
+    return {
+      items,
+      pagination: {
+        total: items.length,
+        page: 1,
+        pages: 1,
+        limit: items.length,
+        hasNext: false,
+        hasPrev: false,
+      },
+    };
+  }
+
+  /**
    * Format student list response (without KYC data)
    */
   private async formatStudentListResponse(student: any): Promise<StudentListResponse> {
@@ -1104,6 +1163,7 @@ export class StudentsService {
       dateOfBirth: student.date_of_birth,
       isActive: student.users.is_active ?? false,
       platform: student.platform,
+      reviewNotes: student.student_kyc?.[0]?.review_notes || null,
     };
   }
 
@@ -1167,6 +1227,7 @@ export class StudentsService {
       profilePicture: student.profile_picture ?? null,
       verificationSelfiePath: student.verification_selfie_path ?? null,
       platform: student.platform,
+      reviewNotes: latestKyc?.review_notes || null,
     };
   }
 
@@ -1230,6 +1291,7 @@ export class StudentsService {
       profilePicture: student.profile_picture ?? null,
       verificationSelfiePath: student.verification_selfie_path ?? null,
       platform: student.platform,
+      reviewNotes: latestKyc?.review_notes || null,
     };
   }
 

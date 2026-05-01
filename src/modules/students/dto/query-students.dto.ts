@@ -45,5 +45,9 @@ export class QueryStudentsDto {
   @IsOptional()
   @IsString()
   emailVerified?: string;
+
+  @IsOptional()
+  @IsString()
+  groupBy?: 'university' | 'city';
 }
 

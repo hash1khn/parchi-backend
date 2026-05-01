@@ -73,6 +73,7 @@ export class AdminStudentsController {
       queryDto.search,
       queryDto.institute,
       queryDto.emailVerified,
+      queryDto.groupBy,
     );
     return createPaginatedResponse(
       result.items,

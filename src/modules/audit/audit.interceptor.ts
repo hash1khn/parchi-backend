@@ -92,8 +92,10 @@ export class AuditInterceptor implements NestInterceptor {
             } else if (isUpdate) {
               // For approve/reject operations, enhance the logged data with student/entity details from response
               let enhancedNewValues = newValues || request.body;
+              let action = auditMetadata.action;
 
               if (auditMetadata.action === 'APPROVE_REJECT_STUDENT') {
+                action = request.body?.action === 'approve' ? 'APPROVE_STUDENT' : 'REJECT_STUDENT';
                 // Extract student data from the response
                 const studentData = response?.data || response;
                 enhancedNewValues = {
@@ -110,6 +112,11 @@ export class AuditInterceptor implements NestInterceptor {
                 };
               } else if (auditMetadata.action === 'APPROVE_REJECT_BRANCH' ||
                 auditMetadata.action === 'APPROVE_REJECT_OFFER') {
+                if (auditMetadata.action === 'APPROVE_REJECT_BRANCH') {
+                  action = request.body?.action === 'approve' ? 'APPROVE_BRANCH' : 'REJECT_BRANCH';
+                } else {
+                  action = request.body?.action === 'approve' ? 'APPROVE_OFFER' : 'REJECT_OFFER';
+                }
                 enhancedNewValues = {
                   ...enhancedNewValues,
                   action: request.body?.action,
@@ -120,7 +127,7 @@ export class AuditInterceptor implements NestInterceptor {
               }
 
               await this.auditService.logUpdate(
-                auditMetadata.action,
+                action,
                 auditMetadata.tableName || 'unknown',
                 recordId || 'unknown',
                 oldValues,
