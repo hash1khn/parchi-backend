@@ -29,14 +29,40 @@ export class AdminDashboardController {
     async getDashboardStats(
         @Query('startDate') startDate?: string,
         @Query('endDate') endDate?: string,
+        @Query('groupBy') groupBy: 'institution' | 'city' = 'institution',
     ) {
         const data = await this.adminDashboardService.getDashboardStats(
             startDate ? new Date(startDate) : undefined,
             endDate ? new Date(endDate) : undefined,
+            groupBy,
         );
         return createApiResponse(
             data,
             'Dashboard statistics retrieved successfully',
+        );
+    }
+
+    @Get('kyc-stats')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async getKycStats() {
+        const data = await this.adminDashboardService.getKycRejectionStats();
+        return createApiResponse(
+            data,
+            'KYC rejection statistics retrieved successfully',
+        );
+    }
+
+    @Get('active-users')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async getActiveUsers() {
+        const data = await this.adminDashboardService.getActiveUserTracking();
+        return createApiResponse(
+            data,
+            'Active user tracking data retrieved successfully',
         );
     }
 

@@ -42,6 +42,26 @@ export interface PlatformStat {
   count: number;
 }
 
+export interface KycRejectionStats {
+  byReason: { reason: string; count: number }[];
+  byUniversity: { university: string; rejectedCount: number }[];
+  mostFoundIssue: string | null;
+  totalRejected: number;
+}
+
+export interface ActiveUserTracking {
+  last7Days: {
+    uniqueStudents: number;
+    totalRedemptions: number;
+    dailyBreakdown: { date: string; count: number }[];
+  };
+  last30Days: {
+    uniqueStudents: number;
+    totalRedemptions: number;
+    dailyBreakdown: { date: string; count: number }[];
+  };
+}
+
 export interface AdminDashboardStatsResponse {
   platformOverview: PlatformOverview;
   userManagement: UserManagement;
@@ -56,6 +76,7 @@ export interface AdminDashboardStatsResponse {
   kycPerformance?: {
     medianDaysToFirstRedemption: number;
   };
-
+  kycRejectionStats?: KycRejectionStats;
+  activeUserTracking?: ActiveUserTracking;
 }
 

@@ -16,10 +16,9 @@ export class AdminDashboardService {
         private readonly analyticsService: AnalyticsService,
     ) { }
 
-
-    async getDashboardStats(startDate?: Date, endDate?: Date): Promise<AdminDashboardStatsResponse> {
+    async getDashboardStats(startDate?: Date, endDate?: Date, universityGroupBy: 'institution' | 'city' = 'institution'): Promise<AdminDashboardStatsResponse> {
         try {
-            console.log('Fetching dashboard stats...', { startDate, endDate });
+            console.log('Fetching dashboard stats...', { startDate, endDate, universityGroupBy });
             
             // Run all queries in parallel for performance
             const [
@@ -34,11 +33,13 @@ export class AdminDashboardService {
                 platformDistribution,
                 dailyPlatformDistribution,
                 kycPerformance,
+                kycRejectionStats,
+                activeUserTracking,
             ] = await Promise.all([
                 this.getPlatformOverview(startDate, endDate).catch(e => { console.error('PlatformOverview Error:', e); throw e; }),
                 this.getUserManagement().catch(e => { console.error('UserManagement Error:', e); throw e; }),
                 this.getTopMerchants(startDate, endDate).catch(e => { console.error('TopMerchants Error:', e); throw e; }),
-                this.getUniversityDistribution().catch(e => { console.error('UniversityDist Error:', e); throw e; }),
+                this.getUniversityDistribution(universityGroupBy).catch(e => { console.error('UniversityDist Error:', e); throw e; }),
                 this.getLeaderboardCount().catch(e => { console.error('Leaderboard Error:', e); throw e; }),
                 this.getFoundersClubCount().catch(e => { console.error('FoundersClub Error:', e); throw e; }),
                 this.analyticsService.getFunnelStats(startDate, endDate).catch(e => {
@@ -61,10 +62,15 @@ export class AdminDashboardService {
                     console.error('KycPerformance Error:', e);
                     return { medianDaysToFirstRedemption: 0 };
                 }),
+                this.getKycRejectionStats().catch(e => {
+                    console.error('KycRejectionStats Error:', e);
+                    return undefined;
+                }),
+                this.getActiveUserTracking().catch(e => {
+                    console.error('ActiveUserTracking Error:', e);
+                    return undefined;
+                }),
             ]);
-
-
-
 
             return {
                 platformOverview,
@@ -78,6 +84,8 @@ export class AdminDashboardService {
                 platformDistribution,
                 dailyPlatformDistribution,
                 kycPerformance,
+                kycRejectionStats,
+                activeUserTracking,
             };
 
         } catch (error) {
@@ -85,7 +93,6 @@ export class AdminDashboardService {
             throw error;
         }
     }
-
 
     private async getPlatformOverview(startDate?: Date, endDate?: Date) {
         const now = new Date();
@@ -258,57 +265,130 @@ export class AdminDashboardService {
                 };
             })
             .sort((a, b) => b.redemptionCount - a.redemptionCount);
-        // Limit removed to show all merchants as requested
 
         return merchantsWithCounts;
     }
 
-    private async getUniversityDistribution() {
-        // Group students by university for counts
-        const universities = await this.prisma.students.groupBy({
-            by: ['university'],
-            where: {
-                verification_status: 'approved',
-            },
-            _count: {
-                id: true,
-            },
-            orderBy: {
-                _count: {
-                    id: 'desc',
-                },
-            },
+    async getKycRejectionStats() {
+        const [byReason, byUniversity, totalRejected] = await Promise.all([
+            this.prisma.student_kyc.groupBy({
+                by: ['review_notes'],
+                where: { reviewed_at: { not: null }, review_notes: { not: null } },
+                _count: { id: true },
+                orderBy: { _count: { id: 'desc' } },
+            }),
+            this.prisma.students.groupBy({
+                by: ['university'],
+                where: { verification_status: 'rejected' },
+                _count: { id: true },
+                orderBy: { _count: { id: 'desc' } },
+                take: 10,
+            }),
+            this.prisma.students.count({
+                where: { verification_status: 'rejected' },
+            }),
+        ]);
+
+        return {
+            byReason: byReason.map(r => ({ reason: r.review_notes || 'No reason provided', count: r._count.id })),
+            byUniversity: byUniversity.map(u => ({ university: u.university, rejectedCount: u._count.id })),
+            mostFoundIssue: byReason[0]?.review_notes || null,
+            totalRejected,
+        };
+    }
+
+    async getActiveUserTracking() {
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        const getStats = async (since: Date) => {
+            const [uniqueStudents, redemptionVolume, dailyBreakdown] = await Promise.all([
+                this.prisma.redemptions.groupBy({
+                    by: ['student_id'],
+                    where: { created_at: { gte: since } },
+                }).then(res => res.length),
+                this.prisma.redemptions.count({
+                    where: { created_at: { gte: since } },
+                }),
+                this.prisma.$queryRaw`
+                    SELECT TO_CHAR(created_at, 'YYYY-MM-DD') as date, CAST(COUNT(*) AS INTEGER) as count
+                    FROM redemptions
+                    WHERE created_at >= ${since}
+                    GROUP BY TO_CHAR(created_at, 'YYYY-MM-DD')
+                    ORDER BY date ASC
+                `,
+            ]);
+            return { 
+                uniqueStudents, 
+                totalRedemptions: redemptionVolume,
+                dailyBreakdown: dailyBreakdown as { date: string; count: number }[]
+            };
+        };
+
+        const [last7Days, last30Days] = await Promise.all([
+            getStats(sevenDaysAgo),
+            getStats(thirtyDaysAgo),
+        ]);
+
+        return { last7Days, last30Days };
+    }
+
+    private async getUniversityDistribution(groupBy: 'institution' | 'city' = 'institution') {
+        const rawUniversities = await this.prisma.students.findMany({
+            where: { verification_status: 'approved' },
+            select: { university: true },
         });
 
-        // Get redemption counts per university via raw query for performance
-        const redemptionCounts: any[] = await this.prisma.$queryRaw`
-            SELECT TRIM(LOWER(s.university)) as uni_key, CAST(COUNT(r.id) AS INTEGER) as redemption_count
-            FROM redemptions r
-            JOIN students s ON r.student_id = s.id
-            WHERE s.university IS NOT NULL
-            GROUP BY TRIM(LOWER(s.university))
-        `;
+        const groupingMap = new Map<string, number>();
+        rawUniversities.forEach(s => {
+            let key = s.university;
+            if (groupBy === 'city') {
+                const parts = s.university.split(',');
+                key = parts.length > 1 ? parts[parts.length - 1].trim() : 'Other';
+            }
+            groupingMap.set(key, (groupingMap.get(key) || 0) + 1);
+        });
+
+        const universities = Array.from(groupingMap.entries())
+            .map(([university, count]) => ({ university, studentCount: count }))
+            .sort((a, b) => b.studentCount - a.studentCount);
+
+        // Get redemption counts per university/city via raw query
+        let redemptionCounts: any[];
+        if (groupBy === 'city') {
+            redemptionCounts = await this.prisma.$queryRaw`
+                SELECT TRIM(REVERSE(SPLIT_PART(REVERSE(s.university), ',', 1))) as city, CAST(COUNT(r.id) AS INTEGER) as redemption_count
+                FROM redemptions r
+                JOIN students s ON r.student_id = s.id
+                WHERE s.university IS NOT NULL
+                GROUP BY city
+            `;
+        } else {
+            redemptionCounts = await this.prisma.$queryRaw`
+                SELECT TRIM(LOWER(s.university)) as uni_key, CAST(COUNT(r.id) AS INTEGER) as redemption_count
+                FROM redemptions r
+                JOIN students s ON r.student_id = s.id
+                WHERE s.university IS NOT NULL
+                GROUP BY TRIM(LOWER(s.university))
+            `;
+        }
 
         const redemptionMap = new Map<string, number>();
         redemptionCounts.forEach(rc => {
-            redemptionMap.set(rc.uni_key, rc.redemption_count || 0);
+            const key = groupBy === 'city' ? rc.city : rc.uni_key;
+            redemptionMap.set(key?.trim().toLowerCase(), rc.redemption_count || 0);
         });
 
-        const totalStudents = universities.reduce(
-            (sum, u) => sum + u._count.id,
-            0,
-        );
+        const totalStudents = universities.reduce((sum, u) => sum + u.studentCount, 0);
 
         return universities.map((u) => ({
             university: u.university,
-            studentCount: u._count.id,
+            studentCount: u.studentCount,
             redemptionCount: redemptionMap.get(u.university?.trim().toLowerCase()) || 0,
-            percentage:
-                totalStudents > 0
-                    ? Math.round((u._count.id / totalStudents) * 100)
-                    : 0,
-            engagementScore: u._count.id > 0 
-                ? Number(((redemptionMap.get(u.university) || 0) / u._count.id).toFixed(2)) 
+            percentage: totalStudents > 0 ? Math.round((u.studentCount / totalStudents) * 100) : 0,
+            engagementScore: u.studentCount > 0 
+                ? Number(((redemptionMap.get(u.university?.trim().toLowerCase()) || 0) / u.studentCount).toFixed(2)) 
                 : 0,
         }));
     }
