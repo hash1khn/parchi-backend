@@ -400,17 +400,9 @@ export class StudentsService {
     // Normalize parchi ID (uppercase, trim)
     const inputParchiId = parchiId.trim().toUpperCase();
     
-    // Prepare search variants to support both legacy numeric and new PK- prefixed IDs
-    const parchiIdVariants = [inputParchiId];
-    if (inputParchiId.startsWith('PK-')) {
-      parchiIdVariants.push(inputParchiId.replace('PK-', ''));
-    } else {
-      parchiIdVariants.push(`PK-${inputParchiId}`);
-    }
-
     // Get student first (required for subsequent queries)
-    const student = await this.prisma.students.findFirst({
-      where: { parchi_id: { in: parchiIdVariants } },
+    const student = await this.prisma.students.findUnique({
+      where: { parchi_id: inputParchiId },
       select: {
         id: true,
         parchi_id: true,

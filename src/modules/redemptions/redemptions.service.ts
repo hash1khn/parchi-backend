@@ -122,14 +122,6 @@ export class RedemptionsService {
       );
     }
 
-    // Prepare search variants to support both legacy numeric and new PK- prefixed IDs
-    const parchiIdVariants = [inputParchiId];
-    if (inputParchiId.startsWith('PK-')) {
-      parchiIdVariants.push(inputParchiId.replace('PK-', ''));
-    } else {
-      parchiIdVariants.push(`PK-${inputParchiId}`);
-    }
-
     // ── Pre-flight reads (outside transaction) ────────────────────────────
     // Performing these reads before opening the transaction keeps the
     // transaction window as short as possible, reducing lock-hold time and
@@ -137,8 +129,8 @@ export class RedemptionsService {
     // Any of these throw early and cheaply before a transaction is opened.
 
     const [student, branch, offer] = await Promise.all([
-      this.prisma.students.findFirst({
-        where: { parchi_id: { in: parchiIdVariants } },
+      this.prisma.students.findUnique({
+        where: { parchi_id: inputParchiId },
         include: {
           users: { select: { id: true, is_active: true } },
         },
@@ -588,21 +580,13 @@ export class RedemptionsService {
       );
     }
 
-    // Prepare search variants
-    const parchiIdVariants = [inputParchiId];
-    if (inputParchiId.startsWith('PK-')) {
-      parchiIdVariants.push(inputParchiId.replace('PK-', ''));
-    } else {
-      parchiIdVariants.push(`PK-${inputParchiId}`);
-    }
-
     // Verify offer exists, student exists, and get branch details for notification
     const [offer, student, branch] = await Promise.all([
       this.prisma.offers.findUnique({
         where: { id: rejectDto.offerId },
       }),
-      this.prisma.students.findFirst({
-        where: { parchi_id: { in: parchiIdVariants } },
+      this.prisma.students.findUnique({
+        where: { parchi_id: inputParchiId },
         select: {
           id: true,
           parchi_id: true,
