@@ -68,6 +68,7 @@ export interface StudentListResponse {
   cnic?: string;
   dateOfBirth?: Date | null;
   isActive: boolean;
+  platform?: string | null;
 }
 
 export interface StudentKycResponse {
@@ -99,6 +100,7 @@ export interface StudentKycResponse {
   isActive: boolean;
   profilePicture?: string | null;
   verificationSelfiePath?: string | null;
+  platform?: string | null;
   kyc?: {
     id: string;
     studentIdCardFrontPath: string;
@@ -1101,6 +1103,7 @@ export class StudentsService {
       cnic: student.cnic,
       dateOfBirth: student.date_of_birth,
       isActive: student.users.is_active ?? false,
+      platform: student.platform,
     };
   }
 
@@ -1163,6 +1166,7 @@ export class StudentsService {
       isActive: student.users.is_active ?? false,
       profilePicture: student.profile_picture ?? null,
       verificationSelfiePath: student.verification_selfie_path ?? null,
+      platform: student.platform,
     };
   }
 
@@ -1225,6 +1229,7 @@ export class StudentsService {
       isActive: student.users.is_active ?? false,
       profilePicture: student.profile_picture ?? null,
       verificationSelfiePath: student.verification_selfie_path ?? null,
+      platform: student.platform,
     };
   }
 

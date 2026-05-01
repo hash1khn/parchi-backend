@@ -52,4 +52,8 @@ export class StudentSignupWithFilesDto {
   @IsNotEmpty()
   @IsString()
   university: string;
+
+  @IsOptional()
+  @IsString()
+  platform?: string;
 }
