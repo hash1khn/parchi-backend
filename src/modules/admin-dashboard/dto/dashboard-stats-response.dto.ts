@@ -28,6 +28,8 @@ export interface UniversityStats {
   university: string;
   studentCount: number;
   percentage: number;
+  redemptionCount: number;
+  engagementScore: number;
 }
 
 export interface FunnelStat {

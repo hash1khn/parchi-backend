@@ -264,34 +264,52 @@ export class AdminDashboardService {
     }
 
     private async getUniversityDistribution() {
-        // Group students by university
+        // Group students by university for counts
         const universities = await this.prisma.students.groupBy({
             by: ['university'],
             where: {
                 verification_status: 'approved',
             },
             _count: {
-                university: true,
+                id: true,
             },
             orderBy: {
                 _count: {
-                    university: 'desc',
+                    id: 'desc',
                 },
             },
         });
 
+        // Get redemption counts per university via raw query for performance
+        const redemptionCounts: any[] = await this.prisma.$queryRaw`
+            SELECT TRIM(LOWER(s.university)) as uni_key, CAST(COUNT(r.id) AS INTEGER) as redemption_count
+            FROM redemptions r
+            JOIN students s ON r.student_id = s.id
+            WHERE s.university IS NOT NULL
+            GROUP BY TRIM(LOWER(s.university))
+        `;
+
+        const redemptionMap = new Map<string, number>();
+        redemptionCounts.forEach(rc => {
+            redemptionMap.set(rc.uni_key, rc.redemption_count || 0);
+        });
+
         const totalStudents = universities.reduce(
-            (sum, u) => sum + u._count.university,
+            (sum, u) => sum + u._count.id,
             0,
         );
 
         return universities.map((u) => ({
             university: u.university,
-            studentCount: u._count.university,
+            studentCount: u._count.id,
+            redemptionCount: redemptionMap.get(u.university?.trim().toLowerCase()) || 0,
             percentage:
                 totalStudents > 0
-                    ? Math.round((u._count.university / totalStudents) * 100)
+                    ? Math.round((u._count.id / totalStudents) * 100)
                     : 0,
+            engagementScore: u._count.id > 0 
+                ? Number(((redemptionMap.get(u.university) || 0) / u._count.id).toFixed(2)) 
+                : 0,
         }));
     }
 
