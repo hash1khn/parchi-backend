@@ -398,10 +398,19 @@ export class StudentsService {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
     // Normalize parchi ID (uppercase, trim)
-    const normalizedParchiId = parchiId.trim().toUpperCase();
+    const inputParchiId = parchiId.trim().toUpperCase();
+    
+    // Prepare search variants to support both legacy numeric and new PK- prefixed IDs
+    const parchiIdVariants = [inputParchiId];
+    if (inputParchiId.startsWith('PK-')) {
+      parchiIdVariants.push(inputParchiId.replace('PK-', ''));
+    } else {
+      parchiIdVariants.push(`PK-${inputParchiId}`);
+    }
+
     // Get student first (required for subsequent queries)
-    const student = await this.prisma.students.findUnique({
-      where: { parchi_id: normalizedParchiId },
+    const student = await this.prisma.students.findFirst({
+      where: { parchi_id: { in: parchiIdVariants } },
       select: {
         id: true,
         parchi_id: true,

@@ -114,12 +114,20 @@ export class RedemptionsService {
     const branchId = currentUser.branch_id;
 
     // Normalize parchi ID (uppercase, trim)
-    const normalizedParchiId = createDto.parchiId.trim().toUpperCase();
+    const inputParchiId = createDto.parchiId.trim().toUpperCase();
 
-    if (!normalizedParchiId || !normalizedParchiId.startsWith('PK-')) {
+    if (!inputParchiId) {
       throw new BadRequestException(
         API_RESPONSE_MESSAGES.REDEMPTION.INVALID_PARCHI_ID,
       );
+    }
+
+    // Prepare search variants to support both legacy numeric and new PK- prefixed IDs
+    const parchiIdVariants = [inputParchiId];
+    if (inputParchiId.startsWith('PK-')) {
+      parchiIdVariants.push(inputParchiId.replace('PK-', ''));
+    } else {
+      parchiIdVariants.push(`PK-${inputParchiId}`);
     }
 
     // ── Pre-flight reads (outside transaction) ────────────────────────────
@@ -129,8 +137,8 @@ export class RedemptionsService {
     // Any of these throw early and cheaply before a transaction is opened.
 
     const [student, branch, offer] = await Promise.all([
-      this.prisma.students.findUnique({
-        where: { parchi_id: normalizedParchiId },
+      this.prisma.students.findFirst({
+        where: { parchi_id: { in: parchiIdVariants } },
         include: {
           users: { select: { id: true, is_active: true } },
         },
@@ -412,28 +420,26 @@ export class RedemptionsService {
               last_redemption_at: now,
             },
           }),
-          ...(branch.merchants.merchant_branches || []).map((mb) =>
-            tx.student_branch_stats.upsert({
-              where: {
-                student_id_branch_id: {
-                  student_id: student.id,
-                  branch_id: mb.id,
-                },
-              },
-              update: {
-                redemption_count: { increment: 1 },
-                total_savings: { increment: totalSavings },
-                last_redemption_at: now,
-              },
-              create: {
+          tx.student_branch_stats.upsert({
+            where: {
+              student_id_branch_id: {
                 student_id: student.id,
-                branch_id: mb.id,
-                redemption_count: 1,
-                total_savings: totalSavings,
-                last_redemption_at: now,
+                branch_id: branchId,
               },
-            })
-          ),
+            },
+            update: {
+              redemption_count: { increment: 1 },
+              total_savings: { increment: totalSavings },
+              last_redemption_at: now,
+            },
+            create: {
+              student_id: student.id,
+              branch_id: branchId,
+              redemption_count: 1,
+              total_savings: totalSavings,
+              last_redemption_at: now,
+            },
+          }),
           (tx as any).student_offer_stats.upsert({
             where: {
               student_id_offer_id: {
@@ -482,7 +488,7 @@ export class RedemptionsService {
         });
       },
       {
-        timeout: 10000, // reduced from 20s — reads are no longer inside, so writes are fast
+        timeout: 30000, // increased to 30s to handle peak loads and complex loyalty calculations
       },
     );
 
@@ -574,12 +580,20 @@ export class RedemptionsService {
     const branchId = currentUser.branch_id;
 
     // Normalize parchi ID (uppercase, trim)
-    const normalizedParchiId = rejectDto.parchiId.trim().toUpperCase();
+    const inputParchiId = rejectDto.parchiId.trim().toUpperCase();
 
-    if (!normalizedParchiId || !normalizedParchiId.startsWith('PK-')) {
+    if (!inputParchiId) {
       throw new BadRequestException(
         API_RESPONSE_MESSAGES.REDEMPTION.INVALID_PARCHI_ID,
       );
+    }
+
+    // Prepare search variants
+    const parchiIdVariants = [inputParchiId];
+    if (inputParchiId.startsWith('PK-')) {
+      parchiIdVariants.push(inputParchiId.replace('PK-', ''));
+    } else {
+      parchiIdVariants.push(`PK-${inputParchiId}`);
     }
 
     // Verify offer exists, student exists, and get branch details for notification
@@ -587,8 +601,8 @@ export class RedemptionsService {
       this.prisma.offers.findUnique({
         where: { id: rejectDto.offerId },
       }),
-      this.prisma.students.findUnique({
-        where: { parchi_id: normalizedParchiId },
+      this.prisma.students.findFirst({
+        where: { parchi_id: { in: parchiIdVariants } },
         select: {
           id: true,
           parchi_id: true,
