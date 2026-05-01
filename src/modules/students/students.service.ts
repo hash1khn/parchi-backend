@@ -1353,6 +1353,7 @@ export class StudentsService {
           last_name: true,
           university: true,
           total_redemptions: true,
+          profile_picture: true,
         },
         orderBy: [
           { total_redemptions: 'desc' },
@@ -1372,6 +1373,7 @@ export class StudentsService {
       parchiId: student.parchi_id,
       university: student.university,
       redemptions: student.total_redemptions || 0,
+      profilePicture: student.profile_picture ?? null,
     }));
 
     return {
