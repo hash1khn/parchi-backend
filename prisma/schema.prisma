@@ -697,6 +697,23 @@ model system_logs {
   @@schema("public")
 }
 
+model competitor_benchmarks {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  competitor_name String   @db.VarChar(100)
+  metric_name     String   @db.VarChar(100)
+  metric_value    Decimal  @db.Decimal(18, 2)
+  recorded_at     DateTime @default(now()) @db.Timestamptz(6)
+  notes           String?
+  source_url      String?  @db.VarChar(500)
+  created_by      String?  @db.Uuid
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([competitor_name], map: "idx_comp_bench_competitor")
+  @@index([metric_name], map: "idx_comp_bench_metric")
+  @@index([recorded_at(sort: Desc)], map: "idx_comp_bench_recorded_at")
+  @@schema("public")
+}
+
 model public_users {
   id                      String                    @id @db.Uuid
   email                   String                    @unique @db.VarChar(255)

@@ -1,13 +1,16 @@
 import {
     Controller,
     Get,
+    Post,
+    Delete,
+    Body,
     HttpCode,
     HttpStatus,
     UseGuards,
     Query,
     Param,
-
 } from '@nestjs/common';
+import { CurrentUser } from '../../decorators/current-user.decorator';
 import { AdminDashboardService } from './admin-dashboard.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -120,5 +123,51 @@ export class AdminDashboardController {
     async getRedemptionAnalytics() {
         const data = await this.adminDashboardService.getRedemptionAnalytics();
         return createApiResponse(data, 'Redemption analytics retrieved successfully');
+    }
+
+    @Get('brand-portfolio')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async getBrandPortfolioHealth() {
+        const data = await this.adminDashboardService.getBrandPortfolioHealth();
+        return createApiResponse(data, 'Brand portfolio health retrieved successfully');
+    }
+
+    @Get('competitor-benchmarks')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async getCompetitorBenchmarks() {
+        const data = await this.adminDashboardService.getCompetitorBenchmarks();
+        return createApiResponse(data, 'Competitor benchmarks retrieved successfully');
+    }
+
+    @Post('competitor-benchmarks')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.CREATED)
+    async addCompetitorBenchmark(
+        @Body() body: {
+            competitorName: string;
+            metricName: string;
+            metricValue: number;
+            recordedAt?: string;
+            notes?: string;
+            sourceUrl?: string;
+        },
+        @CurrentUser() user: { id: string },
+    ) {
+        const data = await this.adminDashboardService.upsertCompetitorBenchmark(body, user.id);
+        return createApiResponse(data, 'Competitor benchmark entry added successfully');
+    }
+
+    @Delete('competitor-benchmarks/:id')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async deleteCompetitorBenchmark(@Param('id') id: string) {
+        await this.adminDashboardService.deleteCompetitorBenchmark(id);
+        return createApiResponse(null, 'Competitor benchmark entry deleted successfully');
     }
 }

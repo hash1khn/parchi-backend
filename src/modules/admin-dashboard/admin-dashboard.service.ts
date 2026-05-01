@@ -1,7 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminDashboardStatsResponse } from './dto/dashboard-stats-response.dto';
 import { RedemptionAnalyticsResponse } from './dto/redemption-analytics-response.dto';
+import {
+    BrandPortfolioHealthResponse,
+    CompetitorBenchmarksResponse,
+    UpsertCompetitorBenchmarkDto,
+} from './dto/brand-portfolio-response.dto';
 import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
@@ -737,5 +742,353 @@ export class AdminDashboardService {
             repeatRates,
             fifthBonusStats,
         };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Brand Partner & Portfolio Health
+    // ─────────────────────────────────────────────────────────────────────────
+
+    async getBrandPortfolioHealth(): Promise<BrandPortfolioHealthResponse> {
+        const [
+            weeklyTrendRows,
+            reachRows,
+            concentrationRows,
+            dryRows,
+        ] = await Promise.all([
+            // 1. Rolling 4-week redemptions per brand per week
+            this.prisma.$queryRaw<Array<{
+                merchant_id:      string;
+                business_name:    string;
+                logo_path:        string | null;
+                category:         string | null;
+                week_start:       string;
+                redemption_count: number;
+            }>>`
+                SELECT
+                    m.id                                                                   AS merchant_id,
+                    m.business_name,
+                    m.logo_path,
+                    m.category,
+                    TO_CHAR(
+                        DATE_TRUNC('week', r.created_at AT TIME ZONE 'Asia/Karachi'),
+                        'YYYY-MM-DD'
+                    )                                                                      AS week_start,
+                    COUNT(r.id)::int                                                       AS redemption_count
+                FROM merchants m
+                JOIN merchant_branches mb ON mb.merchant_id = m.id
+                JOIN redemptions r         ON r.branch_id   = mb.id
+                WHERE m.verification_status = 'approved'
+                  AND r.verified_by IS NOT NULL
+                  AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
+                  AND r.created_at >= NOW() - INTERVAL '4 weeks'
+                GROUP BY m.id, m.business_name, m.logo_path, m.category, week_start
+                ORDER BY m.business_name, week_start
+            `,
+
+            // 2. Unique redeemers + total redemptions per brand (all-time)
+            this.prisma.$queryRaw<Array<{
+                merchant_id:       string;
+                business_name:     string;
+                logo_path:         string | null;
+                category:          string | null;
+                unique_redeemers:  number;
+                total_redemptions: number;
+            }>>`
+                SELECT
+                    m.id                                    AS merchant_id,
+                    m.business_name,
+                    m.logo_path,
+                    m.category,
+                    COUNT(DISTINCT r.student_id)::int       AS unique_redeemers,
+                    COUNT(r.id)::int                        AS total_redemptions
+                FROM merchants m
+                LEFT JOIN merchant_branches mb ON mb.merchant_id = m.id
+                LEFT JOIN redemptions r
+                    ON  r.branch_id   = mb.id
+                    AND r.verified_by IS NOT NULL
+                    AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
+                WHERE m.verification_status = 'approved'
+                  AND m.is_active = true
+                GROUP BY m.id, m.business_name, m.logo_path, m.category
+                ORDER BY unique_redeemers DESC
+            `,
+
+            // 3. Brand concentration — share of total redemptions per brand
+            this.prisma.$queryRaw<Array<{
+                merchant_id:       string;
+                business_name:     string;
+                redemption_count:  number;
+                share_pct:         number;
+            }>>`
+                WITH brand_totals AS (
+                    SELECT
+                        m.id               AS merchant_id,
+                        m.business_name,
+                        COUNT(r.id)::int   AS redemption_count
+                    FROM merchants m
+                    JOIN merchant_branches mb ON mb.merchant_id = m.id
+                    JOIN redemptions r         ON r.branch_id   = mb.id
+                    WHERE m.verification_status = 'approved'
+                      AND r.verified_by IS NOT NULL
+                      AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
+                    GROUP BY m.id, m.business_name
+                ),
+                grand AS (
+                    SELECT SUM(redemption_count) AS total FROM brand_totals
+                )
+                SELECT
+                    bt.merchant_id,
+                    bt.business_name,
+                    bt.redemption_count,
+                    ROUND(bt.redemption_count * 100.0 / NULLIF(g.total, 0), 1)::float AS share_pct
+                FROM brand_totals bt
+                CROSS JOIN grand g
+                ORDER BY bt.redemption_count DESC
+            `,
+
+            // 4. Dry partner flags — active approved merchants with low/zero recent activity
+            this.prisma.$queryRaw<Array<{
+                merchant_id:            string;
+                business_name:          string;
+                logo_path:              string | null;
+                category:               string | null;
+                redemptions_last_7:     number;
+                redemptions_last_30:    number;
+                last_redemption_at:     Date | null;
+            }>>`
+                SELECT
+                    m.id                                                              AS merchant_id,
+                    m.business_name,
+                    m.logo_path,
+                    m.category,
+                    COALESCE(SUM(
+                        CASE WHEN r.created_at >= NOW() - INTERVAL '7 days'  THEN 1 ELSE 0 END
+                    ), 0)::int                                                        AS redemptions_last_7,
+                    COALESCE(SUM(
+                        CASE WHEN r.created_at >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END
+                    ), 0)::int                                                        AS redemptions_last_30,
+                    MAX(r.created_at)                                                AS last_redemption_at
+                FROM merchants m
+                LEFT JOIN merchant_branches mb ON mb.merchant_id = m.id
+                LEFT JOIN redemptions r
+                    ON  r.branch_id   = mb.id
+                    AND r.verified_by IS NOT NULL
+                    AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
+                WHERE m.verification_status = 'approved'
+                  AND m.is_active = true
+                GROUP BY m.id, m.business_name, m.logo_path, m.category
+                HAVING
+                    COALESCE(SUM(
+                        CASE WHEN r.created_at >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END
+                    ), 0) = 0
+                    OR COALESCE(SUM(
+                        CASE WHEN r.created_at >= NOW() - INTERVAL '7 days'  THEN 1 ELSE 0 END
+                    ), 0) < 3
+                ORDER BY redemptions_last_30 ASC, m.business_name
+            `,
+        ]);
+
+        // ── 1. Build brand trends ─────────────────────────────────────────
+        const trendMap = new Map<string, {
+            merchantId: string;
+            businessName: string;
+            logoPath: string | null;
+            category: string | null;
+            weeks: Map<string, number>;
+        }>();
+
+        for (const row of weeklyTrendRows) {
+            if (!trendMap.has(row.merchant_id)) {
+                trendMap.set(row.merchant_id, {
+                    merchantId:   row.merchant_id,
+                    businessName: row.business_name,
+                    logoPath:     row.logo_path,
+                    category:     row.category,
+                    weeks:        new Map(),
+                });
+            }
+            trendMap.get(row.merchant_id)!.weeks.set(row.week_start, Number(row.redemption_count));
+        }
+
+        const brandTrends = Array.from(trendMap.values()).map((m) => {
+            const sortedWeeks = Array.from(m.weeks.entries())
+                .sort(([a], [b]) => a.localeCompare(b));
+            const weeklyTrend = sortedWeeks.map(([weekStart, redemptionCount]) => ({
+                weekStart,
+                redemptionCount,
+            }));
+            const total = weeklyTrend.reduce((s, w) => s + w.redemptionCount, 0);
+
+            let trendDirection: 'up' | 'down' | 'flat' = 'flat';
+            if (weeklyTrend.length >= 2) {
+                const last  = weeklyTrend[weeklyTrend.length - 1].redemptionCount;
+                const prev  = weeklyTrend[weeklyTrend.length - 2].redemptionCount;
+                if (last > prev)      trendDirection = 'up';
+                else if (last < prev) trendDirection = 'down';
+            }
+
+            return {
+                merchantId:     m.merchantId,
+                businessName:   m.businessName,
+                logoPath:       m.logoPath,
+                category:       m.category,
+                weeklyTrend,
+                totalLast4Weeks: total,
+                trendDirection,
+            };
+        }).sort((a, b) => b.totalLast4Weeks - a.totalLast4Weeks);
+
+        // ── 2. Brand reach ────────────────────────────────────────────────
+        const brandReach = reachRows.map((r) => ({
+            merchantId:       r.merchant_id,
+            businessName:     r.business_name,
+            logoPath:         r.logo_path,
+            category:         r.category,
+            uniqueRedeemers:  Number(r.unique_redeemers),
+            totalRedemptions: Number(r.total_redemptions),
+        }));
+
+        // ── 3. Concentration ──────────────────────────────────────────────
+        const concBrands = concentrationRows.map((r) => ({
+            merchantId:      r.merchant_id,
+            businessName:    r.business_name,
+            redemptionCount: Number(r.redemption_count),
+            sharePct:        Number(r.share_pct),
+        }));
+
+        const totalRedemptions = concBrands.reduce((s, b) => s + b.redemptionCount, 0);
+        const top3SharePct  = concBrands.slice(0, 3).reduce((s, b) => s + b.sharePct, 0);
+        const top5SharePct  = concBrands.slice(0, 5).reduce((s, b) => s + b.sharePct, 0);
+        const hhi = concBrands.reduce((s, b) => s + Math.pow(b.sharePct, 2), 0);
+
+        const concentration = {
+            totalRedemptions,
+            top3SharePct: Math.round(top3SharePct * 10) / 10,
+            top5SharePct: Math.round(top5SharePct * 10) / 10,
+            hhi:          Math.round(hhi),
+            brands:       concBrands,
+        };
+
+        // ── 4. Dry partners ───────────────────────────────────────────────
+        const dryPartners = dryRows.map((r) => ({
+            merchantId:           r.merchant_id,
+            businessName:         r.business_name,
+            logoPath:             r.logo_path,
+            category:             r.category,
+            redemptionsLast7Days: Number(r.redemptions_last_7),
+            redemptionsLast30Days: Number(r.redemptions_last_30),
+            lastRedemptionAt:     r.last_redemption_at
+                ? (r.last_redemption_at as Date).toISOString()
+                : null,
+            severity: Number(r.redemptions_last_30) === 0
+                ? ('zero' as const)
+                : ('low'  as const),
+        }));
+
+        return { brandTrends, brandReach, concentration, dryPartners };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Competitor Benchmarking
+    // ─────────────────────────────────────────────────────────────────────────
+
+    async getCompetitorBenchmarks(): Promise<CompetitorBenchmarksResponse> {
+        const entries = await this.prisma.competitor_benchmarks.findMany({
+            orderBy: [{ competitor_name: 'asc' }, { metric_name: 'asc' }, { recorded_at: 'desc' }],
+        });
+
+        // Build latest-per-competitor+metric map for the comparison table
+        const latestMap = new Map<string, { competitorName: string; metricName: string; metricValue: number }>();
+        for (const e of entries) {
+            const key = `${e.competitor_name}::${e.metric_name}`;
+            if (!latestMap.has(key)) {
+                latestMap.set(key, {
+                    competitorName: e.competitor_name,
+                    metricName:     e.metric_name,
+                    metricValue:    Number(e.metric_value),
+                });
+            }
+        }
+
+        // Compute Parchi live values for known metrics
+        const [totalRedemptionsResult, activeStudentsResult, activeMerchantsResult] = await Promise.all([
+            this.prisma.redemptions.count({
+                where: {
+                    verified_by: { not: null },
+                    NOT: { notes: { startsWith: 'REJECTED' } },
+                },
+            }),
+            this.prisma.students.count({ where: { verification_status: 'approved', users: { is_active: true } } }),
+            this.prisma.merchants.count({ where: { verification_status: 'approved', is_active: true } }),
+        ]);
+
+        const parchiValues: Record<string, number> = {
+            total_redemptions: totalRedemptionsResult,
+            active_students:   activeStudentsResult,
+            active_brands:     activeMerchantsResult,
+        };
+
+        // Group competitor latest values by metric
+        const metricGroups = new Map<string, Array<{ name: string; value: number }>>();
+        for (const v of latestMap.values()) {
+            if (!metricGroups.has(v.metricName)) metricGroups.set(v.metricName, []);
+            metricGroups.get(v.metricName)!.push({ name: v.competitorName, value: v.metricValue });
+        }
+
+        const comparison = Array.from(metricGroups.entries()).map(([metricName, competitors]) => {
+            const parchiValue = parchiValues[metricName] ?? 0;
+            return {
+                metricName,
+                parchiValue,
+                competitors: competitors.map((c) => {
+                    const delta = parchiValue - c.value;
+                    return {
+                        name:           c.name,
+                        value:          c.value,
+                        delta:          Math.abs(delta),
+                        deltaDirection: delta > 0
+                            ? ('ahead'  as const)
+                            : delta < 0
+                            ? ('behind' as const)
+                            : ('tied'   as const),
+                    };
+                }),
+            };
+        });
+
+        return {
+            entries: entries.map((e) => ({
+                id:             e.id,
+                competitorName: e.competitor_name,
+                metricName:     e.metric_name,
+                metricValue:    Number(e.metric_value),
+                recordedAt:     e.recorded_at.toISOString(),
+                notes:          e.notes ?? null,
+                sourceUrl:      e.source_url ?? null,
+            })),
+            comparison,
+        };
+    }
+
+    async upsertCompetitorBenchmark(
+        dto: UpsertCompetitorBenchmarkDto,
+        adminUserId: string,
+    ): Promise<{ id: string }> {
+        const created = await this.prisma.competitor_benchmarks.create({
+            data: {
+                competitor_name: dto.competitorName,
+                metric_name:     dto.metricName,
+                metric_value:    dto.metricValue,
+                recorded_at:     dto.recordedAt ? new Date(dto.recordedAt) : new Date(),
+                notes:           dto.notes     ?? null,
+                source_url:      dto.sourceUrl ?? null,
+                created_by:      adminUserId,
+            },
+        });
+        return { id: created.id };
+    }
+
+    async deleteCompetitorBenchmark(id: string): Promise<void> {
+        await this.prisma.competitor_benchmarks.delete({ where: { id } });
     }
 }
