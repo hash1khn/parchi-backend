@@ -762,27 +762,8 @@ export class AuthService {
         }
       }
 
-      // Check if CNIC already exists
-      const existingCnicStudent = await this.prisma.students.findUnique({
-        where: { cnic: signupDto.cnic },
-        include: {
-          users: true,
-          student_kyc: { orderBy: { submitted_at: 'desc' }, take: 1 },
-        },
-      });
-
-      if (existingCnicStudent) {
-        if (existingCnicStudent.verification_status === 'rejected') {
-          await this.handleRejectedStudentCleanup(
-            existingCnicStudent,
-            existingCnicStudent.users,
-          );
-        } else {
-          throw new ConflictException('A student with this CNIC already exists.');
-        }
-      }
-
       // 2. Validate image URLs format
+
       const urlPattern = /^https?:\/\/.+/;
       if (
         !urlPattern.test(signupDto.studentIdCardFrontUrl) ||
@@ -849,10 +830,11 @@ export class AuthService {
             last_name: signupDto.lastName,
             university: signupDto.university,
             verification_status: 'pending',
-            cnic: signupDto.cnic,
+            educational_grade: signupDto.educationalGrade,
             date_of_birth: new Date(signupDto.dateOfBirth),
           },
         });
+
 
         const studentKyc = await tx.student_kyc.create({
           data: {

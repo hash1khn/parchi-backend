@@ -670,7 +670,11 @@ model students {
   cnic                     String?                  @unique @db.VarChar(13)
   date_of_birth            DateTime?                @db.Date
   has_seen_app_intro       Boolean?                 @default(false)
+  educational_grade        String?                  @db.VarChar(50)
+
   redemptions              redemptions[]
+
+
   student_branch_stats     student_branch_stats[]
   student_kyc              student_kyc[]
   student_merchant_stats   student_merchant_stats[]

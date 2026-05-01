@@ -26,6 +26,7 @@ export class AdminDashboardService {
                 funnelStats,
                 onboardingDropoff,
                 platformDistribution,
+                kycPerformance,
             ] = await Promise.all([
                 this.getPlatformOverview(startDate, endDate).catch(e => { console.error('PlatformOverview Error:', e); throw e; }),
                 this.getUserManagement().catch(e => { console.error('UserManagement Error:', e); throw e; }),
@@ -45,7 +46,12 @@ export class AdminDashboardService {
                     console.error('Analytics Error (Platform):', e);
                     return [];
                 }),
+                this.getKycPerformance().catch(e => {
+                    console.error('KycPerformance Error:', e);
+                    return { medianDaysToFirstRedemption: 0 };
+                }),
             ]);
+
 
 
 
@@ -59,7 +65,9 @@ export class AdminDashboardService {
                 funnelStats,
                 onboardingDropoff,
                 platformDistribution,
+                kycPerformance,
             };
+
         } catch (error) {
             console.error('CRITICAL: getDashboardStats failed:', error);
             throw error;
@@ -490,5 +498,50 @@ export class AdminDashboardService {
             payableAmount: Number(r.merchant_branches?.merchants?.redemption_fee || 0),
             status: r.verified_by ? 'Verified' : 'Pending',
         }));
+    }
+
+    private async getKycPerformance() {
+        // Fetch only the necessary fields for calculation to keep it fast
+        const studentsWithRedemptions = await this.prisma.students.findMany({
+            where: {
+                verification_status: 'approved',
+                redemptions: { some: {} },
+                verified_at: { not: null },
+            },
+            select: {
+                verified_at: true,
+                redemptions: {
+                    orderBy: { created_at: 'asc' },
+                    take: 1,
+                    select: { created_at: true },
+                },
+            },
+        });
+
+        if (studentsWithRedemptions.length === 0) {
+            return { medianDaysToFirstRedemption: 0 };
+        }
+
+        const daysToRedeem = studentsWithRedemptions
+            .map((s) => {
+                const firstRedemption = s.redemptions[0];
+                if (!s.verified_at || !firstRedemption || !firstRedemption.created_at) return null;
+                const diffMs = firstRedemption.created_at.getTime() - s.verified_at.getTime();
+                return diffMs / (1000 * 60 * 60 * 24);
+            })
+            .filter((d): d is number => d !== null && d >= 0)
+            .sort((a, b) => a - b);
+
+        if (daysToRedeem.length === 0) {
+            return { medianDaysToFirstRedemption: 0 };
+        }
+
+        const mid = Math.floor(daysToRedeem.length / 2);
+        const median =
+            daysToRedeem.length % 2 !== 0
+                ? daysToRedeem[mid]
+                : (daysToRedeem[mid - 1] + daysToRedeem[mid]) / 2;
+
+        return { medianDaysToFirstRedemption: Math.round(median * 10) / 10 };
     }
 }

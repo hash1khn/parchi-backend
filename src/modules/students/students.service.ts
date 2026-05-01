@@ -827,7 +827,24 @@ export class StudentsService {
     approveRejectDto: ApproveRejectStudentDto,
     reviewerId: string,
   ): Promise<StudentKycResponse> {
+    if (approveRejectDto.action === 'approve') {
+      if (!approveRejectDto.cnic) {
+        throw new BadRequestException('CNIC is required for approval');
+      }
+      const cnicDigits = approveRejectDto.cnic.replace(/\D/g, '');
+      if (cnicDigits.length !== 13) {
+        throw new BadRequestException('CNIC must be exactly 13 digits');
+      }
+      const existing = await this.prisma.students.findFirst({
+        where: { cnic: approveRejectDto.cnic, NOT: { id } },
+      });
+      if (existing) {
+        throw new ConflictException('A student with this CNIC already exists');
+      }
+    }
+
     const student = await this.prisma.students.findUnique({
+
       where: { id },
       include: {
         users: {
@@ -896,10 +913,13 @@ export class StudentsService {
               : null,
           // Save selfie image from KYC before deleting it
           ...(selfiePath && { verification_selfie_path: selfiePath }),
-          // Assign Parchi ID if newly generated
-          ...(parchiIdToUpdate && { parchi_id: parchiIdToUpdate }),
-        },
-      });
+      // Assign Parchi ID if newly generated
+      ...(parchiIdToUpdate && { parchi_id: parchiIdToUpdate }),
+      // Update CNIC from admin input
+      ...(approveRejectDto.action === 'approve' && approveRejectDto.cnic && { cnic: approveRejectDto.cnic }),
+    },
+  });
+
 
       // 2. Update user is_active status
       await tx.public_users.update({

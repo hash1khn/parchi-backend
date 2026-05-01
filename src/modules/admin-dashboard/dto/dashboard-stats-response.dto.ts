@@ -50,5 +50,9 @@ export interface AdminDashboardStatsResponse {
   funnelStats?: FunnelStat[];
   onboardingDropoff?: FunnelStat[];
   platformDistribution?: PlatformStat[];
+  kycPerformance?: {
+    medianDaysToFirstRedemption: number;
+  };
+
 }
 

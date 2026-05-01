@@ -11,5 +11,10 @@ export class ApproveRejectStudentDto {
   @IsOptional()
   @IsString()
   reviewNotes?: string;
+
+  @IsOptional()
+  @IsString()
+  cnic?: string;
+
 }
 
