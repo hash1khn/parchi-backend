@@ -659,8 +659,6 @@ model students {
   is_founders_club         Boolean?                 @default(false)
   total_savings            Decimal?                 @default(0.00) @db.Decimal(12, 2)
   total_redemptions        Int?                     @default(0)
-  lifetime_redemptions     Int?                     @default(0)
-  last_redemption_at       DateTime?                @db.Timestamptz(6)
   verification_status      verification_status?     @default(pending)
   verified_at              DateTime?                @db.Timestamptz(6)
   verification_expires_at  DateTime?                @db.Timestamptz(6)
@@ -676,6 +674,8 @@ model students {
   platform                 String?                  @db.VarChar(20)
   institute_id             String?                  @db.Uuid
   student_id_number        String?                  @db.VarChar(100)
+  last_redemption_at       DateTime?                @db.Timestamptz(6)
+  lifetime_redemptions     Int?                     @default(0)
   redemptions              redemptions[]
   student_branch_stats     student_branch_stats[]
   student_kyc              student_kyc[]
@@ -963,13 +963,13 @@ model app_configs {
   id                       String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   min_android_build_number Int       @default(1)
   min_ios_build_number     Int       @default(1)
-  min_android_version      String    @default("1.0.0")
-  min_ios_version          String    @default("1.0.0")
   force_update_title       String?   @default("Time for an Upgrade! 🚀")
   force_update_message     String?   @default("To keep your Parchiyan safe and enjoy new deals, please update to the latest version.")
   is_under_maintenance     Boolean?  @default(false)
   created_at               DateTime? @default(now()) @db.Timestamptz(6)
   updated_at               DateTime? @default(now()) @db.Timestamptz(6)
+  min_android_version      String    @default("1.0.0")
+  min_ios_version          String    @default("1.0.0")
 
   @@schema("public")
 }
