@@ -70,6 +70,9 @@ export interface StudentListResponse {
   isActive: boolean;
   platform?: string | null;
   reviewNotes: string | null;
+  instituteId?: string | null;
+  instituteName?: string | null;
+  studentIdNumber?: string | null;
 }
 
 export interface StudentKycResponse {
@@ -103,6 +106,9 @@ export interface StudentKycResponse {
   verificationSelfiePath?: string | null;
   platform?: string | null;
   reviewNotes: string | null;
+  instituteId?: string | null;
+  instituteName?: string | null;
+  studentIdNumber?: string | null;
   kyc?: {
     id: string;
     studentIdCardFrontPath: string;
@@ -598,11 +604,14 @@ export class StudentsService {
             role: true,
           },
         },
+        institute: {
+          select: { id: true, name: true },
+        },
         student_kyc: {
           orderBy: {
             submitted_at: 'desc',
           },
-          take: 1, // Get the latest KYC submission
+          take: 1,
           include: {
             users: {
               select: {
@@ -680,7 +689,7 @@ export class StudentsService {
       userUpdates.is_active = dto.isActive;
     }
 
-    const studentUpdates: Prisma.studentsUpdateInput = {};
+    const studentUpdates: Prisma.studentsUncheckedUpdateInput = {};
 
     if (dto.firstName !== undefined) {
       studentUpdates.first_name = dto.firstName;
@@ -713,22 +722,31 @@ export class StudentsService {
           ? null
           : new Date(dto.verificationExpiresAt);
     }
-    if (dto.cnic !== undefined) {
-      const next = dto.cnic === '' ? null : dto.cnic;
-      if (next) {
-        const taken = await this.prisma.students.findFirst({
-          where: {
-            cnic: next,
-            NOT: { id },
-          },
-        });
-        if (taken) {
-          throw new ConflictException(
-            'CNIC already registered to another student',
-          );
+    if (dto.instituteId !== undefined) {
+      studentUpdates.institute_id = dto.instituteId === null ? null : dto.instituteId;
+    }
+    if (dto.studentIdNumber !== undefined) {
+      const nextIdNum = dto.studentIdNumber === '' ? null : dto.studentIdNumber;
+      if (nextIdNum) {
+        // Only check uniqueness when both fields are available
+        const resolvedInstituteId =
+          dto.instituteId !== undefined ? dto.instituteId : student.institute_id;
+        if (resolvedInstituteId) {
+          const taken = await this.prisma.students.findFirst({
+            where: {
+              institute_id: resolvedInstituteId,
+              student_id_number: nextIdNum,
+              NOT: { id },
+            },
+          });
+          if (taken) {
+            throw new ConflictException(
+              'Student ID Number already registered at this institute',
+            );
+          }
         }
       }
-      studentUpdates.cnic = next;
+      studentUpdates.student_id_number = nextIdNum;
     }
     if (dto.dateOfBirth !== undefined) {
       studentUpdates.date_of_birth =
@@ -838,18 +856,23 @@ export class StudentsService {
     reviewerId: string,
   ): Promise<StudentKycResponse> {
     if (approveRejectDto.action === 'approve') {
-      if (!approveRejectDto.cnic) {
-        throw new BadRequestException('CNIC is required for approval');
+      if (!approveRejectDto.instituteId || !approveRejectDto.studentIdNumber) {
+        throw new BadRequestException('Institute and Student ID Number are required for approval');
       }
-      const cnicDigits = approveRejectDto.cnic.replace(/\D/g, '');
-      if (cnicDigits.length !== 13) {
-        throw new BadRequestException('CNIC must be exactly 13 digits');
+      const idNumTrimmed = approveRejectDto.studentIdNumber.trim();
+      if (!idNumTrimmed) {
+        throw new BadRequestException('Student ID Number cannot be empty');
       }
+      // Check uniqueness of (institute_id, student_id_number)
       const existing = await this.prisma.students.findFirst({
-        where: { cnic: approveRejectDto.cnic, NOT: { id } },
+        where: {
+          institute_id: approveRejectDto.instituteId,
+          student_id_number: idNumTrimmed,
+          NOT: { id },
+        },
       });
       if (existing) {
-        throw new ConflictException('A student with this CNIC already exists');
+        throw new ConflictException('A student with this Student ID is already registered at this institute');
       }
     }
 
@@ -925,8 +948,9 @@ export class StudentsService {
           ...(selfiePath && { verification_selfie_path: selfiePath }),
       // Assign Parchi ID if newly generated
       ...(parchiIdToUpdate && { parchi_id: parchiIdToUpdate }),
-      // Update CNIC from admin input
-      ...(approveRejectDto.action === 'approve' && approveRejectDto.cnic && { cnic: approveRejectDto.cnic }),
+      // Assign institute and student ID number from admin input
+      ...(approveRejectDto.action === 'approve' && approveRejectDto.instituteId && { institute_id: approveRejectDto.instituteId }),
+      ...(approveRejectDto.action === 'approve' && approveRejectDto.studentIdNumber && { student_id_number: approveRejectDto.studentIdNumber }),
     },
   });
 
@@ -1229,6 +1253,9 @@ export class StudentsService {
       verificationSelfiePath: student.verification_selfie_path ?? null,
       platform: student.platform,
       reviewNotes: latestKyc?.review_notes || null,
+      instituteId: student.institute_id ?? null,
+      instituteName: student.institute?.name ?? null,
+      studentIdNumber: student.student_id_number ?? null,
     };
   }
 
@@ -1293,6 +1320,9 @@ export class StudentsService {
       verificationSelfiePath: student.verification_selfie_path ?? null,
       platform: student.platform,
       reviewNotes: latestKyc?.review_notes || null,
+      instituteId: student.institute_id ?? null,
+      instituteName: student.institute?.name ?? null,
+      studentIdNumber: student.student_id_number ?? null,
     };
   }
 

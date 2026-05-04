@@ -66,13 +66,6 @@ export class StudentSignupDto {
   @IsUrl()
   selfieImageUrl: string;
 
-  @IsNotEmpty()
-  @IsUrl()
-  cnicFrontImageUrl: string;
-
-  @IsNotEmpty()
-  @IsUrl()
-  cnicBackImageUrl: string;
   @IsOptional()
   @IsString()
   platform?: string;

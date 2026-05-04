@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
   ValidateIf,
@@ -80,9 +81,14 @@ export class UpdateStudentAdminDto {
 
   @IsOptional()
   @ValidateIf((_, v) => v !== null)
+  @IsUUID()
+  instituteId?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
   @IsString()
-  @MaxLength(13)
-  cnic?: string | null;
+  @MaxLength(100)
+  studentIdNumber?: string | null;
 
   @IsOptional()
   @ValidateIf((_, v) => v !== null && v !== undefined)
