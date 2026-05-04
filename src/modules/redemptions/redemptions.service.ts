@@ -391,7 +391,9 @@ export class RedemptionsService {
             where: { id: student.id },
             data: {
               total_redemptions: { increment: 1 },
+              lifetime_redemptions: { increment: 1 },
               total_savings: { increment: totalSavings },
+              last_redemption_at: now,
             },
           }),
           (tx as any).student_merchant_stats.upsert({
@@ -1215,16 +1217,28 @@ export class RedemptionsService {
         },
       });
 
+      // Find the next latest verified redemption for the student
+      const latestRemainingRedemption = await tx.redemptions.findFirst({
+        where: {
+          student_id: existingRedemption.student_id,
+          id: { not: id },
+          verified_by: { not: null },
+          // Exclude already rejected ones
+          NOT: {
+            notes: { contains: 'REJECTED', mode: 'insensitive' }
+          }
+        },
+        orderBy: { created_at: 'desc' },
+      });
+
       // Revert student stats
       await tx.students.update({
         where: { id: existingRedemption.student_id },
         data: {
-          total_redemptions: {
-            decrement: 1,
-          },
-          total_savings: {
-            decrement: totalSavings,
-          },
+          total_redemptions: { decrement: 1 },
+          lifetime_redemptions: { decrement: 1 },
+          total_savings: { decrement: totalSavings },
+          last_redemption_at: latestRemainingRedemption?.created_at ?? null,
         },
       });
 
@@ -1505,12 +1519,19 @@ export class RedemptionsService {
         verification_status: 'approved',
         OR: [
           {
-            total_redemptions: {
-              gt: student.total_redemptions || 0,
+            lifetime_redemptions: {
+              gt: student.lifetime_redemptions || 0,
             },
           },
           {
-            total_redemptions: student.total_redemptions || 0,
+            lifetime_redemptions: student.lifetime_redemptions || 0,
+            last_redemption_at: {
+              gt: student.last_redemption_at || new Date(0),
+            },
+          },
+          {
+            lifetime_redemptions: student.lifetime_redemptions || 0,
+            last_redemption_at: student.last_redemption_at || new Date(0),
             id: {
               lt: student.id,
             },

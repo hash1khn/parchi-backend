@@ -659,6 +659,8 @@ model students {
   is_founders_club         Boolean?                 @default(false)
   total_savings            Decimal?                 @default(0.00) @db.Decimal(12, 2)
   total_redemptions        Int?                     @default(0)
+  lifetime_redemptions     Int?                     @default(0)
+  last_redemption_at       DateTime?                @db.Timestamptz(6)
   verification_status      verification_status?     @default(pending)
   verified_at              DateTime?                @db.Timestamptz(6)
   verification_expires_at  DateTime?                @db.Timestamptz(6)
@@ -688,7 +690,7 @@ model students {
   @@index([user_id], map: "idx_students_user")
   @@index([verification_status], map: "idx_students_verification")
   @@index([verified_by], map: "idx_students_verified_by")
-  @@index([verification_status, total_redemptions(sort: Desc)], map: "idx_students_leaderboard")
+  @@index([verification_status, lifetime_redemptions(sort: Desc), last_redemption_at(sort: Desc)], map: "idx_students_leaderboard")
   @@index([institute_id], map: "idx_students_institute")
   @@schema("public")
 }

@@ -1382,11 +1382,12 @@ export class StudentsService {
           first_name: true,
           last_name: true,
           university: true,
-          total_redemptions: true,
+          lifetime_redemptions: true,
           profile_picture: true,
         },
         orderBy: [
-          { total_redemptions: 'desc' },
+          { lifetime_redemptions: 'desc' },
+          { last_redemption_at: 'desc' },
           // Stable tie-breaker so rank ordering is deterministic.
           { id: 'asc' },
         ],
@@ -1402,7 +1403,7 @@ export class StudentsService {
       userId: student.id,
       parchiId: student.parchi_id,
       university: student.university,
-      redemptions: student.total_redemptions || 0,
+      redemptions: student.lifetime_redemptions || 0,
       profilePicture: student.profile_picture ?? null,
     }));
 
