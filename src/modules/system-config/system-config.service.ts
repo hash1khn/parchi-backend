@@ -14,6 +14,8 @@ export class SystemConfigService {
         data: {
           min_android_build_number: 1,
           min_ios_build_number: 1,
+          min_android_version: '1.0.0',
+          min_ios_version: '1.0.0',
           force_update_title: 'Time for an Upgrade! 🚀',
           force_update_message: 'To keep your Parchiyan safe and enjoy new deals, please update to the latest version.',
           is_under_maintenance: false,

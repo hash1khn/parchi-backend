@@ -963,6 +963,8 @@ model app_configs {
   id                       String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   min_android_build_number Int       @default(1)
   min_ios_build_number     Int       @default(1)
+  min_android_version      String    @default("1.0.0")
+  min_ios_version          String    @default("1.0.0")
   force_update_title       String?   @default("Time for an Upgrade! 🚀")
   force_update_message     String?   @default("To keep your Parchiyan safe and enjoy new deals, please update to the latest version.")
   is_under_maintenance     Boolean?  @default(false)
