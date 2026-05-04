@@ -65,6 +65,8 @@ export class AuthController {
     FileFieldsInterceptor([
       { name: 'studentIdCardFront', maxCount: 1 },
       { name: 'studentIdCardBack', maxCount: 1 },
+      { name: 'cnicFrontImage', maxCount: 1 },
+      { name: 'cnicBackImage', maxCount: 1 },
       { name: 'selfieImage', maxCount: 1 },
     ]),
   )
@@ -75,16 +77,22 @@ export class AuthController {
     files: {
       studentIdCardFront?: any[];
       studentIdCardBack?: any[];
+      cnicFrontImage?: any[];
+      cnicBackImage?: any[];
       selfieImage?: any[];
     },
   ) {
     const studentIdCardFront = files?.studentIdCardFront?.[0];
     const studentIdCardBack = files?.studentIdCardBack?.[0];
+    const cnicFrontImage = files?.cnicFrontImage?.[0];
+    const cnicBackImage = files?.cnicBackImage?.[0];
     const selfieImage = files?.selfieImage?.[0];
 
     if (
       !studentIdCardFront ||
       !studentIdCardBack ||
+      !cnicFrontImage ||
+      !cnicBackImage ||
       !selfieImage
     ) {
       throw new BadRequestException('All required KYC images must be uploaded');
@@ -93,6 +101,8 @@ export class AuthController {
     const data = await this.authService.studentSignupWithFiles(signupDto, {
       studentIdCardFront,
       studentIdCardBack,
+      cnicFrontImage,
+      cnicBackImage,
       selfieImage,
     });
     return createApiResponse(

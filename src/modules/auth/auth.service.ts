@@ -669,12 +669,16 @@ export class AuthService {
     files: {
       studentIdCardFront: any;
       studentIdCardBack: any;
+      cnicFrontImage: any;
+      cnicBackImage: any;
       selfieImage: any;
     },
   ): Promise<any> {
     if (
       !this.isUploadedFile(files.studentIdCardFront) ||
       !this.isUploadedFile(files.studentIdCardBack) ||
+      !this.isUploadedFile(files.cnicFrontImage) ||
+      !this.isUploadedFile(files.cnicBackImage) ||
       !this.isUploadedFile(files.selfieImage)
     ) {
       throw new BadRequestException('All required KYC images must be uploaded');
@@ -694,6 +698,16 @@ export class AuthService {
       'student-id-back',
       signupKey,
     );
+    const cnicFrontImageUrl = await this.uploadStudentKycFile(
+      files.cnicFrontImage,
+      'cnic-front',
+      signupKey,
+    );
+    const cnicBackImageUrl = await this.uploadStudentKycFile(
+      files.cnicBackImage,
+      'cnic-back',
+      signupKey,
+    );
     const selfieImageUrl = await this.uploadStudentKycFile(
       files.selfieImage,
       'selfie',
@@ -705,6 +719,8 @@ export class AuthService {
       phone: signupDto.phone ?? '',
       studentIdCardFrontUrl,
       studentIdCardBackUrl,
+      cnicFrontImageUrl,
+      cnicBackImageUrl,
       selfieImageUrl,
     });
   }
@@ -826,6 +842,8 @@ export class AuthService {
             student_id: student.id,
             student_id_card_front_path: signupDto.studentIdCardFrontUrl,
             student_id_card_back_path: signupDto.studentIdCardBackUrl,
+            cnic_front_image_path: signupDto.cnicFrontImageUrl,
+            cnic_back_image_path: signupDto.cnicBackImageUrl,
             selfie_image_path: signupDto.selfieImageUrl,
           },
         });

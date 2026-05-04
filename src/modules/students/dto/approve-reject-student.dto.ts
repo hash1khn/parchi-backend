@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsIn, IsOptional, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString, IsIn, IsOptional } from 'class-validator';
 
 export class ApproveRejectStudentDto {
   @IsNotEmpty()
@@ -13,12 +13,8 @@ export class ApproveRejectStudentDto {
   reviewNotes?: string;
 
   @IsOptional()
-  @IsUUID()
-  instituteId?: string;
-
-  @IsOptional()
   @IsString()
-  studentIdNumber?: string;
-}
+  cnic?: string;
 
+}
 
