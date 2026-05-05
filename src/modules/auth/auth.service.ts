@@ -1331,7 +1331,7 @@ export class AuthService {
       // Upsert: insert if new token, update timestamp if already registered
       const result = await (this.prisma as any).user_fcm_tokens.upsert({
         where: {
-          user_fcm_tokens_user_token_unique: { user_id: userId, token },
+          user_id_token: { user_id: userId, token },
         },
         create: { user_id: userId, token, platform: platform ?? null },
         update: { updated_at: new Date(), ...(platform && { platform }) },
