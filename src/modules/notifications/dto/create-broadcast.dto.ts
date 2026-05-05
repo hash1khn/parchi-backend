@@ -16,4 +16,12 @@ export class CreateBroadcastDto {
   @IsOptional()
   @IsUrl()
   linkUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  targetType?: 'all' | 'university' | 'founders_club';
+
+  @IsOptional()
+  @IsString()
+  targetValue?: string;
 }

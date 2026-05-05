@@ -46,4 +46,11 @@ export class NotificationsController {
     );
     return createApiResponse(result, 'Notification history fetched successfully');
   }
+
+  @Get('targets')
+  @HttpCode(HttpStatus.OK)
+  async getTargets() {
+    const result = await this.notificationsService.getTargetGroups();
+    return createApiResponse(result, 'Target groups fetched successfully');
+  }
 }

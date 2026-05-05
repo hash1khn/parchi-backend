@@ -53,6 +53,16 @@ export class NotificationsService implements OnModuleInit {
     try {
       const defaultImageUrl = 'https://zjghfwnrzazmukykgyhh.supabase.co/storage/v1/object/public/logo/parchi-app-icon.png';
       const imageUrl = createBroadcastDto.imageUrl || defaultImageUrl;
+      
+      // Determine target topic
+      let targetTopic = 'students_all';
+      if (createBroadcastDto.targetType === 'university' && createBroadcastDto.targetValue) {
+        // Sanitize university name for topic (lowercase, no spaces)
+        const sanitizedUni = createBroadcastDto.targetValue.toLowerCase().replace(/\s+/g, '_');
+        targetTopic = `university_${sanitizedUni}`;
+      } else if (createBroadcastDto.targetType === 'founders_club') {
+        targetTopic = 'founders_club';
+      }
 
       const notification = await this.prisma.notifications.create({
         data: {
@@ -60,7 +70,7 @@ export class NotificationsService implements OnModuleInit {
           content: createBroadcastDto.content,
           image_url: imageUrl,
           link_url: createBroadcastDto.linkUrl,
-          type: 'broadcast',
+          type: (createBroadcastDto.targetType === 'all' || !createBroadcastDto.targetType) ? 'broadcast' : 'targeted',
         },
       });
 
@@ -76,7 +86,7 @@ export class NotificationsService implements OnModuleInit {
           click_action: 'FLUTTER_NOTIFICATION_CLICK',
           ...(createBroadcastDto.linkUrl && { link_url: createBroadcastDto.linkUrl }),
         },
-        topic: 'students_all',
+        topic: targetTopic,
       };
 
       // 3. Send via Firebase
@@ -465,6 +475,33 @@ export class NotificationsService implements OnModuleInit {
     } catch (error) {
       this.logger.error(`Error checking unread notifications for ${userId}:`, error);
       return false; // Default to false on error to avoid blocking UI
+    }
+  }
+
+  async getTargetGroups() {
+    try {
+      const universities = await this.prisma.students.findMany({
+        where: {
+          university: {
+            not: '',
+          },
+        },
+        distinct: ['university'],
+        select: {
+          university: true,
+        },
+        orderBy: {
+          university: 'asc'
+        }
+      });
+
+      return {
+        universities: universities.map((u) => u.university).filter(Boolean),
+        groups: ['Founders Club'],
+      };
+    } catch (error) {
+      this.logger.error('Error fetching target groups:', error);
+      throw error;
     }
   }
 }
