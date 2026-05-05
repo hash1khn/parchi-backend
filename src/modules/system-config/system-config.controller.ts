@@ -19,6 +19,23 @@ import { createApiResponse } from '../../utils/serializer.util';
 export class SystemConfigController {
   constructor(private readonly systemConfigService: SystemConfigService) {}
 
+  /**
+   * Public endpoint — no auth required.
+   * Returns only the fields the mobile app needs for force-update / maintenance checks.
+   */
+  @Get('app')
+  @HttpCode(HttpStatus.OK)
+  async getAppConfig() {
+    const config = await this.systemConfigService.getConfig();
+    return createApiResponse({
+      minAndroidVersion: config.min_android_version,
+      minIosVersion: config.min_ios_version,
+      isUnderMaintenance: config.is_under_maintenance,
+      forceUpdateTitle: config.force_update_title,
+      forceUpdateMessage: config.force_update_message,
+    }, 'App configuration retrieved successfully');
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
