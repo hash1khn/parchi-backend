@@ -360,7 +360,7 @@ export class NotificationsService implements OnModuleInit {
       throw new NotFoundException('User not found');
     }
 
-    const fcmTokenRows = await (this.prisma as any).user_fcm_tokens.findMany({
+    const fcmTokenRows = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: userId },
       select: { token: true },
     });
@@ -425,7 +425,7 @@ export class NotificationsService implements OnModuleInit {
       });
 
       if (invalidTokens.length > 0) {
-        await (this.prisma as any).user_fcm_tokens.deleteMany({
+        await this.prisma.user_fcm_tokens.deleteMany({
           where: { user_id: userId, token: { in: invalidTokens } },
         });
         this.logger.log(`Removed ${invalidTokens.length} stale FCM token(s) for user ${userId}`);

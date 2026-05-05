@@ -522,7 +522,7 @@ export class AuthService {
       // Remove only this device's FCM token (multi-device support)
       if (fcmToken) {
         try {
-          await (this.prisma as any).user_fcm_tokens.deleteMany({
+          await this.prisma.user_fcm_tokens.deleteMany({
             where: { user_id: userId, token: fcmToken },
           });
         } catch (e) {
@@ -1329,7 +1329,7 @@ export class AuthService {
   async updateFcmToken(userId: string, token: string, platform?: string): Promise<any> {
     try {
       // Upsert: insert if new token, update timestamp if already registered
-      const result = await (this.prisma as any).user_fcm_tokens.upsert({
+      const result = await this.prisma.user_fcm_tokens.upsert({
         where: {
           user_id_token: { user_id: userId, token },
         },
