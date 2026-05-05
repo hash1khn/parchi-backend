@@ -672,6 +672,8 @@ model students {
   has_seen_app_intro       Boolean?                 @default(false)
   educational_grade        String?                  @db.VarChar(50)
   platform                 String?                  @db.VarChar(20)
+  lifetime_redemptions     Int?                     @default(0)
+  last_redemption_at       DateTime?                @db.Timestamptz(6)
   redemptions              redemptions[]
   student_branch_stats     student_branch_stats[]
   student_kyc              student_kyc[]
@@ -684,7 +686,7 @@ model students {
   @@index([user_id], map: "idx_students_user")
   @@index([verification_status], map: "idx_students_verification")
   @@index([verified_by], map: "idx_students_verified_by")
-  @@index([verification_status, total_redemptions(sort: Desc)], map: "idx_students_leaderboard")
+  @@index([verification_status, lifetime_redemptions(sort: Desc), last_redemption_at], map: "idx_students_leaderboard")
   @@schema("public")
 }
 
