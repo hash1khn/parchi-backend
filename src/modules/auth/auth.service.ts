@@ -517,17 +517,18 @@ export class AuthService {
     }
   }
 
-  async logout(accessToken: string, userId: string): Promise<null> {
+  async logout(accessToken: string, userId: string, fcmToken?: string): Promise<null> {
     try {
-      // Clear FCM token so the device stops receiving personal push notifications
-      try {
-        await this.prisma.public_users.update({
-          where: { id: userId },
-          data: { fcm_token: null } as any,
-        });
-      } catch (e) {
-        // Non-fatal — proceed with logout even if FCM clear fails
-        console.warn('Failed to clear FCM token on logout:', e);
+      // Remove only this device's FCM token (multi-device support)
+      if (fcmToken) {
+        try {
+          await (this.prisma as any).user_fcm_tokens.deleteMany({
+            where: { user_id: userId, token: fcmToken },
+          });
+        } catch (e) {
+          // Non-fatal — proceed with logout even if FCM clear fails
+          console.warn('Failed to remove FCM token on logout:', e);
+        }
       }
 
       // Create a client with the user's token to sign them out
@@ -1325,12 +1326,15 @@ export class AuthService {
   }
 
 
-  async updateFcmToken(userId: string, token: string): Promise<any> {
+  async updateFcmToken(userId: string, token: string, platform?: string): Promise<any> {
     try {
-      const result = await this.prisma.public_users.update({
-        where: { id: userId },
-        data: { fcm_token: token } as any,
-        select: { id: true, fcm_token: true } as any,
+      // Upsert: insert if new token, update timestamp if already registered
+      const result = await (this.prisma as any).user_fcm_tokens.upsert({
+        where: {
+          user_fcm_tokens_user_token_unique: { user_id: userId, token },
+        },
+        create: { user_id: userId, token, platform: platform ?? null },
+        update: { updated_at: new Date(), ...(platform && { platform }) },
       });
       return result;
     } catch (error) {

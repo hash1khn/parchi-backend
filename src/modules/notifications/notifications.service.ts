@@ -350,15 +350,20 @@ export class NotificationsService implements OnModuleInit {
   linkUrl?: string,
 ) {
   try {
-    // 1. Get user's fcm_token
-    const user = await this.prisma.public_users.findUnique({
+    // 1. Get all FCM tokens for this user (multi-device support)
+    const userExists = await this.prisma.public_users.findUnique({
       where: { id: userId },
-      select: { fcm_token: true },
+      select: { id: true },
     });
 
-    if (!user) {
+    if (!userExists) {
       throw new NotFoundException('User not found');
     }
+
+    const fcmTokenRows = await (this.prisma as any).user_fcm_tokens.findMany({
+      where: { user_id: userId },
+      select: { token: true },
+    });
 
     // 2. Save notification to database
     const notification = await this.prisma.notifications.create({
@@ -372,35 +377,27 @@ export class NotificationsService implements OnModuleInit {
       },
     });
 
-    // 3. Send via Firebase
-    if (user.fcm_token && admin.apps.length > 0) {
-      const message: admin.messaging.Message = {
-        token: user.fcm_token,
+    // 3. Send via Firebase to all registered devices
+    const tokens: string[] = fcmTokenRows.map((r: { token: string }) => r.token);
 
+    if (tokens.length > 0 && admin.apps.length > 0) {
+      const basePayload = {
         notification: {
           title,
           body: content,
           ...(imageUrl && { imageUrl }),
         },
-
-        // ✅ ANDROID CONFIG
         android: {
           notification: {
-            sound: 'default', // 🔊 enable sound
-            channelId: 'broadcast_channel', // MUST match Flutter
+            sound: 'default',
+            channelId: 'broadcast_channel',
           },
         },
-
-        //  iOS CONFIG
         apns: {
           payload: {
-            aps: {
-              sound: 'default', // 🔊 enable sound on iOS
-            },
+            aps: { sound: 'default' },
           },
         },
-
-        //  DATA PAYLOAD
         data: {
           notification_id: String(notification.id),
           click_action: 'FLUTTER_NOTIFICATION_CLICK',
@@ -409,20 +406,42 @@ export class NotificationsService implements OnModuleInit {
         },
       };
 
-      const response = await admin.messaging().send(message);
+      const multicastMessage: admin.messaging.MulticastMessage = {
+        ...basePayload,
+        tokens,
+      };
+
+      const response = await admin.messaging().sendEachForMulticast(multicastMessage);
+
+      // Clean up any tokens that are no longer valid
+      const invalidTokens: string[] = [];
+      response.responses.forEach((r, idx) => {
+        if (!r.success && (
+          r.error?.code === 'messaging/registration-token-not-registered' ||
+          r.error?.code === 'messaging/invalid-registration-token'
+        )) {
+          invalidTokens.push(tokens[idx]);
+        }
+      });
+
+      if (invalidTokens.length > 0) {
+        await (this.prisma as any).user_fcm_tokens.deleteMany({
+          where: { user_id: userId, token: { in: invalidTokens } },
+        });
+        this.logger.log(`Removed ${invalidTokens.length} stale FCM token(s) for user ${userId}`);
+      }
 
       this.logger.log(
-        `Successfully sent personal notification to ${userId}: ${response}`
+        `Personal notification to ${userId}: ${response.successCount}/${tokens.length} devices reached`
       );
 
-      return { success: true, messageId: response, notification };
+      return { success: true, successCount: response.successCount, notification };
     }
 
     return {
       success: true,
       notification,
-      message:
-        'Notification saved, but not sent (no token or firebase not init)',
+      message: 'Notification saved, but not sent (no tokens or firebase not init)',
     };
   } catch (error) {
     this.logger.error(

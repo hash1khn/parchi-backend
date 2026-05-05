@@ -186,9 +186,9 @@ export class AuthController {
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async logout(@Request() req, @CurrentUser() user: any) {
+  async logout(@Request() req, @CurrentUser() user: any, @Body() body?: { fcmToken?: string }) {
     const token = this.extractTokenFromHeader(req);
-    await this.authService.logout(token, user.id);
+    await this.authService.logout(token, user.id, body?.fcmToken);
     return createApiResponse(null, API_RESPONSE_MESSAGES.AUTH.LOGOUT_SUCCESS);
   }
 
@@ -277,12 +277,12 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async updateFcmToken(
     @CurrentUser() user: any,
-    @Body() body: { token: string },
+    @Body() body: { token: string; platform?: string },
   ) {
     if (!body.token) {
       throw new BadRequestException('Token is required');
     }
-    const data = await this.authService.updateFcmToken(user.id, body.token);
+    const data = await this.authService.updateFcmToken(user.id, body.token, body.platform);
     return createApiResponse(data, 'FCM token updated successfully');
   }
 }

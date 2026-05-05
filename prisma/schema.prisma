@@ -742,6 +742,7 @@ model public_users {
   student_kyc             student_kyc[]
   students                students?                 @relation("student_user")
   verified_students       students[]                @relation("verified_by")
+  user_fcm_tokens         user_fcm_tokens[]
   user_notification_reads user_notification_reads[]
   users                   auth_users                @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -788,6 +789,20 @@ model user_notification_reads {
 
   @@unique([notification_id, user_id], map: "unique_notification_user_read")
   @@index([user_id], map: "idx_user_reads_user_id")
+  @@schema("public")
+}
+
+model user_fcm_tokens {
+  id         String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id    String       @db.Uuid
+  token      String
+  platform   String?      @db.VarChar(20)
+  created_at DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at DateTime?    @default(now()) @db.Timestamptz(6)
+  users      public_users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, token], map: "user_fcm_tokens_user_token_unique")
+  @@index([user_id], map: "idx_user_fcm_tokens_user_id")
   @@schema("public")
 }
 
