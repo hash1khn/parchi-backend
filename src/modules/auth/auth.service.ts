@@ -640,7 +640,7 @@ export class AuthService {
     return !!file && Buffer.isBuffer(file.buffer);
   }
 
-  private async uploadStudentKycFile(
+  async uploadStudentKycFile(
     file: { buffer: Buffer; mimetype?: string },
     folder: string,
     signupKey: string,

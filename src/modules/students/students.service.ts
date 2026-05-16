@@ -73,6 +73,27 @@ export interface StudentListResponse {
   instituteId?: string | null;
   instituteName?: string | null;
   studentIdNumber?: string | null;
+  gender?: string | null;
+  degree?: string | null;
+  yearOfStudy?: string | null;
+  adminNotes?: string | null;
+  leaderboardRank?: number;
+  accountAgeDays?: number;
+  loyaltyProgress?: {
+    merchantName: string;
+    merchantLogo: string | null;
+    current: number;
+    goal: number;
+    percentage: number;
+  }[];
+  recentRedemptions?: {
+    id: string;
+    date: Date | null;
+    merchantName: string;
+    branchName: string;
+    offerTitle: string;
+    isBonusApplied: boolean | null;
+  }[];
 }
 
 export interface StudentKycResponse {
@@ -109,6 +130,27 @@ export interface StudentKycResponse {
   instituteId?: string | null;
   instituteName?: string | null;
   studentIdNumber?: string | null;
+  gender?: string | null;
+  degree?: string | null;
+  yearOfStudy?: string | null;
+  adminNotes?: string | null;
+  leaderboardRank?: number;
+  accountAgeDays?: number;
+  loyaltyProgress?: {
+    merchantName: string;
+    merchantLogo: string | null;
+    current: number;
+    goal: number;
+    percentage: number;
+  }[];
+  recentRedemptions?: {
+    id: string;
+    date: Date | null;
+    merchantName: string;
+    branchName: string;
+    offerTitle: string;
+    isBonusApplied: boolean | null;
+  }[];
   kyc?: {
     id: string;
     studentIdCardFrontPath: string;
@@ -747,6 +789,18 @@ export class StudentsService {
     if (dto.verificationStatus !== undefined) {
       studentUpdates.verification_status = dto.verificationStatus;
     }
+    if (dto.gender !== undefined) {
+      studentUpdates.gender = dto.gender;
+    }
+    if (dto.degree !== undefined) {
+      studentUpdates.degree = dto.degree;
+    }
+    if (dto.yearOfStudy !== undefined) {
+      studentUpdates.year_of_study = dto.yearOfStudy;
+    }
+    if (dto.notes !== undefined) {
+      studentUpdates.admin_notes = dto.notes;
+    }
     if (dto.verificationExpiresAt !== undefined) {
       studentUpdates.verification_expires_at =
         dto.verificationExpiresAt === null ||
@@ -817,6 +871,50 @@ export class StudentsService {
     });
 
     return this.getStudentDetailsForReview(id);
+  }
+
+  async updateStudentSelfie(
+    id: string,
+    file: { buffer: Buffer; mimetype?: string },
+  ): Promise<{ selfieImageUrl: string }> {
+    const student = await this.prisma.students.findUnique({
+      where: { id },
+      include: { users: true }
+    });
+
+    if (!student) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
+    }
+
+    const signupKey = student.users.email
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '_');
+
+    const selfieImageUrl = await this.authService.uploadStudentKycFile(
+      file,
+      'selfie-updates',
+      signupKey,
+    );
+
+    await this.prisma.students.update({
+      where: { id },
+      data: { verification_selfie_path: selfieImageUrl }
+    });
+
+    // Also update the latest KYC record if it exists
+    const latestKyc = await this.prisma.student_kyc.findFirst({
+      where: { student_id: id },
+      orderBy: { created_at: 'desc' }
+    });
+
+    if (latestKyc) {
+      await this.prisma.student_kyc.update({
+        where: { id: latestKyc.id },
+        data: { selfie_image_path: selfieImageUrl }
+      });
+    }
+
+    return { selfieImageUrl };
   }
 
   /**
@@ -1300,6 +1398,65 @@ export class StudentsService {
   private async formatStudentDetailResponse(student: any): Promise<StudentDetailResponse> {
     const latestKyc = student.student_kyc?.[0] || null;
 
+    // Get loyalty progress across all merchants
+    const loyaltyProgress = await this.prisma.student_merchant_stats.findMany({
+      where: { student_id: student.id },
+      include: {
+        merchants: {
+          include: {
+            loyalty_programs: {
+              where: { is_active: true, scope: 'merchant' },
+              take: 1
+            }
+          }
+        }
+      }
+    });
+
+    const formattedLoyalty = loyaltyProgress
+      .filter(stat => stat.merchants.loyalty_programs.length > 0)
+      .map(stat => {
+        const prog = stat.merchants.loyalty_programs[0];
+        const req = prog.redemptions_required || 5;
+        const current = (stat.redemption_count || 0) % req;
+        return {
+          merchantName: stat.merchants.business_name,
+          merchantLogo: stat.merchants.logo_path,
+          current,
+          goal: req,
+          percentage: Math.min(100, (current / req) * 100)
+        };
+      });
+
+    // Get last 5 redemptions for timeline
+    const recentRedemptions = await this.prisma.redemptions.findMany({
+      where: { student_id: student.id },
+      take: 5,
+      orderBy: { created_at: 'desc' },
+      include: {
+        merchant_branches: {
+          select: { branch_name: true, merchants: { select: { business_name: true } } }
+        },
+        offers: { select: { title: true } }
+      }
+    });
+
+    const formattedRedemptions = recentRedemptions.map((r: any) => ({
+      id: r.id,
+      date: r.created_at,
+      merchantName: r.merchant_branches.merchants.business_name,
+      branchName: r.merchant_branches.branch_name,
+      offerTitle: r.offers.title,
+      isBonusApplied: r.is_bonus_applied
+    }));
+
+    // Get leaderboard rank (simplified for now)
+    const rank = await this.prisma.students.count({
+      where: {
+        total_redemptions: { gt: student.total_redemptions || 0 }
+      }
+    }) + 1;
+
     return {
       id: student.id,
       userId: student.user_id,
@@ -1310,9 +1467,15 @@ export class StudentsService {
       phone: student.users.phone,
       university: student.university,
       graduationYear: student.graduation_year,
+      gender: student.gender,
+      degree: student.degree,
+      yearOfStudy: student.year_of_study,
+      adminNotes: student.admin_notes,
       isFoundersClub: student.is_founders_club,
       totalSavings: Number(student.total_savings || 0),
       totalRedemptions: student.total_redemptions || 0,
+      leaderboardRank: rank,
+      accountAgeDays: Math.floor((Date.now() - new Date(student.created_at).getTime()) / (1000 * 60 * 60 * 24)),
       verificationStatus: student.verification_status,
       verifiedAt: student.verified_at,
       verifiedBy: student.verified_by_user
@@ -1325,6 +1488,8 @@ export class StudentsService {
       verificationExpiresAt: student.verification_expires_at,
       createdAt: student.created_at,
       updatedAt: student.updated_at,
+      loyaltyProgress: formattedLoyalty,
+      recentRedemptions: formattedRedemptions,
       kyc: latestKyc
         ? {
           id: latestKyc.id,

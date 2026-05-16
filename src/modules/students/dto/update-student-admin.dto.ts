@@ -107,5 +107,26 @@ export class UpdateStudentAdminDto {
 
   @IsOptional()
   @IsBoolean()
+  @Type(() => Boolean)
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  gender?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  degree?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  yearOfStudy?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string | null;
 }

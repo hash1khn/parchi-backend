@@ -4,9 +4,14 @@ import morgan from 'morgan';
 import helmet from 'helmet';
 import compression from 'compression';
 import { globalValidationPipe } from './common/pipes/validation.pipe';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // ── Increase payload limits ──────────────────────────────────────────────
+  app.use(json({ limit: '10mb' }));
+  app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   // ── Security headers ──────────────────────────────────────────────────────
   app.use(helmet());

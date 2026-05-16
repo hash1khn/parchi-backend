@@ -676,6 +676,10 @@ model students {
   student_id_number        String?                  @db.VarChar(100)
   last_redemption_at       DateTime?                @db.Timestamptz(6)
   lifetime_redemptions     Int?                     @default(0)
+  admin_notes              String?
+  degree                   String?                  @db.VarChar(255)
+  gender                   String?                  @db.VarChar(20)
+  year_of_study            String?                  @db.VarChar(50)
   redemptions              redemptions[]
   student_branch_stats     student_branch_stats[]
   student_kyc              student_kyc[]
