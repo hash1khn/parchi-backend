@@ -42,6 +42,18 @@ export class AdminDashboardController {
         );
     }
 
+    @Get('signup-funnel')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async getSignupFunnel() {
+        const data = await this.adminDashboardService.getSignupDropoff();
+        return createApiResponse(
+            data,
+            'Signup funnel statistics retrieved successfully',
+        );
+    }
+
     @Get('kyc-stats')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(ROLES.ADMIN)
@@ -146,8 +158,16 @@ export class AdminDashboardController {
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(ROLES.ADMIN)
     @HttpCode(HttpStatus.OK)
-    async getRedemptionAnalytics() {
-        const data = await this.adminDashboardService.getRedemptionAnalytics();
+    async getRedemptionAnalytics(
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('studentId') studentId?: string,
+    ) {
+        const data = await this.adminDashboardService.getRedemptionAnalytics(
+            startDate ? new Date(startDate) : undefined,
+            endDate ? new Date(endDate) : undefined,
+            studentId,
+        );
         return createApiResponse(data, 'Redemption analytics retrieved successfully');
     }
 

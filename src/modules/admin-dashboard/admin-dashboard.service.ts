@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminDashboardStatsResponse } from './dto/dashboard-stats-response.dto';
 import { RedemptionAnalyticsResponse } from './dto/redemption-analytics-response.dto';
@@ -655,7 +656,24 @@ export class AdminDashboardService {
         return { medianDaysToFirstRedemption: Math.round(median * 10) / 10 };
     }
 
-    async getRedemptionAnalytics(): Promise<RedemptionAnalyticsResponse> {
+    async getRedemptionAnalytics(startDate?: Date, endDate?: Date, studentId?: string): Promise<RedemptionAnalyticsResponse> {
+        const dateFilter = Prisma.sql`
+            ${startDate ? Prisma.sql`AND created_at >= ${startDate}` : Prisma.empty}
+            ${endDate ? Prisma.sql`AND created_at <= ${endDate}` : Prisma.empty}
+            ${studentId ? Prisma.sql`AND student_id = ${studentId}::uuid` : Prisma.empty}
+        `;
+
+        const baseWhere = Prisma.sql`
+            WHERE verified_by IS NOT NULL
+              AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+              ${dateFilter}
+        `;
+
+        // For trend charts, if no dates are provided, we use defaults
+        const dailyLimit = startDate ? Prisma.empty : Prisma.sql`AND created_at >= NOW() - INTERVAL '30 days'`;
+        const weeklyLimit = startDate ? Prisma.empty : Prisma.sql`AND created_at >= NOW() - INTERVAL '12 weeks'`;
+        const monthlyLimit = startDate ? Prisma.empty : Prisma.sql`AND created_at >= NOW() - INTERVAL '12 months'`;
+
         const [
             uniqueRedeemersResult,
             dailyTrends,
@@ -664,129 +682,125 @@ export class AdminDashboardService {
             histogramResult,
             repeatRatesResult,
             bonusResult,
+            totalRegisteredResult,
         ] = await Promise.all([
-            // 1. Unique redeemers (verified, non-rejected)
-            this.prisma.$queryRaw<[{ count: number }]>`
-                SELECT COUNT(DISTINCT student_id)::int AS count
+            // 1. Unique redeemers
+            this.prisma.$queryRaw<[{ count: bigint }]>`
+                SELECT COUNT(DISTINCT student_id) AS count
                 FROM redemptions
-                WHERE verified_by IS NOT NULL
-                  AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                ${baseWhere}
             `,
-            // 2. Daily volume – last 30 days (PKT timezone)
-            this.prisma.$queryRaw<Array<{ date: string; count: number }>>`
+            // 2. Daily volume
+            this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
                 SELECT
                     TO_CHAR(created_at AT TIME ZONE 'Asia/Karachi', 'YYYY-MM-DD') AS date,
-                    COUNT(*)::int AS count
+                    COUNT(*) AS count
                 FROM redemptions
-                WHERE verified_by IS NOT NULL
-                  AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
-                  AND created_at >= NOW() - INTERVAL '30 days'
+                ${baseWhere}
+                ${dailyLimit}
                 GROUP BY date
                 ORDER BY date
             `,
-            // 3. Weekly volume – last 12 weeks
-            this.prisma.$queryRaw<Array<{ date: string; count: number }>>`
+            // 3. Weekly volume
+            this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
                 SELECT
                     TO_CHAR(DATE_TRUNC('week', created_at AT TIME ZONE 'Asia/Karachi'), 'YYYY-MM-DD') AS date,
-                    COUNT(*)::int AS count
+                    COUNT(*) AS count
                 FROM redemptions
-                WHERE verified_by IS NOT NULL
-                  AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
-                  AND created_at >= NOW() - INTERVAL '12 weeks'
+                ${baseWhere}
+                ${weeklyLimit}
                 GROUP BY date
                 ORDER BY date
             `,
-            // 4. Monthly volume – last 12 months
-            this.prisma.$queryRaw<Array<{ date: string; count: number }>>`
+            // 4. Monthly volume
+            this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
                 SELECT
                     TO_CHAR(DATE_TRUNC('month', created_at AT TIME ZONE 'Asia/Karachi'), 'YYYY-MM') AS date,
-                    COUNT(*)::int AS count
+                    COUNT(*) AS count
                 FROM redemptions
-                WHERE verified_by IS NOT NULL
-                  AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
-                  AND created_at >= NOW() - INTERVAL '12 months'
+                ${baseWhere}
+                ${monthlyLimit}
                 GROUP BY date
                 ORDER BY date
             `,
-            // 5. User behavior histogram (1, 2, 3, 4+ redemptions per user)
+            // 5. User behavior histogram
             this.prisma.$queryRaw<[{
-                exactly_one: number;
-                exactly_two: number;
-                exactly_three: number;
-                four_or_more: number;
+                exactly_one: bigint;
+                exactly_two: bigint;
+                exactly_three: bigint;
+                four_or_more: bigint;
             }]>`
                 WITH user_counts AS (
                     SELECT student_id, COUNT(*) AS redemption_count
                     FROM redemptions
-                    WHERE verified_by IS NOT NULL
-                      AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                    ${baseWhere}
                     GROUP BY student_id
                 )
                 SELECT
-                    COALESCE(SUM(CASE WHEN redemption_count = 1  THEN 1 ELSE 0 END), 0)::int AS exactly_one,
-                    COALESCE(SUM(CASE WHEN redemption_count = 2  THEN 1 ELSE 0 END), 0)::int AS exactly_two,
-                    COALESCE(SUM(CASE WHEN redemption_count = 3  THEN 1 ELSE 0 END), 0)::int AS exactly_three,
-                    COALESCE(SUM(CASE WHEN redemption_count >= 4 THEN 1 ELSE 0 END), 0)::int AS four_or_more
+                    COALESCE(SUM(CASE WHEN redemption_count = 1  THEN 1 ELSE 0 END), 0) AS exactly_one,
+                    COALESCE(SUM(CASE WHEN redemption_count = 2  THEN 1 ELSE 0 END), 0) AS exactly_two,
+                    COALESCE(SUM(CASE WHEN redemption_count = 3  THEN 1 ELSE 0 END), 0) AS exactly_three,
+                    COALESCE(SUM(CASE WHEN redemption_count >= 4 THEN 1 ELSE 0 END), 0) AS four_or_more
                 FROM user_counts
             `,
-            // 6. Repeat rates within 7 / 30 / 90 days of first redemption
+            // 6. Repeat rates
             this.prisma.$queryRaw<[{
-                total_redeemers: number;
-                repeat_7:  number;
-                repeat_30: number;
-                repeat_90: number;
+                total_redeemers: bigint;
+                repeat_7:  bigint;
+                repeat_30: bigint;
+                repeat_90: bigint;
             }]>`
-                WITH first_redemptions AS (
-                    SELECT student_id, MIN(created_at) AS first_at
+                WITH filtered_redemptions AS (
+                    SELECT student_id, created_at
                     FROM redemptions
-                    WHERE verified_by IS NOT NULL
-                      AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                    ${baseWhere}
+                ),
+                first_redemptions AS (
+                    SELECT student_id, MIN(created_at) AS first_at
+                    FROM filtered_redemptions
                     GROUP BY student_id
                 )
                 SELECT
-                    COUNT(DISTINCT fr.student_id)::int AS total_redeemers,
+                    COUNT(DISTINCT fr.student_id) AS total_redeemers,
                     COUNT(DISTINCT CASE
                         WHEN r2.created_at > fr.first_at
                          AND r2.created_at <= fr.first_at + INTERVAL '7 days'
                         THEN fr.student_id
-                    END)::int AS repeat_7,
+                    END) AS repeat_7,
                     COUNT(DISTINCT CASE
                         WHEN r2.created_at > fr.first_at
                          AND r2.created_at <= fr.first_at + INTERVAL '30 days'
                         THEN fr.student_id
-                    END)::int AS repeat_30,
+                    END) AS repeat_30,
                     COUNT(DISTINCT CASE
                         WHEN r2.created_at > fr.first_at
                          AND r2.created_at <= fr.first_at + INTERVAL '90 days'
                         THEN fr.student_id
-                    END)::int AS repeat_90
+                    END) AS repeat_90
                 FROM first_redemptions fr
-                LEFT JOIN redemptions r2
+                LEFT JOIN filtered_redemptions r2
                     ON  r2.student_id = fr.student_id
-                    AND r2.verified_by IS NOT NULL
-                    AND (r2.notes IS NULL OR r2.notes NOT ILIKE 'REJECTED%')
             `,
             // 7. 5th-bonus trigger stats
             this.prisma.$queryRaw<[{
-                total_bonus_triggers:       number;
-                unique_students_triggered:  number;
-                users_returned_after_bonus: number;
+                total_bonus_triggers:       bigint;
+                unique_students_triggered:  bigint;
+                users_returned_after_bonus: bigint;
             }]>`
                 WITH bonus_events AS (
                     SELECT id, student_id, created_at
                     FROM redemptions
-                    WHERE is_bonus_applied = true
-                      AND verified_by IS NOT NULL
-                      AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                    ${baseWhere}
+                    AND is_bonus_applied = true
                 )
                 SELECT
-                    COUNT(be.id)::int                       AS total_bonus_triggers,
-                    COUNT(DISTINCT be.student_id)::int       AS unique_students_triggered,
+                    COUNT(be.id)                       AS total_bonus_triggers,
+                    COUNT(DISTINCT be.student_id)       AS unique_students_triggered,
                     COUNT(DISTINCT CASE
                         WHEN r.created_at > be.created_at
                          AND r.created_at <= be.created_at + INTERVAL '30 days'
                         THEN be.student_id
-                    END)::int                               AS users_returned_after_bonus
+                    END)                               AS users_returned_after_bonus
                 FROM bonus_events be
                 LEFT JOIN redemptions r
                     ON  r.student_id      = be.student_id
@@ -794,10 +808,13 @@ export class AdminDashboardService {
                     AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
                     AND r.is_bonus_applied = false
             `,
+            // 8. Total Registered Students
+            this.prisma.public_users.count({ where: { role: 'student' } }),
         ]);
 
-        // --- Transform results (handle both number and bigint returns depending on PG driver) ---
+        // --- Transform results ---
         const uniqueRedeemers = Number(uniqueRedeemersResult[0]?.count ?? 0);
+        const totalRegisteredStudents = Number(totalRegisteredResult ?? 0);
 
         const hist = histogramResult[0];
         const behaviorHistogram = [
@@ -837,6 +854,7 @@ export class AdminDashboardService {
 
         return {
             uniqueRedeemers,
+            totalRegisteredStudents,
             volumeTrends: {
                 daily:   dailyTrends.map(r   => ({ date: r.date,   count: Number(r.count) })),
                 weekly:  weeklyTrends.map(r  => ({ date: r.date,   count: Number(r.count) })),
@@ -1194,5 +1212,81 @@ export class AdminDashboardService {
 
     async deleteCompetitorBenchmark(id: string): Promise<void> {
         await this.prisma.competitor_benchmarks.delete({ where: { id } });
+    }
+
+    async getSignupDropoff() {
+        const [
+            registered,
+            emailVerified,
+            profileComplete,
+            idUploaded,
+            selfieUploaded,
+            pendingReview,
+            approved
+        ] = await Promise.all([
+            // Stage 1: Registered
+            this.prisma.public_users.count({ where: { role: 'student' } }),
+            
+            // Stage 2: Email Verified (Need to check auth schema for confirmation)
+            this.prisma.$queryRaw<[{ count: bigint }]>`
+                SELECT COUNT(*) as count FROM auth.users 
+                WHERE raw_app_meta_data->>'role' = 'student' 
+                AND email_confirmed_at IS NOT NULL
+            `.then(res => Number(res[0].count)),
+            
+            // Stage 3: Profile Completed (Student record exists)
+            this.prisma.students.count(),
+            
+            // Stage 4: ID Uploaded
+            this.prisma.student_kyc.count({
+                where: { 
+                    OR: [
+                        { student_id_card_front_path: { not: null } },
+                        { cnic_front_image_path: { not: null } }
+                    ]
+                }
+            }),
+            
+            // Stage 5: Selfie Uploaded
+            this.prisma.student_kyc.count({
+                where: { selfie_image_path: { not: '' } }
+            }),
+            
+            // Stage 6: Submitted for KYC (Status is pending or moved past it)
+            this.prisma.students.count({
+                where: { verification_status: { in: ['pending', 'approved', 'rejected'] } }
+            }),
+            
+            // Stage 7: KYC Approved
+            this.prisma.students.count({
+                where: { verification_status: 'approved' }
+            })
+        ]);
+
+        const rawStages = [
+            { key: 'registered', label: 'Account Created', count: registered },
+            { key: 'email_verified', label: 'Email Verified', count: emailVerified },
+            { key: 'profile_complete', label: 'Profile Completed', count: profileComplete },
+            { key: 'id_uploaded', label: 'ID Uploaded', count: idUploaded },
+            { key: 'selfie_uploaded', label: 'Selfie Uploaded', count: selfieUploaded },
+            { key: 'pending_review', label: 'Submitted for KYC', count: pendingReview },
+            { key: 'approved', label: 'KYC Approved', count: approved },
+        ];
+
+        const topOfFunnel = registered || 1;
+        const stages = rawStages.map((stage, index) => {
+            const prevCount = index === 0 ? registered : rawStages[index - 1].count;
+            const dropoffPct = index === 0 ? 0 : 
+                prevCount > 0 ? ((prevCount - stage.count) / prevCount) * 100 : 0;
+            
+            return {
+                stage: stage.label,
+                count: stage.count,
+                percentOfTotal: Math.round((stage.count / topOfFunnel) * 100 * 10) / 10,
+                dropoffPct: Math.round(dropoffPct * 10) / 10
+            };
+        });
+
+        return { stages };
     }
 }

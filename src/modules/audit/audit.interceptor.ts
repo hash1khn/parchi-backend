@@ -11,11 +11,16 @@ import { AuditService } from './audit.service';
 import { AUDIT_METADATA_KEY, AuditMetadata } from '../../decorators/audit.decorator';
 import { CurrentUser } from '../../types/global.types';
 
+import { PrismaService } from '../prisma/prisma.service';
+import { from } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
+
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   constructor(
     private readonly auditService: AuditService,
     private readonly reflector: Reflector,
+    private readonly prisma: PrismaService,
   ) { }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -50,21 +55,21 @@ export class AuditInterceptor implements NestInterceptor {
       recordId = request.params?.id;
     }
 
-    // Get old values (for updates) - this would need to be fetched before the operation
-    // For now, we'll log after the operation completes
-    const oldValues = auditMetadata.getOldValues
-      ? auditMetadata.getOldValues([request.body, request.params, request.query])
-      : undefined;
+    const method = request.method.toUpperCase();
+    const isUpdate = method === 'PUT' || method === 'PATCH';
 
-    // Get new values
-    const newValues = auditMetadata.getNewValues
-      ? auditMetadata.getNewValues([request.body, request.params, request.query])
-      : request.body;
+    // We use from() and switchMap to handle the async oldValues fetching
+    return from(this.getOldValues(auditMetadata, request, recordId, isUpdate)).pipe(
+      switchMap(oldValues => {
+        // Get new values
+        const newValues = auditMetadata.getNewValues
+          ? auditMetadata.getNewValues([request.body, request.params, request.query])
+          : request.body;
 
-    // Intercept the response to log after operation completes
-    return next.handle().pipe(
-      tap({
-        next: async (response) => {
+        // Intercept the response to log after operation completes
+        return next.handle().pipe(
+          tap({
+            next: async (response) => {
           try {
             // Extract record ID from response if not already available
             if (!recordId && response?.data?.id) {
@@ -80,11 +85,24 @@ export class AuditInterceptor implements NestInterceptor {
             const isDelete = method === 'DELETE';
 
             if (isCreate) {
+              let enhancedNewValues = newValues || response?.data || response;
+
+              // Enhance CREATE_REDEMPTION with response data (student details, etc.)
+              if (auditMetadata.action === 'CREATE_REDEMPTION') {
+                const redemptionData = response?.data || response;
+                enhancedNewValues = {
+                  ...(typeof enhancedNewValues === 'object' ? enhancedNewValues : {}),
+                  student: redemptionData?.student,
+                  offer: redemptionData?.offer,
+                  branch: redemptionData?.branch,
+                };
+              }
+
               await this.auditService.logCreate(
                 auditMetadata.action,
                 auditMetadata.tableName || 'unknown',
                 recordId || 'unknown',
-                newValues || response?.data || response,
+                enhancedNewValues,
                 user?.id,
                 ipAddress,
                 userAgent,
@@ -157,18 +175,49 @@ export class AuditInterceptor implements NestInterceptor {
                 ipAddress,
                 userAgent,
               );
+              }
+            } catch (error) {
+              // Don't fail the request if audit logging fails
+              console.error('Audit logging error:', error);
             }
-          } catch (error) {
-            // Don't fail the request if audit logging fails
-            console.error('Audit logging error:', error);
-          }
-        },
-        error: async (error) => {
-          // Optionally log failed operations
-          // For now, we'll skip logging errors to avoid noise
-        },
-      }),
+          },
+          error: async (error) => {
+            // Optionally log failed operations
+            // For now, we'll skip logging errors to avoid noise
+          },
+        }),
+      );
+    })
     );
+  }
+
+  private async getOldValues(
+    auditMetadata: AuditMetadata,
+    request: any,
+    recordId?: string,
+    isUpdate?: boolean
+  ): Promise<any> {
+    // 1. If explicit getOldValues provided in decorator, use it
+    if (auditMetadata.getOldValues) {
+      return auditMetadata.getOldValues([request.body, request.params, request.query]);
+    }
+
+    // 2. If it's an update and we have tableName + recordId, fetch from DB
+    if (isUpdate && auditMetadata.tableName && recordId && recordId !== 'unknown') {
+      try {
+        const tableName = auditMetadata.tableName;
+        // Basic check to see if the table exists on prisma client
+        if ((this.prisma as any)[tableName]) {
+          return await (this.prisma as any)[tableName].findUnique({
+            where: { id: recordId }
+          });
+        }
+      } catch (e) {
+        console.warn(`Failed to fetch old values for audit log on table ${auditMetadata.tableName}:`, e.message);
+      }
+    }
+
+    return undefined;
   }
 
   private getIpAddress(request: any): string | undefined {

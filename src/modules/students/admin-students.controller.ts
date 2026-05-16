@@ -74,6 +74,15 @@ export class AdminStudentsController {
       queryDto.institute,
       queryDto.emailVerified,
       queryDto.groupBy,
+      queryDto.university,
+      queryDto.gender,
+      queryDto.kycStatus,
+      queryDto.minRedemptions,
+      queryDto.maxRedemptions,
+      queryDto.dateFrom,
+      queryDto.dateTo,
+      queryDto.hasRedeemed,
+      queryDto.foundersClub,
     );
     return createPaginatedResponse(
       result.items,

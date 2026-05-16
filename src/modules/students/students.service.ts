@@ -244,6 +244,15 @@ export class StudentsService {
     institute?: string,
     emailVerified?: string,
     groupBy?: 'university' | 'city',
+    university?: string,
+    gender?: string,
+    kycStatus?: string,
+    minRedemptions?: number,
+    maxRedemptions?: number,
+    dateFrom?: string,
+    dateTo?: string,
+    hasRedeemed?: string,
+    foundersClub?: string,
   ): Promise<{ items: any[]; pagination: PaginationMeta }> {
     if (groupBy) {
       return this.getStudentSegmentation(groupBy);
@@ -252,58 +261,77 @@ export class StudentsService {
     const skip = calculateSkip(page, limit);
     const whereClause: Prisma.studentsWhereInput = {};
     const conditions: Prisma.studentsWhereInput[] = [];
+
     if (emailVerified !== undefined) {
       const isVerified = emailVerified === 'true';
-      if (isVerified) {
-        conditions.push({
-          users: {
-            is: {
-              users: {
-                is: {
-                  email_confirmed_at: { not: null },
-                },
-              },
-            },
-          },
-        });
-      } else {
-        // Redefined: "Unverified" filter now means (Email Unverified OR KYC Pending)
-        conditions.push({
-          OR: [
-            {
-              users: {
-                is: {
-                  users: {
-                    is: {
-                      email_confirmed_at: null,
-                    },
-                  },
-                },
-              },
-            },
-            {
-              verification_status: 'pending',
-            },
-          ],
-        });
-      }
-    } else {
-      // Default behavior: for normal "All Students" view, we previously only showed verified.
-      // But the user specifically asked for an "unverified" filter, implying they want to see them.
-      // I will remove the hardcoded filter so all are shown if no specific filter is requested.
+      conditions.push({
+        users: {
+          users: isVerified 
+            ? { email_confirmed_at: { not: null } }
+            : { email_confirmed_at: null }
+        },
+      });
     }
 
-    if (status) {
+    // Handle KYC Status (supporting multi-select comma separated)
+    if (kycStatus) {
+      const statusList = kycStatus.split(',').map(s => s.trim());
+      const enumStatuses = statusList.filter(s => s !== 'suspended') as VerificationStatus[];
+      const hasSuspended = statusList.includes('suspended');
+
+      const kycConditions: Prisma.studentsWhereInput[] = [];
+      if (enumStatuses.length > 0) {
+        kycConditions.push({ verification_status: { in: enumStatuses } });
+      }
+      if (hasSuspended) {
+        kycConditions.push({ users: { is_active: false } });
+      }
+      
+      if (kycConditions.length > 0) {
+        conditions.push({ OR: kycConditions });
+      }
+    } else if (status) {
       conditions.push({ verification_status: status });
     }
 
-    if (institute) {
+    // University filter (checking both institute and university fields for compatibility)
+    if (university || institute) {
       conditions.push({
         university: {
-          contains: institute,
+          contains: university || institute,
           mode: 'insensitive',
         },
       });
+    }
+
+    // Redemption range
+    if (minRedemptions !== undefined) {
+      conditions.push({ total_redemptions: { gte: minRedemptions } });
+    }
+    if (maxRedemptions !== undefined) {
+      conditions.push({ total_redemptions: { lte: maxRedemptions } });
+    }
+
+    // Date joined range
+    if (dateFrom || dateTo) {
+      const dateCond: Prisma.DateTimeFilter = {};
+      if (dateFrom) dateCond.gte = new Date(dateFrom);
+      if (dateTo) dateCond.lte = new Date(dateTo);
+      conditions.push({ created_at: dateCond });
+    }
+
+    // Has redeemed toggle
+    if (hasRedeemed !== undefined) {
+      if (hasRedeemed === 'true') {
+        conditions.push({ total_redemptions: { gt: 0 } });
+      } else if (hasRedeemed === 'false') {
+        conditions.push({ total_redemptions: 0 });
+      }
+    }
+
+    // Founders Club toggle
+    if (foundersClub !== undefined) {
+      conditions.push({ is_founders_club: foundersClub === 'true' });
     }
 
     if (search) {
@@ -340,6 +368,11 @@ export class StudentsService {
               email: true,
               phone: true,
               is_active: true,
+              users: {
+                select: {
+                  email_confirmed_at: true,
+                }
+              }
             },
           },
           verified_by_user: {
@@ -357,10 +390,9 @@ export class StudentsService {
             include: {
               users: {
                 select: {
-                  id: true,
                   email: true,
-                },
-              },
+                }
+              }
             },
           },
         },

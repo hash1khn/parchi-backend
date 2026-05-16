@@ -30,6 +30,7 @@ export interface FifthBonusStats {
 
 export interface RedemptionAnalyticsResponse {
   uniqueRedeemers: number;
+  totalRegisteredStudents: number;
   volumeTrends: RedemptionVolumeBreakdown;
   behaviorHistogram: UserBehaviorBucket[];
   repeatRates: RepeatRateStat[];
