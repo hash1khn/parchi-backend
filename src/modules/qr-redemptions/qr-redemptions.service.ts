@@ -13,8 +13,14 @@ import { UpdateQrSettingsDto } from './dto/update-qr-settings.dto';
 import { ROLES } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
 
-const QR_REQUEST_TTL_MINUTES = 5;
+const QR_REQUEST_TTL_MINUTES = 2;
 const DEEP_LINK_BASE = 'https://www.parchipakistan.com/redeem';
+
+function hashToInt32(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) | 0;
+  return h;
+}
 
 @Injectable()
 export class QrRedemptionsService {
@@ -150,23 +156,9 @@ export class QrRedemptionsService {
       throw new BadRequestException('Offer has expired');
     }
 
-    // Block duplicate pending requests at the same branch
-    const existingPending = await (this.prisma as any).qr_redemption_requests.findFirst({
-      where: {
-        student_id: student.id,
-        branch_id: dto.branchId,
-        status: 'pending',
-        expires_at: { gt: now },
-      },
-    });
-
-    if (existingPending) {
-      throw new ConflictException('You already have an active QR request at this branch');
-    }
-
     const expiresAt = new Date(now.getTime() + QR_REQUEST_TTL_MINUTES * 60 * 1000);
 
-    // Auto-approve: skip pending flow, create redemption immediately
+    // Auto-approve path: create redemption directly, no lock needed
     if (branch.qr_auto_approve) {
       await this.redemptionsService.createRedemptionByIds({
         studentId: student.id,
@@ -189,18 +181,41 @@ export class QrRedemptionsService {
       return { requestId: record.id, autoApproved: true, status: 'auto_approved' };
     }
 
-    // Manual approval flow: create pending record
-    const record = await (this.prisma as any).qr_redemption_requests.create({
-      data: {
-        branch_id: dto.branchId,
-        student_id: student.id,
-        offer_id: dto.offerId,
-        status: 'pending',
-        expires_at: expiresAt,
-      },
+    // Manual approval: advisory lock serializes concurrent requests from the same student
+    // so the second caller always finds the first record and returns the same requestId.
+    const lockA = hashToInt32(student.id);
+    const lockB = hashToInt32(dto.branchId);
+
+    const { record } = await this.prisma.$transaction(async (tx) => {
+      await (tx as any).$executeRawUnsafe(
+        'SELECT pg_advisory_xact_lock($1::integer, $2::integer)',
+        lockA,
+        lockB,
+      );
+
+      const existing = await (tx as any).qr_redemption_requests.findFirst({
+        where: {
+          student_id: student.id,
+          branch_id: dto.branchId,
+          status: 'pending',
+          expires_at: { gt: now },
+        },
+      });
+      if (existing) return { record: existing };
+
+      const created = await (tx as any).qr_redemption_requests.create({
+        data: {
+          branch_id: dto.branchId,
+          student_id: student.id,
+          offer_id: dto.offerId,
+          status: 'pending',
+          expires_at: expiresAt,
+        },
+      });
+      return { record: created };
     });
 
-    return { requestId: record.id, autoApproved: false, status: 'pending', expiresAt };
+    return { requestId: record.id, autoApproved: false, status: 'pending', expiresAt: record.expires_at };
   }
 
   // ── Student: poll request status ──────────────────────────────────────────
