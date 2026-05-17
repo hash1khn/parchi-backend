@@ -75,6 +75,7 @@ export interface AdminDashboardStatsResponse {
   dailyPlatformDistribution?: { date: string; ios: number; android: number }[];
   kycPerformance?: {
     medianDaysToFirstRedemption: number;
+    monthlyTrend?: { month: string; days: number }[];
   };
   kycRejectionStats?: KycRejectionStats;
   activeUserTracking?: ActiveUserTracking;

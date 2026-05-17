@@ -611,6 +611,15 @@ export class AdminDashboardService {
         }));
     }
 
+    private calculateMedian(arr: number[]): number {
+        if (arr.length === 0) return 0;
+        const sorted = [...arr].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 !== 0
+            ? sorted[mid]
+            : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+
     private async getKycPerformance() {
         // Fetch only the necessary fields for calculation to keep it fast
         const studentsWithRedemptions = await this.prisma.students.findMany({
@@ -630,7 +639,7 @@ export class AdminDashboardService {
         });
 
         if (studentsWithRedemptions.length === 0) {
-            return { medianDaysToFirstRedemption: 0 };
+            return { medianDaysToFirstRedemption: 0, monthlyTrend: [] };
         }
 
         const daysToRedeem = studentsWithRedemptions
@@ -640,20 +649,47 @@ export class AdminDashboardService {
                 const diffMs = firstRedemption.created_at.getTime() - s.verified_at.getTime();
                 return diffMs / (1000 * 60 * 60 * 24);
             })
-            .filter((d): d is number => d !== null && d >= 0)
-            .sort((a, b) => a - b);
+            .filter((d): d is number => d !== null && d >= 0);
 
         if (daysToRedeem.length === 0) {
-            return { medianDaysToFirstRedemption: 0 };
+            return { medianDaysToFirstRedemption: 0, monthlyTrend: [] };
         }
 
-        const mid = Math.floor(daysToRedeem.length / 2);
-        const median =
-            daysToRedeem.length % 2 !== 0
-                ? daysToRedeem[mid]
-                : (daysToRedeem[mid - 1] + daysToRedeem[mid]) / 2;
+        const overallMedian = this.calculateMedian(daysToRedeem);
 
-        return { medianDaysToFirstRedemption: Math.round(median * 10) / 10 };
+        // Group by month
+        const monthlyGroups = new Map<string, number[]>();
+        
+        studentsWithRedemptions.forEach((s) => {
+            const firstRedemption = s.redemptions[0];
+            if (!s.verified_at || !firstRedemption || !firstRedemption.created_at) return;
+            const diffMs = firstRedemption.created_at.getTime() - s.verified_at.getTime();
+            const days = diffMs / (1000 * 60 * 60 * 24);
+            if (days < 0) return;
+            
+            const monthLabel = s.verified_at.toLocaleString('en-US', { month: 'short', year: '2-digit' });
+            if (!monthlyGroups.has(monthLabel)) {
+                monthlyGroups.set(monthLabel, []);
+            }
+            monthlyGroups.get(monthLabel)!.push(days);
+        });
+
+        // Compute median for each month
+        const monthlyTrend = Array.from(monthlyGroups.entries()).map(([month, daysList]) => {
+            const median = this.calculateMedian(daysList);
+            return {
+                month,
+                days: Math.round(median * 10) / 10
+            };
+        }).sort((a, b) => {
+            // Sort by month/year chronologically
+            return new Date(a.month).getTime() - new Date(b.month).getTime();
+        }).slice(-5); // Get latest 5 months
+
+        return { 
+            medianDaysToFirstRedemption: Math.round(overallMedian * 10) / 10,
+            monthlyTrend
+        };
     }
 
     async getRedemptionAnalytics(startDate?: Date, endDate?: Date, studentId?: string): Promise<RedemptionAnalyticsResponse> {

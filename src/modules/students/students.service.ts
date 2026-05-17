@@ -264,8 +264,56 @@ export class StudentsService {
       }),
     ]);
 
+    // Batch fetch inferred platforms for students who have null platform
+    const studentsWithNullPlatform = students.filter(s => !s.platform);
+    const inferredPlatforms = new Map<string, string>();
+
+    if (studentsWithNullPlatform.length > 0) {
+      const userIds = studentsWithNullPlatform.map(s => s.user_id);
+      
+      // 1. Try FCM Tokens
+      const fcmTokens = await this.prisma.user_fcm_tokens.findMany({
+        where: { 
+          user_id: { in: userIds }, 
+          platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+        },
+        orderBy: { updated_at: 'desc' },
+        select: { user_id: true, platform: true }
+      });
+      
+      fcmTokens.forEach(t => {
+        if (t.platform && !inferredPlatforms.has(t.user_id)) {
+          inferredPlatforms.set(t.user_id, t.platform);
+        }
+      });
+
+      // 2. Try Analytics Events for remaining
+      const remainingUserIds = userIds.filter(id => !inferredPlatforms.has(id));
+      if (remainingUserIds.length > 0) {
+        const events = await this.prisma.analytics_events.findMany({
+          where: { 
+            user_id: { in: remainingUserIds }, 
+            platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+          },
+          orderBy: { created_at: 'desc' },
+          select: { user_id: true, platform: true }
+        });
+        
+        events.forEach(e => {
+          if (e.user_id && e.platform && !inferredPlatforms.has(e.user_id)) {
+            inferredPlatforms.set(e.user_id, e.platform);
+          }
+        });
+      }
+    }
+
+
+
     const formattedStudents = await Promise.all(
-      students.map((student) => this.formatStudentListResponse(student)),
+      students.map((student) => {
+        const inferredPlatform = inferredPlatforms.get(student.user_id);
+        return this.formatStudentListResponse(student, inferredPlatform);
+      }),
     );
 
     return {
@@ -449,8 +497,56 @@ export class StudentsService {
       }),
     ]);
 
+    // Batch fetch inferred platforms for students who have null platform
+    const studentsWithNullPlatform = students.filter(s => !s.platform);
+    const inferredPlatforms = new Map<string, string>();
+
+    if (studentsWithNullPlatform.length > 0) {
+      const userIds = studentsWithNullPlatform.map(s => s.user_id);
+      
+      // 1. Try FCM Tokens
+      const fcmTokens = await this.prisma.user_fcm_tokens.findMany({
+        where: { 
+          user_id: { in: userIds }, 
+          platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+        },
+        orderBy: { updated_at: 'desc' },
+        select: { user_id: true, platform: true }
+      });
+      
+      fcmTokens.forEach(t => {
+        if (t.platform && !inferredPlatforms.has(t.user_id)) {
+          inferredPlatforms.set(t.user_id, t.platform);
+        }
+      });
+
+      // 2. Try Analytics Events for remaining
+      const remainingUserIds = userIds.filter(id => !inferredPlatforms.has(id));
+      if (remainingUserIds.length > 0) {
+        const events = await this.prisma.analytics_events.findMany({
+          where: { 
+            user_id: { in: remainingUserIds }, 
+            platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+          },
+          orderBy: { created_at: 'desc' },
+          select: { user_id: true, platform: true }
+        });
+        
+        events.forEach(e => {
+          if (e.user_id && e.platform && !inferredPlatforms.has(e.user_id)) {
+            inferredPlatforms.set(e.user_id, e.platform);
+          }
+        });
+      }
+    }
+
+
+
     const formattedStudents = await Promise.all(
-      students.map((student) => this.formatStudentResponse(student)),
+      students.map((student) => {
+        const inferredPlatform = inferredPlatforms.get(student.user_id);
+        return this.formatStudentResponse(student, inferredPlatform);
+      }),
     );
 
     return {
@@ -702,7 +798,12 @@ export class StudentsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
-    return this.formatStudentDetailResponse(student);
+    let inferredPlatform: string | undefined = undefined;
+    if (!student.platform) {
+      inferredPlatform = (await this.getInferredPlatform(student.user_id)) || undefined;
+    }
+
+    return this.formatStudentDetailResponse(student, inferredPlatform);
   }
 
   /**
@@ -1294,7 +1395,12 @@ export class StudentsService {
   /**
    * Format student list response (without KYC data)
    */
-  private async formatStudentListResponse(student: any): Promise<StudentListResponse> {
+  private async formatStudentListResponse(student: any, inferredPlatform?: string): Promise<StudentListResponse> {
+    let platform = student.platform || inferredPlatform;
+    if (!platform) {
+      platform = await this.getInferredPlatform(student.user_id) || undefined;
+    }
+
     return {
       id: student.id,
       userId: student.user_id,
@@ -1317,7 +1423,7 @@ export class StudentsService {
       cnic: student.cnic,
       dateOfBirth: student.date_of_birth,
       isActive: student.users.is_active ?? false,
-      platform: student.platform,
+      platform,
       reviewNotes: student.student_kyc?.[0]?.review_notes || null,
       instituteId: student.institute_id ?? null,
       instituteName: student.institutes?.name ?? null,
@@ -1328,8 +1434,13 @@ export class StudentsService {
   /**
    * Format student response with KYC data
    */
-  private async formatStudentResponse(student: any): Promise<StudentKycResponse> {
+  private async formatStudentResponse(student: any, inferredPlatform?: string): Promise<StudentKycResponse> {
     const latestKyc = student.student_kyc?.[0] || null;
+
+    let platform = student.platform || inferredPlatform;
+    if (!platform) {
+      platform = await this.getInferredPlatform(student.user_id) || undefined;
+    }
 
     return {
       id: student.id,
@@ -1384,7 +1495,7 @@ export class StudentsService {
       isActive: student.users.is_active ?? false,
       profilePicture: student.profile_picture ?? null,
       verificationSelfiePath: student.verification_selfie_path ?? null,
-      platform: student.platform,
+      platform,
       reviewNotes: latestKyc?.review_notes || null,
       instituteId: student.institute_id ?? null,
       instituteName: student.institutes?.name ?? null,
@@ -1395,8 +1506,13 @@ export class StudentsService {
   /**
    * Format student detail response
    */
-  private async formatStudentDetailResponse(student: any): Promise<StudentDetailResponse> {
+  private async formatStudentDetailResponse(student: any, inferredPlatform?: string): Promise<StudentDetailResponse> {
     const latestKyc = student.student_kyc?.[0] || null;
+
+    let platform = student.platform || inferredPlatform;
+    if (!platform) {
+      platform = await this.getInferredPlatform(student.user_id) || undefined;
+    }
 
     // Get loyalty progress across all merchants
     const loyaltyProgress = await this.prisma.student_merchant_stats.findMany({
@@ -1518,7 +1634,7 @@ export class StudentsService {
       isActive: student.users.is_active ?? false,
       profilePicture: student.profile_picture ?? null,
       verificationSelfiePath: student.verification_selfie_path ?? null,
-      platform: student.platform,
+      platform,
       reviewNotes: latestKyc?.review_notes || null,
       instituteId: student.institute_id ?? null,
       instituteName: student.institutes?.name ?? null,
@@ -1622,5 +1738,31 @@ export class StudentsService {
       data: { has_seen_app_intro: true },
     });
   }
+
+  /**
+   * Infer platform from FCM tokens or analytics events
+   */
+  private async getInferredPlatform(userId: string): Promise<string | null> {
+    const fcmToken = await this.prisma.user_fcm_tokens.findFirst({
+      where: { 
+        user_id: userId, 
+        platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+      },
+      orderBy: { updated_at: 'desc' },
+      select: { platform: true }
+    });
+    if (fcmToken?.platform) return fcmToken.platform;
+
+    const analyticEvent = await this.prisma.analytics_events.findFirst({
+      where: { 
+        user_id: userId, 
+        platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+      },
+      orderBy: { created_at: 'desc' },
+      select: { platform: true }
+    });
+    return analyticEvent?.platform || null;
+  }
+
 }
 
