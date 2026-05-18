@@ -396,10 +396,10 @@ export class StudentsService {
 
     // Redemption range
     if (minRedemptions !== undefined) {
-      conditions.push({ total_redemptions: { gte: minRedemptions } });
+      conditions.push({ lifetime_redemptions: { gte: minRedemptions } });
     }
     if (maxRedemptions !== undefined) {
-      conditions.push({ total_redemptions: { lte: maxRedemptions } });
+      conditions.push({ lifetime_redemptions: { lte: maxRedemptions } });
     }
 
     // Date joined range
@@ -413,9 +413,9 @@ export class StudentsService {
     // Has redeemed toggle
     if (hasRedeemed !== undefined) {
       if (hasRedeemed === 'true') {
-        conditions.push({ total_redemptions: { gt: 0 } });
+        conditions.push({ lifetime_redemptions: { gt: 0 } });
       } else if (hasRedeemed === 'false') {
-        conditions.push({ total_redemptions: 0 });
+        conditions.push({ lifetime_redemptions: 0 });
       }
     }
 
@@ -886,6 +886,7 @@ export class StudentsService {
     }
     if (dto.totalRedemptions !== undefined) {
       studentUpdates.total_redemptions = dto.totalRedemptions;
+      studentUpdates.lifetime_redemptions = dto.totalRedemptions;
     }
     if (dto.verificationStatus !== undefined) {
       studentUpdates.verification_status = dto.verificationStatus;
@@ -1413,7 +1414,7 @@ export class StudentsService {
       graduationYear: student.graduation_year,
       isFoundersClub: student.is_founders_club,
       totalSavings: Number(student.total_savings || 0),
-      totalRedemptions: student.total_redemptions || 0,
+      totalRedemptions: student.lifetime_redemptions || 0,
       verificationStatus: student.verification_status,
       verifiedAt: student.verified_at,
       verificationExpiresAt: student.verification_expires_at,
@@ -1454,7 +1455,7 @@ export class StudentsService {
       graduationYear: student.graduation_year,
       isFoundersClub: student.is_founders_club,
       totalSavings: Number(student.total_savings || 0),
-      totalRedemptions: student.total_redemptions || 0,
+      totalRedemptions: student.lifetime_redemptions || 0,
       verificationStatus: student.verification_status,
       verifiedAt: student.verified_at,
       verifiedBy: student.verified_by_user
@@ -1569,8 +1570,28 @@ export class StudentsService {
     // Get leaderboard rank (simplified for now)
     const rank = await this.prisma.students.count({
       where: {
-        total_redemptions: { gt: student.total_redemptions || 0 }
-      }
+        verification_status: 'approved',
+        OR: [
+          {
+            lifetime_redemptions: {
+              gt: student.lifetime_redemptions || 0,
+            },
+          },
+          {
+            lifetime_redemptions: student.lifetime_redemptions || 0,
+            last_redemption_at: {
+              gt: student.last_redemption_at || new Date(0),
+            },
+          },
+          {
+            lifetime_redemptions: student.lifetime_redemptions || 0,
+            last_redemption_at: student.last_redemption_at || new Date(0),
+            id: {
+              lt: student.id,
+            },
+          },
+        ],
+      },
     }) + 1;
 
     return {
@@ -1589,7 +1610,7 @@ export class StudentsService {
       adminNotes: student.admin_notes,
       isFoundersClub: student.is_founders_club,
       totalSavings: Number(student.total_savings || 0),
-      totalRedemptions: student.total_redemptions || 0,
+      totalRedemptions: student.lifetime_redemptions || 0,
       leaderboardRank: rank,
       accountAgeDays: Math.floor((Date.now() - new Date(student.created_at).getTime()) / (1000 * 60 * 60 * 24)),
       verificationStatus: student.verification_status,

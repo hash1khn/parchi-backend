@@ -491,8 +491,8 @@ export class RedemptionsService {
     const formattedRedemption = await this.formatRedemptionResponse(redemption);
 
     // Fire first_redemption analytics event if this is the student's first ever redemption.
-    // student.total_redemptions reflects the count BEFORE the transaction incremented it.
-    if ((student.total_redemptions ?? 0) === 0) {
+    // student.lifetime_redemptions reflects the count BEFORE the transaction incremented it.
+    if ((student.lifetime_redemptions ?? 0) === 0) {
       this.analyticsService
         .logEvent(student.user_id, { eventName: 'first_redemption', metadata: {} })
         .catch(() => { /* non-critical, swallow */ });
@@ -1491,15 +1491,8 @@ export class RedemptionsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
-    // 1. Total Redemptions (Ground truth from redemptions table)
-    // We count only verified redemptions (or all depends on business logic, 
-    // but verified is safer for 'Visits')
-    const totalRedemptions = await this.prisma.redemptions.count({
-      where: {
-        student_id: student.id,
-        verified_by: { not: null },
-      },
-    });
+    // 1. Total Redemptions (Ground truth from student.lifetime_redemptions)
+    const totalRedemptions = student.lifetime_redemptions || 0;
 
     // 2. Bonuses Unlocked
     const bonusesUnlocked = await this.prisma.redemptions.count({
@@ -1968,7 +1961,7 @@ export class RedemptionsService {
       await Promise.all([
         this.prisma.students.findUnique({
           where: { id: studentId },
-          select: { id: true, user_id: true, total_redemptions: true },
+          select: { id: true, user_id: true, lifetime_redemptions: true },
         }),
         this.prisma.offers.findUnique({
           where: { id: offerId },

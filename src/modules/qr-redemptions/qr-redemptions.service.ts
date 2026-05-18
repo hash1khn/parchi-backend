@@ -320,7 +320,7 @@ export class QrRedemptionsService {
             last_name: true,
             university: true,
             verification_status: true,
-            total_redemptions: true,
+            lifetime_redemptions: true,
             profile_picture: true,
           },
         },
@@ -350,7 +350,7 @@ export class QrRedemptionsService {
         lastName: r.students.last_name,
         university: r.students.university,
         verificationStatus: r.students.verification_status,
-        totalRedemptions: r.students.total_redemptions,
+        totalRedemptions: r.students.lifetime_redemptions || 0,
         profilePicture: r.students.profile_picture,
       },
       offer: {

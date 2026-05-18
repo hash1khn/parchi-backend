@@ -398,7 +398,7 @@ export class AdminDashboardService {
         // Students with 10+ redemptions
         return this.prisma.students.count({
             where: {
-                total_redemptions: {
+                lifetime_redemptions: {
                     gte: 10,
                 },
             },
