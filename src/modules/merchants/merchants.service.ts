@@ -59,6 +59,7 @@ export interface BranchResponse {
   isActive: boolean | null;
   createdAt: Date | null;
   updatedAt: Date | null;
+  qrAutoApprove?: boolean;
 }
 
 export interface BranchAssignmentResponse {
@@ -992,6 +993,7 @@ export class MerchantsService {
       isActive: branch.is_active,
       createdAt: branch.created_at,
       updatedAt: branch.updated_at,
+      qrAutoApprove: branch.qr_auto_approve ?? false,
     }));
 
     return formattedBranches;
@@ -1136,6 +1138,9 @@ export class MerchantsService {
     if (updateDto.isActive !== undefined) {
       updateData.is_active = updateDto.isActive;
     }
+    if (updateDto.qrAutoApprove !== undefined) {
+      updateData.qr_auto_approve = updateDto.qrAutoApprove;
+    }
 
     // Update branch
     const updatedBranch = await this.prisma.merchant_branches.update({
@@ -1174,6 +1179,7 @@ export class MerchantsService {
       isActive: updatedBranch.is_active,
       createdAt: updatedBranch.created_at,
       updatedAt: updatedBranch.updated_at,
+      qrAutoApprove: updatedBranch.qr_auto_approve ?? false,
     };
 
     return formattedBranch;

@@ -49,5 +49,45 @@ export class QueryStudentsDto {
   @IsOptional()
   @IsString()
   groupBy?: 'university' | 'city';
+
+  @IsOptional()
+  @IsString()
+  university?: string;
+
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
+  @IsOptional()
+  @IsString()
+  kycStatus?: string; // Can be comma-separated values
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  minRedemptions?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxRedemptions?: number;
+
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
+
+  @IsOptional()
+  @IsString()
+  hasRedeemed?: string; // 'true' or 'false' from query
+
+  @IsOptional()
+  @IsString()
+  foundersClub?: string; // 'true' or 'false' from query
 }
 

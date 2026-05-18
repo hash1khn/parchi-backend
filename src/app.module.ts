@@ -20,6 +20,7 @@ import { InstitutesModule } from './modules/institutes/institutes.module';
 import { AccountDeletionModule } from './modules/account-deletion/account-deletion.module';
 import { SystemConfigModule } from './modules/system-config/system-config.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { QrRedemptionsModule } from './modules/qr-redemptions/qr-redemptions.module';
 
 
 
@@ -55,6 +56,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     AccountDeletionModule,
     SystemConfigModule,
     AnalyticsModule,
+    QrRedemptionsModule,
   ],
   controllers: [AppController],
   providers: [

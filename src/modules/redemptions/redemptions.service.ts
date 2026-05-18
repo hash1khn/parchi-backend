@@ -1934,4 +1934,231 @@ export class RedemptionsService {
       hourlyData,
     };
   }
+
+  /**
+   * Internal: create a redemption directly by IDs.
+   * Called by the QR service on approve/auto-approve — skips Parchi ID lookup
+   * and branch ownership check (caller is responsible for those validations).
+   */
+  async createRedemptionByIds(params: {
+    studentId: string;
+    offerId: string;
+    branchId: string;
+    verifiedById: string;
+    notes?: string;
+    imageUrl?: string;
+  }): Promise<void> {
+    const { studentId, offerId, branchId, verifiedById, notes, imageUrl } = params;
+    const now = new Date();
+    const recentWindow = new Date(now.getTime() - this.DUPLICATE_PREVENTION_WINDOW_MS);
+
+    // Phase 1: get branch to resolve merchant_id
+    const branch = await this.prisma.merchant_branches.findUnique({
+      where: { id: branchId },
+      include: {
+        merchants: { select: { id: true, business_name: true, logo_path: true, category: true } },
+      },
+    });
+
+    if (!branch) throw new NotFoundException(API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_NOT_FOUND);
+    const merchantId = branch.merchant_id;
+
+    // Phase 2: parallel reads
+    const [student, offer, loyaltyPrograms, studentMerchantStats, studentOfferStats] =
+      await Promise.all([
+        this.prisma.students.findUnique({
+          where: { id: studentId },
+          select: { id: true, user_id: true, total_redemptions: true },
+        }),
+        this.prisma.offers.findUnique({
+          where: { id: offerId },
+          select: {
+            id: true,
+            title: true,
+            discount_type: true,
+            discount_value: true,
+            image_url: true,
+            additional_item: true,
+            daily_limit: true,
+            total_limit: true,
+            current_redemptions: true,
+            redemption_strategy: true,
+            merchant_id: true,
+          },
+        }),
+        (this.prisma as any).loyalty_programs.findMany({
+          where: {
+            merchant_id: merchantId,
+            OR: [{ scope: 'merchant' }, { scope: 'offer', offer_id: offerId }],
+            is_active: true,
+          },
+        }),
+        (this.prisma as any).student_merchant_stats.findUnique({
+          where: { student_id_merchant_id: { student_id: studentId, merchant_id: merchantId } },
+        }),
+        (this.prisma as any).student_offer_stats.findUnique({
+          where: { student_id_offer_id: { student_id: studentId, offer_id: offerId } },
+        }),
+      ]);
+
+    if (!student || !offer) {
+      throw new NotFoundException('Student or offer not found');
+    }
+
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        if (offer.daily_limit) {
+          const todayCount = await tx.redemptions.count({
+            where: { offer_id: offerId, branch_id: branchId, created_at: { gte: startOfDay } },
+          });
+          if (todayCount >= offer.daily_limit) {
+            throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_LIMIT_REACHED);
+          }
+        }
+
+        const recent = await tx.redemptions.findFirst({
+          where: { student_id: studentId, offer_id: offerId, branch_id: branchId, created_at: { gte: recentWindow } },
+        });
+        if (recent) {
+          throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.DUPLICATE_REDEMPTION);
+        }
+
+        let isBonusApplied = false;
+        let bonusDiscountApplied: number | null = null;
+        let strategyNote: string | null = null;
+        let calculatedStrategyDiscount: number | undefined;
+
+        if ((offer as any).redemption_strategy === 'soho_hierarchical') {
+          const strategyResult = await this.sohoStrategy.calculateDiscount({
+            studentId,
+            merchantId,
+            offerId,
+            tx,
+          });
+          calculatedStrategyDiscount = strategyResult.discountValue;
+          strategyNote = strategyResult.note || null;
+          bonusDiscountApplied = calculatedStrategyDiscount;
+          isBonusApplied = true;
+        }
+
+        if (!(offer as any).redemption_strategy && loyaltyPrograms.length > 0) {
+          const activeOfferProgram = loyaltyPrograms.find((p: any) => p.scope === 'offer' && p.offer_id === offerId);
+          const activeMerchantProgram = loyaltyPrograms.find((p: any) => p.scope === 'merchant');
+          const activeProgram = activeOfferProgram || activeMerchantProgram;
+
+          if (activeProgram) {
+            const redemptionCount = activeProgram.scope === 'offer'
+              ? (studentOfferStats?.redemption_count || 0)
+              : (studentMerchantStats?.redemption_count || 0);
+
+            if ((redemptionCount + 1) % activeProgram.redemptions_required === 0) {
+              isBonusApplied = true;
+              if (activeProgram.discount_type === 'percentage') {
+                bonusDiscountApplied = Number(activeProgram.discount_value);
+                if (activeProgram.max_discount_amount) {
+                  bonusDiscountApplied = Math.min(bonusDiscountApplied, Number(activeProgram.max_discount_amount));
+                }
+              } else if (activeProgram.discount_type === 'fixed') {
+                bonusDiscountApplied = Number(activeProgram.discount_value);
+              } else if (activeProgram.discount_type === 'item') {
+                bonusDiscountApplied = 0;
+              }
+            }
+          }
+        }
+
+        const totalSavings =
+          typeof calculatedStrategyDiscount !== 'undefined'
+            ? calculatedStrategyDiscount
+            : isBonusApplied
+              ? Number(offer.discount_value) + (bonusDiscountApplied || 0)
+              : Number(offer.discount_value);
+
+        const resolvedNotes = strategyNote
+          ? notes ? `${strategyNote} | ${notes}` : strategyNote
+          : notes || null;
+
+        const newRedemption = await tx.redemptions.create({
+          data: {
+            student_id: studentId,
+            offer_id: offerId,
+            branch_id: branchId,
+            is_bonus_applied: isBonusApplied,
+            bonus_discount_applied: bonusDiscountApplied ?? null,
+            verified_by: verifiedById,
+            image_url: imageUrl ?? branch.merchants?.logo_path ?? null,
+            notes: resolvedNotes,
+          },
+        });
+
+        await Promise.all([
+          tx.offers.update({
+            where: { id: offerId },
+            data: { current_redemptions: { increment: 1 } },
+          }),
+          tx.students.update({
+            where: { id: studentId },
+            data: {
+              total_redemptions: { increment: 1 },
+              lifetime_redemptions: { increment: 1 },
+              total_savings: { increment: totalSavings },
+              last_redemption_at: now,
+            },
+          }),
+          (tx as any).student_merchant_stats.upsert({
+            where: { student_id_merchant_id: { student_id: studentId, merchant_id: merchantId } },
+            update: { redemption_count: { increment: 1 }, total_savings: { increment: totalSavings }, last_redemption_at: now },
+            create: { student_id: studentId, merchant_id: merchantId, redemption_count: 1, total_savings: totalSavings, last_redemption_at: now },
+          }),
+          tx.student_branch_stats.upsert({
+            where: { student_id_branch_id: { student_id: studentId, branch_id: branchId } },
+            update: { redemption_count: { increment: 1 }, total_savings: { increment: totalSavings }, last_redemption_at: now },
+            create: { student_id: studentId, branch_id: branchId, redemption_count: 1, total_savings: totalSavings, last_redemption_at: now },
+          }),
+          (tx as any).student_offer_stats.upsert({
+            where: { student_id_offer_id: { student_id: studentId, offer_id: offerId } },
+            update: { redemption_count: { increment: 1 }, total_savings: { increment: totalSavings }, last_redemption_at: now },
+            create: { student_id: studentId, offer_id: offerId, redemption_count: 1, total_savings: totalSavings, last_redemption_at: now },
+          }),
+        ]);
+
+        return newRedemption;
+      },
+      { timeout: 30000 },
+    );
+
+    // Send success notification to student
+    try {
+      const rawDiscountType: string = offer.discount_type ?? '';
+      const rawDiscountValue = Number(offer.discount_value ?? 0);
+      const merchantName = branch.merchants?.business_name || 'Parchi Partner';
+      const branchName = branch.branch_name ? `${merchantName} - ${branch.branch_name}` : merchantName;
+      const defaultImageUrl = 'https://zjghfwnrzazmukykgyhh.supabase.co/storage/v1/object/public/logo/parchi-app-icon.png';
+      const notifImage = imageUrl ?? branch.merchants?.logo_path ?? defaultImageUrl;
+
+      let notificationBody: string;
+      if (rawDiscountType === 'percentage') {
+        notificationBody = `You got a ${rawDiscountValue}% discount at ${branchName}!`;
+      } else if (rawDiscountType === 'fixed') {
+        notificationBody = `You saved Rs. ${rawDiscountValue} at ${branchName}!`;
+      } else if (rawDiscountType === 'item') {
+        const itemLabel = offer.additional_item ? `a free ${offer.additional_item}` : 'a free item';
+        notificationBody = `You got ${itemLabel} at ${branchName}!`;
+      } else {
+        notificationBody = `You redeemed an offer at ${branchName}!`;
+      }
+
+      await this.notificationsService.sendPersonalNotification(
+        student.user_id,
+        'Parchi lag gayi!',
+        notificationBody,
+        notifImage,
+      );
+    } catch (error) {
+      console.error('Failed to send QR redemption notification', error);
+    }
+  }
 }

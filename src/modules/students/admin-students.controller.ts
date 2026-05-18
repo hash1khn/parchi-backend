@@ -12,7 +12,12 @@ import {
   ParseIntPipe,
   ParseUUIDPipe,
   DefaultValuePipe,
+  UseInterceptors,
+  UploadedFile,
+  Post,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { StudentsService } from './students.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -74,6 +79,15 @@ export class AdminStudentsController {
       queryDto.institute,
       queryDto.emailVerified,
       queryDto.groupBy,
+      queryDto.university,
+      queryDto.gender,
+      queryDto.kycStatus,
+      queryDto.minRedemptions,
+      queryDto.maxRedemptions,
+      queryDto.dateFrom,
+      queryDto.dateTo,
+      queryDto.hasRedeemed,
+      queryDto.foundersClub,
     );
     return createPaginatedResponse(
       result.items,
@@ -181,6 +195,26 @@ export class AdminStudentsController {
   async verifyStudentEmail(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.studentsService.verifyStudentEmail(id);
     return createApiResponse(data, API_RESPONSE_MESSAGES.STUDENT.UPDATE_SUCCESS);
+  }
+
+  @Post(':id/selfie')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @Audit({ action: 'UPDATE_KYC_SELFIE', tableName: 'students', recordIdParam: 'id' })
+  async updateStudentSelfie(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Selfie image file is required');
+    }
+    const data = await this.studentsService.updateStudentSelfie(id, {
+      buffer: file.buffer,
+      mimetype: file.mimetype,
+    });
+    return createApiResponse(data, 'Student selfie updated successfully');
   }
 }
 

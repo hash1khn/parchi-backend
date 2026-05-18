@@ -459,12 +459,14 @@ model merchant_branches {
   is_active             Boolean?               @default(true)
   created_at            DateTime?              @default(now()) @db.Timestamptz(6)
   updated_at            DateTime?              @default(now()) @db.Timestamptz(6)
-  branch_bonus_settings branch_bonus_settings?
-  merchants             merchants              @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users                 public_users?          @relation(fields: [user_id], references: [id], onUpdate: NoAction)
-  offer_branches        offer_branches[]
-  redemptions           redemptions[]
-  student_branch_stats  student_branch_stats[]
+  qr_auto_approve        Boolean?               @default(false)
+  branch_bonus_settings  branch_bonus_settings?
+  merchants              merchants              @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                  public_users?          @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  offer_branches         offer_branches[]
+  redemptions            redemptions[]
+  student_branch_stats   student_branch_stats[]
+  qr_redemption_requests qr_redemption_requests[]
 
   @@index([city], map: "idx_branches_location")
   @@index([merchant_id], map: "idx_branches_merchant")
@@ -544,12 +546,13 @@ model offers {
   redemption_strategy String?
   additional_item     String?
   notes               String?
-  loyalty_programs    loyalty_programs[]
-  offer_branches      offer_branches[]
-  users               public_users?         @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  merchants           merchants             @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  redemptions         redemptions[]
-  student_offer_stats student_offer_stats[]
+  loyalty_programs       loyalty_programs[]
+  offer_branches         offer_branches[]
+  users                  public_users?           @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  merchants              merchants               @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  redemptions            redemptions[]
+  student_offer_stats    student_offer_stats[]
+  qr_redemption_requests qr_redemption_requests[]
 
   @@index([merchant_id], map: "idx_offers_merchant")
   @@index([status], map: "idx_offers_status")
@@ -676,11 +679,16 @@ model students {
   student_id_number        String?                  @db.VarChar(100)
   last_redemption_at       DateTime?                @db.Timestamptz(6)
   lifetime_redemptions     Int?                     @default(0)
+  admin_notes              String?
+  degree                   String?                  @db.VarChar(255)
+  gender                   String?                  @db.VarChar(20)
+  year_of_study            String?                  @db.VarChar(50)
   redemptions              redemptions[]
   student_branch_stats     student_branch_stats[]
   student_kyc              student_kyc[]
   student_merchant_stats   student_merchant_stats[]
   student_offer_stats      student_offer_stats[]
+  qr_redemption_requests   qr_redemption_requests[]
   institutes               institutes?              @relation(fields: [institute_id], references: [id], onUpdate: NoAction)
   users                    public_users             @relation("student_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   verified_by_user         public_users?            @relation("verified_by", fields: [verified_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -1113,5 +1121,36 @@ enum loyalty_scope {
   merchant
   offer
 
+  @@schema("public")
+}
+
+enum qr_request_status {
+  pending
+  approved
+  rejected
+  expired
+  auto_approved
+
+  @@schema("public")
+}
+
+model qr_redemption_requests {
+  id               String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  branch_id        String                @db.Uuid
+  student_id       String                @db.Uuid
+  offer_id         String                @db.Uuid
+  status           qr_request_status     @default(pending)
+  rejection_reason String?
+  redemption_id    String?               @db.Uuid
+  expires_at       DateTime              @db.Timestamptz(6)
+  created_at       DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime              @default(now()) @db.Timestamptz(6)
+  merchant_branches merchant_branches    @relation(fields: [branch_id], references: [id], onDelete: Cascade)
+  students          students             @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  offers            offers               @relation(fields: [offer_id], references: [id], onDelete: Cascade)
+
+  @@index([branch_id, status], map: "idx_qr_requests_branch_status")
+  @@index([student_id, status], map: "idx_qr_requests_student_status")
+  @@index([expires_at], map: "idx_qr_requests_expires")
   @@schema("public")
 }

@@ -73,6 +73,27 @@ export interface StudentListResponse {
   instituteId?: string | null;
   instituteName?: string | null;
   studentIdNumber?: string | null;
+  gender?: string | null;
+  degree?: string | null;
+  yearOfStudy?: string | null;
+  adminNotes?: string | null;
+  leaderboardRank?: number;
+  accountAgeDays?: number;
+  loyaltyProgress?: {
+    merchantName: string;
+    merchantLogo: string | null;
+    current: number;
+    goal: number;
+    percentage: number;
+  }[];
+  recentRedemptions?: {
+    id: string;
+    date: Date | null;
+    merchantName: string;
+    branchName: string;
+    offerTitle: string;
+    isBonusApplied: boolean | null;
+  }[];
 }
 
 export interface StudentKycResponse {
@@ -109,6 +130,27 @@ export interface StudentKycResponse {
   instituteId?: string | null;
   instituteName?: string | null;
   studentIdNumber?: string | null;
+  gender?: string | null;
+  degree?: string | null;
+  yearOfStudy?: string | null;
+  adminNotes?: string | null;
+  leaderboardRank?: number;
+  accountAgeDays?: number;
+  loyaltyProgress?: {
+    merchantName: string;
+    merchantLogo: string | null;
+    current: number;
+    goal: number;
+    percentage: number;
+  }[];
+  recentRedemptions?: {
+    id: string;
+    date: Date | null;
+    merchantName: string;
+    branchName: string;
+    offerTitle: string;
+    isBonusApplied: boolean | null;
+  }[];
   kyc?: {
     id: string;
     studentIdCardFrontPath: string;
@@ -222,8 +264,56 @@ export class StudentsService {
       }),
     ]);
 
+    // Batch fetch inferred platforms for students who have null platform
+    const studentsWithNullPlatform = students.filter(s => !s.platform);
+    const inferredPlatforms = new Map<string, string>();
+
+    if (studentsWithNullPlatform.length > 0) {
+      const userIds = studentsWithNullPlatform.map(s => s.user_id);
+      
+      // 1. Try FCM Tokens
+      const fcmTokens = await this.prisma.user_fcm_tokens.findMany({
+        where: { 
+          user_id: { in: userIds }, 
+          platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+        },
+        orderBy: { updated_at: 'desc' },
+        select: { user_id: true, platform: true }
+      });
+      
+      fcmTokens.forEach(t => {
+        if (t.platform && !inferredPlatforms.has(t.user_id)) {
+          inferredPlatforms.set(t.user_id, t.platform);
+        }
+      });
+
+      // 2. Try Analytics Events for remaining
+      const remainingUserIds = userIds.filter(id => !inferredPlatforms.has(id));
+      if (remainingUserIds.length > 0) {
+        const events = await this.prisma.analytics_events.findMany({
+          where: { 
+            user_id: { in: remainingUserIds }, 
+            platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+          },
+          orderBy: { created_at: 'desc' },
+          select: { user_id: true, platform: true }
+        });
+        
+        events.forEach(e => {
+          if (e.user_id && e.platform && !inferredPlatforms.has(e.user_id)) {
+            inferredPlatforms.set(e.user_id, e.platform);
+          }
+        });
+      }
+    }
+
+
+
     const formattedStudents = await Promise.all(
-      students.map((student) => this.formatStudentListResponse(student)),
+      students.map((student) => {
+        const inferredPlatform = inferredPlatforms.get(student.user_id);
+        return this.formatStudentListResponse(student, inferredPlatform);
+      }),
     );
 
     return {
@@ -244,6 +334,15 @@ export class StudentsService {
     institute?: string,
     emailVerified?: string,
     groupBy?: 'university' | 'city',
+    university?: string,
+    gender?: string,
+    kycStatus?: string,
+    minRedemptions?: number,
+    maxRedemptions?: number,
+    dateFrom?: string,
+    dateTo?: string,
+    hasRedeemed?: string,
+    foundersClub?: string,
   ): Promise<{ items: any[]; pagination: PaginationMeta }> {
     if (groupBy) {
       return this.getStudentSegmentation(groupBy);
@@ -252,58 +351,77 @@ export class StudentsService {
     const skip = calculateSkip(page, limit);
     const whereClause: Prisma.studentsWhereInput = {};
     const conditions: Prisma.studentsWhereInput[] = [];
+
     if (emailVerified !== undefined) {
       const isVerified = emailVerified === 'true';
-      if (isVerified) {
-        conditions.push({
-          users: {
-            is: {
-              users: {
-                is: {
-                  email_confirmed_at: { not: null },
-                },
-              },
-            },
-          },
-        });
-      } else {
-        // Redefined: "Unverified" filter now means (Email Unverified OR KYC Pending)
-        conditions.push({
-          OR: [
-            {
-              users: {
-                is: {
-                  users: {
-                    is: {
-                      email_confirmed_at: null,
-                    },
-                  },
-                },
-              },
-            },
-            {
-              verification_status: 'pending',
-            },
-          ],
-        });
-      }
-    } else {
-      // Default behavior: for normal "All Students" view, we previously only showed verified.
-      // But the user specifically asked for an "unverified" filter, implying they want to see them.
-      // I will remove the hardcoded filter so all are shown if no specific filter is requested.
+      conditions.push({
+        users: {
+          users: isVerified 
+            ? { email_confirmed_at: { not: null } }
+            : { email_confirmed_at: null }
+        },
+      });
     }
 
-    if (status) {
+    // Handle KYC Status (supporting multi-select comma separated)
+    if (kycStatus) {
+      const statusList = kycStatus.split(',').map(s => s.trim());
+      const enumStatuses = statusList.filter(s => s !== 'suspended') as VerificationStatus[];
+      const hasSuspended = statusList.includes('suspended');
+
+      const kycConditions: Prisma.studentsWhereInput[] = [];
+      if (enumStatuses.length > 0) {
+        kycConditions.push({ verification_status: { in: enumStatuses } });
+      }
+      if (hasSuspended) {
+        kycConditions.push({ users: { is_active: false } });
+      }
+      
+      if (kycConditions.length > 0) {
+        conditions.push({ OR: kycConditions });
+      }
+    } else if (status) {
       conditions.push({ verification_status: status });
     }
 
-    if (institute) {
+    // University filter (checking both institute and university fields for compatibility)
+    if (university || institute) {
       conditions.push({
         university: {
-          contains: institute,
+          contains: university || institute,
           mode: 'insensitive',
         },
       });
+    }
+
+    // Redemption range
+    if (minRedemptions !== undefined) {
+      conditions.push({ total_redemptions: { gte: minRedemptions } });
+    }
+    if (maxRedemptions !== undefined) {
+      conditions.push({ total_redemptions: { lte: maxRedemptions } });
+    }
+
+    // Date joined range
+    if (dateFrom || dateTo) {
+      const dateCond: Prisma.DateTimeFilter = {};
+      if (dateFrom) dateCond.gte = new Date(dateFrom);
+      if (dateTo) dateCond.lte = new Date(dateTo);
+      conditions.push({ created_at: dateCond });
+    }
+
+    // Has redeemed toggle
+    if (hasRedeemed !== undefined) {
+      if (hasRedeemed === 'true') {
+        conditions.push({ total_redemptions: { gt: 0 } });
+      } else if (hasRedeemed === 'false') {
+        conditions.push({ total_redemptions: 0 });
+      }
+    }
+
+    // Founders Club toggle
+    if (foundersClub !== undefined) {
+      conditions.push({ is_founders_club: foundersClub === 'true' });
     }
 
     if (search) {
@@ -340,6 +458,11 @@ export class StudentsService {
               email: true,
               phone: true,
               is_active: true,
+              users: {
+                select: {
+                  email_confirmed_at: true,
+                }
+              }
             },
           },
           verified_by_user: {
@@ -357,10 +480,9 @@ export class StudentsService {
             include: {
               users: {
                 select: {
-                  id: true,
                   email: true,
-                },
-              },
+                }
+              }
             },
           },
         },
@@ -375,8 +497,56 @@ export class StudentsService {
       }),
     ]);
 
+    // Batch fetch inferred platforms for students who have null platform
+    const studentsWithNullPlatform = students.filter(s => !s.platform);
+    const inferredPlatforms = new Map<string, string>();
+
+    if (studentsWithNullPlatform.length > 0) {
+      const userIds = studentsWithNullPlatform.map(s => s.user_id);
+      
+      // 1. Try FCM Tokens
+      const fcmTokens = await this.prisma.user_fcm_tokens.findMany({
+        where: { 
+          user_id: { in: userIds }, 
+          platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+        },
+        orderBy: { updated_at: 'desc' },
+        select: { user_id: true, platform: true }
+      });
+      
+      fcmTokens.forEach(t => {
+        if (t.platform && !inferredPlatforms.has(t.user_id)) {
+          inferredPlatforms.set(t.user_id, t.platform);
+        }
+      });
+
+      // 2. Try Analytics Events for remaining
+      const remainingUserIds = userIds.filter(id => !inferredPlatforms.has(id));
+      if (remainingUserIds.length > 0) {
+        const events = await this.prisma.analytics_events.findMany({
+          where: { 
+            user_id: { in: remainingUserIds }, 
+            platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+          },
+          orderBy: { created_at: 'desc' },
+          select: { user_id: true, platform: true }
+        });
+        
+        events.forEach(e => {
+          if (e.user_id && e.platform && !inferredPlatforms.has(e.user_id)) {
+            inferredPlatforms.set(e.user_id, e.platform);
+          }
+        });
+      }
+    }
+
+
+
     const formattedStudents = await Promise.all(
-      students.map((student) => this.formatStudentResponse(student)),
+      students.map((student) => {
+        const inferredPlatform = inferredPlatforms.get(student.user_id);
+        return this.formatStudentResponse(student, inferredPlatform);
+      }),
     );
 
     return {
@@ -628,7 +798,12 @@ export class StudentsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
-    return this.formatStudentDetailResponse(student);
+    let inferredPlatform: string | undefined = undefined;
+    if (!student.platform) {
+      inferredPlatform = (await this.getInferredPlatform(student.user_id)) || undefined;
+    }
+
+    return this.formatStudentDetailResponse(student, inferredPlatform);
   }
 
   /**
@@ -715,6 +890,18 @@ export class StudentsService {
     if (dto.verificationStatus !== undefined) {
       studentUpdates.verification_status = dto.verificationStatus;
     }
+    if (dto.gender !== undefined) {
+      studentUpdates.gender = dto.gender;
+    }
+    if (dto.degree !== undefined) {
+      studentUpdates.degree = dto.degree;
+    }
+    if (dto.yearOfStudy !== undefined) {
+      studentUpdates.year_of_study = dto.yearOfStudy;
+    }
+    if (dto.notes !== undefined) {
+      studentUpdates.admin_notes = dto.notes;
+    }
     if (dto.verificationExpiresAt !== undefined) {
       studentUpdates.verification_expires_at =
         dto.verificationExpiresAt === null ||
@@ -785,6 +972,50 @@ export class StudentsService {
     });
 
     return this.getStudentDetailsForReview(id);
+  }
+
+  async updateStudentSelfie(
+    id: string,
+    file: { buffer: Buffer; mimetype?: string },
+  ): Promise<{ selfieImageUrl: string }> {
+    const student = await this.prisma.students.findUnique({
+      where: { id },
+      include: { users: true }
+    });
+
+    if (!student) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
+    }
+
+    const signupKey = student.users.email
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '_');
+
+    const selfieImageUrl = await this.authService.uploadStudentKycFile(
+      file,
+      'selfie-updates',
+      signupKey,
+    );
+
+    await this.prisma.students.update({
+      where: { id },
+      data: { verification_selfie_path: selfieImageUrl }
+    });
+
+    // Also update the latest KYC record if it exists
+    const latestKyc = await this.prisma.student_kyc.findFirst({
+      where: { student_id: id },
+      orderBy: { created_at: 'desc' }
+    });
+
+    if (latestKyc) {
+      await this.prisma.student_kyc.update({
+        where: { id: latestKyc.id },
+        data: { selfie_image_path: selfieImageUrl }
+      });
+    }
+
+    return { selfieImageUrl };
   }
 
   /**
@@ -1164,7 +1395,12 @@ export class StudentsService {
   /**
    * Format student list response (without KYC data)
    */
-  private async formatStudentListResponse(student: any): Promise<StudentListResponse> {
+  private async formatStudentListResponse(student: any, inferredPlatform?: string): Promise<StudentListResponse> {
+    let platform = student.platform || inferredPlatform;
+    if (!platform) {
+      platform = await this.getInferredPlatform(student.user_id) || undefined;
+    }
+
     return {
       id: student.id,
       userId: student.user_id,
@@ -1187,7 +1423,7 @@ export class StudentsService {
       cnic: student.cnic,
       dateOfBirth: student.date_of_birth,
       isActive: student.users.is_active ?? false,
-      platform: student.platform,
+      platform,
       reviewNotes: student.student_kyc?.[0]?.review_notes || null,
       instituteId: student.institute_id ?? null,
       instituteName: student.institutes?.name ?? null,
@@ -1198,8 +1434,13 @@ export class StudentsService {
   /**
    * Format student response with KYC data
    */
-  private async formatStudentResponse(student: any): Promise<StudentKycResponse> {
+  private async formatStudentResponse(student: any, inferredPlatform?: string): Promise<StudentKycResponse> {
     const latestKyc = student.student_kyc?.[0] || null;
+
+    let platform = student.platform || inferredPlatform;
+    if (!platform) {
+      platform = await this.getInferredPlatform(student.user_id) || undefined;
+    }
 
     return {
       id: student.id,
@@ -1254,7 +1495,7 @@ export class StudentsService {
       isActive: student.users.is_active ?? false,
       profilePicture: student.profile_picture ?? null,
       verificationSelfiePath: student.verification_selfie_path ?? null,
-      platform: student.platform,
+      platform,
       reviewNotes: latestKyc?.review_notes || null,
       instituteId: student.institute_id ?? null,
       instituteName: student.institutes?.name ?? null,
@@ -1265,8 +1506,72 @@ export class StudentsService {
   /**
    * Format student detail response
    */
-  private async formatStudentDetailResponse(student: any): Promise<StudentDetailResponse> {
+  private async formatStudentDetailResponse(student: any, inferredPlatform?: string): Promise<StudentDetailResponse> {
     const latestKyc = student.student_kyc?.[0] || null;
+
+    let platform = student.platform || inferredPlatform;
+    if (!platform) {
+      platform = await this.getInferredPlatform(student.user_id) || undefined;
+    }
+
+    // Get loyalty progress across all merchants
+    const loyaltyProgress = await this.prisma.student_merchant_stats.findMany({
+      where: { student_id: student.id },
+      include: {
+        merchants: {
+          include: {
+            loyalty_programs: {
+              where: { is_active: true, scope: 'merchant' },
+              take: 1
+            }
+          }
+        }
+      }
+    });
+
+    const formattedLoyalty = loyaltyProgress
+      .filter(stat => stat.merchants.loyalty_programs.length > 0)
+      .map(stat => {
+        const prog = stat.merchants.loyalty_programs[0];
+        const req = prog.redemptions_required || 5;
+        const current = (stat.redemption_count || 0) % req;
+        return {
+          merchantName: stat.merchants.business_name,
+          merchantLogo: stat.merchants.logo_path,
+          current,
+          goal: req,
+          percentage: Math.min(100, (current / req) * 100)
+        };
+      });
+
+    // Get last 5 redemptions for timeline
+    const recentRedemptions = await this.prisma.redemptions.findMany({
+      where: { student_id: student.id },
+      take: 5,
+      orderBy: { created_at: 'desc' },
+      include: {
+        merchant_branches: {
+          select: { branch_name: true, merchants: { select: { business_name: true } } }
+        },
+        offers: { select: { title: true } }
+      }
+    });
+
+    const formattedRedemptions = recentRedemptions.map((r: any) => ({
+      id: r.id,
+      date: r.created_at,
+      merchantName: r.merchant_branches.merchants.business_name,
+      branchName: r.merchant_branches.branch_name,
+      offerTitle: r.offers.title,
+      isBonusApplied: r.is_bonus_applied
+    }));
+
+    // Get leaderboard rank (simplified for now)
+    const rank = await this.prisma.students.count({
+      where: {
+        total_redemptions: { gt: student.total_redemptions || 0 }
+      }
+    }) + 1;
 
     return {
       id: student.id,
@@ -1278,9 +1583,15 @@ export class StudentsService {
       phone: student.users.phone,
       university: student.university,
       graduationYear: student.graduation_year,
+      gender: student.gender,
+      degree: student.degree,
+      yearOfStudy: student.year_of_study,
+      adminNotes: student.admin_notes,
       isFoundersClub: student.is_founders_club,
       totalSavings: Number(student.total_savings || 0),
       totalRedemptions: student.total_redemptions || 0,
+      leaderboardRank: rank,
+      accountAgeDays: Math.floor((Date.now() - new Date(student.created_at).getTime()) / (1000 * 60 * 60 * 24)),
       verificationStatus: student.verification_status,
       verifiedAt: student.verified_at,
       verifiedBy: student.verified_by_user
@@ -1293,6 +1604,8 @@ export class StudentsService {
       verificationExpiresAt: student.verification_expires_at,
       createdAt: student.created_at,
       updatedAt: student.updated_at,
+      loyaltyProgress: formattedLoyalty,
+      recentRedemptions: formattedRedemptions,
       kyc: latestKyc
         ? {
           id: latestKyc.id,
@@ -1321,7 +1634,7 @@ export class StudentsService {
       isActive: student.users.is_active ?? false,
       profilePicture: student.profile_picture ?? null,
       verificationSelfiePath: student.verification_selfie_path ?? null,
-      platform: student.platform,
+      platform,
       reviewNotes: latestKyc?.review_notes || null,
       instituteId: student.institute_id ?? null,
       instituteName: student.institutes?.name ?? null,
@@ -1425,5 +1738,31 @@ export class StudentsService {
       data: { has_seen_app_intro: true },
     });
   }
+
+  /**
+   * Infer platform from FCM tokens or analytics events
+   */
+  private async getInferredPlatform(userId: string): Promise<string | null> {
+    const fcmToken = await this.prisma.user_fcm_tokens.findFirst({
+      where: { 
+        user_id: userId, 
+        platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+      },
+      orderBy: { updated_at: 'desc' },
+      select: { platform: true }
+    });
+    if (fcmToken?.platform) return fcmToken.platform;
+
+    const analyticEvent = await this.prisma.analytics_events.findFirst({
+      where: { 
+        user_id: userId, 
+        platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
+      },
+      orderBy: { created_at: 'desc' },
+      select: { platform: true }
+    });
+    return analyticEvent?.platform || null;
+  }
+
 }
 
