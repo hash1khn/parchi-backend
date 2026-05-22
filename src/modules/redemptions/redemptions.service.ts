@@ -1940,7 +1940,7 @@ export class RedemptionsService {
     verifiedById: string;
     notes?: string;
     imageUrl?: string;
-  }): Promise<void> {
+  }): Promise<{ id: string; isBonusApplied: boolean; bonusDiscountApplied: number | null }> {
     const { studentId, offerId, branchId, verifiedById, notes, imageUrl } = params;
     const now = new Date();
     const recentWindow = new Date(now.getTime() - this.DUPLICATE_PREVENTION_WINDOW_MS);
@@ -2001,7 +2001,7 @@ export class RedemptionsService {
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
 
-    await this.prisma.$transaction(
+    const newRedemption = await this.prisma.$transaction(
       async (tx) => {
         if (offer.daily_limit) {
           const todayCount = await tx.redemptions.count({
@@ -2153,5 +2153,11 @@ export class RedemptionsService {
     } catch (error) {
       console.error('Failed to send QR redemption notification', error);
     }
+
+    return {
+      id: newRedemption.id,
+      isBonusApplied: newRedemption.is_bonus_applied ?? false,
+      bonusDiscountApplied: newRedemption.bonus_discount_applied !== null ? Number(newRedemption.bonus_discount_applied) : null,
+    };
   }
 }

@@ -160,7 +160,7 @@ export class QrRedemptionsService {
 
     // Auto-approve path: create redemption directly, no lock needed
     if (branch.qr_auto_approve) {
-      await this.redemptionsService.createRedemptionByIds({
+      const redemption = await this.redemptionsService.createRedemptionByIds({
         studentId: student.id,
         offerId: dto.offerId,
         branchId: dto.branchId,
@@ -175,10 +175,20 @@ export class QrRedemptionsService {
           offer_id: dto.offerId,
           status: 'auto_approved',
           expires_at: expiresAt,
+          redemption_id: redemption.id,
         },
       });
 
-      return { requestId: record.id, autoApproved: true, status: 'auto_approved' };
+      return {
+        requestId: record.id,
+        autoApproved: true,
+        status: 'auto_approved',
+        redemption: {
+          id: redemption.id,
+          isBonusApplied: redemption.isBonusApplied,
+          bonusDiscountApplied: redemption.bonusDiscountApplied,
+        },
+      };
     }
 
     // Manual approval: advisory lock serializes concurrent requests from the same student
@@ -234,7 +244,16 @@ export class QrRedemptionsService {
     const request = await (this.prisma as any).qr_redemption_requests.findUnique({
       where: { id: requestId },
       include: {
-        offers: { select: { id: true, title: true, discount_type: true, discount_value: true } },
+        offers: {
+          select: {
+            id: true,
+            title: true,
+            discount_type: true,
+            discount_value: true,
+            max_discount_amount: true,
+            additional_item: true,
+          },
+        },
         merchant_branches: {
           select: {
             id: true,
@@ -255,6 +274,31 @@ export class QrRedemptionsService {
         data: { status: 'expired' },
       });
       return { ...this.formatRequest(request), status: 'expired' };
+    }
+
+    // If approved or auto_approved, fetch redemption info
+    if ((request.status === 'approved' || request.status === 'auto_approved') && request.redemption_id) {
+      const redemption = await this.prisma.redemptions.findUnique({
+        where: { id: request.redemption_id },
+      });
+      if (redemption) {
+        request.redemption = {
+          id: redemption.id,
+          isBonusApplied: redemption.is_bonus_applied,
+          bonusDiscountApplied: redemption.bonus_discount_applied ? Number(redemption.bonus_discount_applied) : null,
+          offer: request.offers ? {
+            title: request.offers.title,
+            formattedDiscount: this.formatDiscount(request.offers),
+          } : null,
+          branch: request.merchant_branches ? {
+            branchName: request.merchant_branches.branch_name,
+            merchant: request.merchant_branches.merchants ? {
+              businessName: request.merchant_branches.merchants.business_name,
+              logoPath: request.merchant_branches.merchants.logo_path,
+            } : null,
+          } : null,
+        };
+      }
     }
 
     return this.formatRequest(request);
@@ -392,7 +436,7 @@ export class QrRedemptionsService {
       throw new BadRequestException('This request has expired');
     }
 
-    await this.redemptionsService.createRedemptionByIds({
+    const redemption = await this.redemptionsService.createRedemptionByIds({
       studentId: request.student_id,
       offerId: request.offer_id,
       branchId: request.branch_id,
@@ -401,7 +445,7 @@ export class QrRedemptionsService {
 
     await (this.prisma as any).qr_redemption_requests.update({
       where: { id: requestId },
-      data: { status: 'approved' },
+      data: { status: 'approved', redemption_id: redemption.id },
     });
 
     return { success: true };
@@ -513,6 +557,7 @@ export class QrRedemptionsService {
               : null,
           }
         : null,
+      redemption: r.redemption ?? null,
     };
   }
 
