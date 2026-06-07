@@ -51,7 +51,7 @@ The `totalBonusTriggers` in `fifthBonusStats` is inflating beyond the real count
 ---
 
 ## 5. Signup Dropoff Audit
-**Owner: Umer** — Flag this for a verbal walkthrough at end of sprint. He will explain the current tracking state and gaps. No code changes planned until that conversation.
+**Status: Done (June 2026)** — See [`docs/SIGNUP_DROPOFF_AUDIT.md`](docs/SIGNUP_DROPOFF_AUDIT.md). DB-state funnel is source of truth; event chart deprecated; Flutter verification event deduped.
 
 ---
 

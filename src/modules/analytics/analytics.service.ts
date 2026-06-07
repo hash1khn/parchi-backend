@@ -52,6 +52,10 @@ export class AnalyticsService {
 
   }
 
+  /**
+   * @deprecated Signup dropoff KPI uses GET /admin/dashboard/signup-funnel (DB-state).
+   * Kept for reference; no longer returned from dashboard stats.
+   */
   async getOnboardingDropoff(startDate?: Date, endDate?: Date) {
     const steps = [
       { label: 'Student Info Start', event: 'signup_step_1_start' },

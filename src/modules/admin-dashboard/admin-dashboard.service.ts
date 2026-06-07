@@ -30,7 +30,6 @@ export class AdminDashboardService {
                 leaderboard,
                 foundersClub,
                 funnelStats,
-                onboardingDropoff,
                 platformDistribution,
                 dailyPlatformDistribution,
                 kycPerformance,
@@ -45,10 +44,6 @@ export class AdminDashboardService {
                 this.getFoundersClubCount().catch(e => { console.error('FoundersClub Error:', e); throw e; }),
                 this.analyticsService.getFunnelStats(startDate, endDate).catch(e => {
                     console.error('Analytics Error (Funnel):', e);
-                    return [];
-                }),
-                this.analyticsService.getOnboardingDropoff(startDate, endDate).catch(e => {
-                    console.error('Analytics Error (Dropoff):', e);
                     return [];
                 }),
                 this.analyticsService.getPlatformDistribution(startDate, endDate).catch(e => {
@@ -81,7 +76,6 @@ export class AdminDashboardService {
                 leaderboardTopPerformers: leaderboard,
                 foundersClubMembers: foundersClub,
                 funnelStats,
-                onboardingDropoff,
                 platformDistribution,
                 dailyPlatformDistribution,
                 kycPerformance,
@@ -270,22 +264,54 @@ export class AdminDashboardService {
     }
 
     async getKycRejectionStats() {
-        const [byReason, byUniversity, totalRejected] = await Promise.all([
+        const funnelQualifiedStudent = {
+            users: {
+                users: {
+                    email_confirmed_at: { not: null },
+                },
+            },
+        } as const;
+
+        const [byReason, byUniversity, totalRejected, adminReviewedRejections] = await Promise.all([
             this.prisma.student_kyc.groupBy({
                 by: ['review_notes'],
-                where: { reviewed_at: { not: null }, review_notes: { not: null } },
+                where: {
+                    reviewed_at: { not: null },
+                    reviewed_by: { not: null },
+                    review_notes: { not: null },
+                    students: {
+                        verification_status: 'rejected',
+                        ...funnelQualifiedStudent,
+                    },
+                },
                 _count: { id: true },
                 orderBy: { _count: { id: 'desc' } },
             }),
             this.prisma.students.groupBy({
                 by: ['university'],
-                where: { verification_status: 'rejected' },
+                where: {
+                    verification_status: 'rejected',
+                    ...funnelQualifiedStudent,
+                },
                 _count: { id: true },
                 orderBy: { _count: { id: 'desc' } },
                 take: 10,
             }),
             this.prisma.students.count({
-                where: { verification_status: 'rejected' },
+                where: {
+                    verification_status: 'rejected',
+                    ...funnelQualifiedStudent,
+                },
+            }),
+            this.prisma.student_kyc.count({
+                where: {
+                    reviewed_at: { not: null },
+                    reviewed_by: { not: null },
+                    students: {
+                        verification_status: 'rejected',
+                        ...funnelQualifiedStudent,
+                    },
+                },
             }),
         ]);
 
@@ -294,6 +320,7 @@ export class AdminDashboardService {
             byUniversity: byUniversity.map(u => ({ university: u.university, rejectedCount: u._count.id })),
             mostFoundIssue: byReason[0]?.review_notes || null,
             totalRejected,
+            adminReviewedRejections,
         };
     }
 
@@ -1312,78 +1339,180 @@ export class AdminDashboardService {
     }
 
     async getSignupDropoff() {
-        const [
-            registered,
-            emailVerified,
-            profileComplete,
-            idUploaded,
-            selfieUploaded,
-            pendingReview,
-            approved
-        ] = await Promise.all([
-            // Stage 1: Registered
-            this.prisma.public_users.count({ where: { role: 'student' } }),
-            
-            // Stage 2: Email Verified (Need to check auth schema for confirmation)
-            this.prisma.$queryRaw<[{ count: bigint }]>`
-                SELECT COUNT(*) as count FROM auth.users 
-                WHERE raw_app_meta_data->>'role' = 'student' 
-                AND email_confirmed_at IS NOT NULL
-            `.then(res => Number(res[0].count)),
-            
-            // Stage 3: Profile Completed (Student record exists)
-            this.prisma.students.count(),
-            
-            // Stage 4: ID Uploaded
-            this.prisma.student_kyc.count({
-                where: { 
-                    OR: [
-                        { student_id_card_front_path: { not: null } },
-                        { cnic_front_image_path: { not: null } }
-                    ]
-                }
-            }),
-            
-            // Stage 5: Selfie Uploaded
-            this.prisma.student_kyc.count({
-                where: { selfie_image_path: { not: '' } }
-            }),
-            
-            // Stage 6: Submitted for KYC (Status is pending or moved past it)
-            this.prisma.students.count({
-                where: { verification_status: { in: ['pending', 'approved', 'rejected'] } }
-            }),
-            
-            // Stage 7: KYC Approved
-            this.prisma.students.count({
-                where: { verification_status: 'approved' }
-            })
-        ]);
+        // Funnel base = students with a KYC record (registered via signup-with-files).
+        // Legacy/orphan student rows without student_kyc are excluded from the funnel.
+        const [row] = await this.prisma.$queryRaw<[{
+            account_created: bigint;
+            documents_submitted: bigint;
+            email_verified: bigint;
+            kyc_submitted: bigint;
+            kyc_approved: bigint;
+            kyc_pending: bigint;
+            kyc_rejected: bigint;
+            kyc_rejected_status_only: bigint;
+            first_redemption: bigint;
+            excluded_legacy: bigint;
+        }]>`
+            WITH student_base AS (
+                SELECT
+                    s.id,
+                    s.verification_status,
+                    s.verification_selfie_path,
+                    s.lifetime_redemptions,
+                    k.selfie_image_path,
+                    k.student_id_card_front_path,
+                    k.student_id_card_back_path,
+                    k.cnic_front_image_path,
+                    k.cnic_back_image_path,
+                    k.reviewed_at AS kyc_reviewed_at,
+                    k.reviewed_by AS kyc_reviewed_by,
+                    u.email_confirmed_at
+                FROM students s
+                LEFT JOIN LATERAL (
+                    SELECT *
+                    FROM student_kyc sk
+                    WHERE sk.student_id = s.id
+                    ORDER BY COALESCE(sk.submitted_at, sk.created_at) DESC NULLS LAST
+                    LIMIT 1
+                ) k ON TRUE
+                LEFT JOIN auth.users u ON u.id = s.user_id
+                WHERE EXISTS (SELECT 1 FROM student_kyc sk WHERE sk.student_id = s.id)
+                   OR s.verification_status = 'approved'
+            ),
+            flags AS (
+                SELECT
+                    sb.id,
+                    sb.verification_status,
+                    sb.email_confirmed_at,
+                    sb.lifetime_redemptions,
+                    sb.kyc_reviewed_at,
+                    sb.kyc_reviewed_by,
+                    TRUE AS is_registered,
+                    EXISTS (SELECT 1 FROM redemptions r WHERE r.student_id = sb.id) AS has_redeemed,
+                    (
+                        sb.verification_status = 'approved'
+                        OR (
+                            COALESCE(NULLIF(TRIM(sb.selfie_image_path), ''), NULLIF(TRIM(sb.verification_selfie_path), '')) IS NOT NULL
+                            AND (
+                                sb.student_id_card_front_path IS NOT NULL
+                                OR sb.cnic_front_image_path IS NOT NULL
+                                OR sb.student_id_card_back_path IS NOT NULL
+                                OR sb.cnic_back_image_path IS NOT NULL
+                            )
+                        )
+                    ) AS has_documents
+                FROM student_base sb
+            )
+            SELECT
+                COUNT(*) FILTER (WHERE is_registered)::bigint AS account_created,
+                COUNT(*) FILTER (WHERE is_registered AND has_documents)::bigint AS documents_submitted,
+                COUNT(*) FILTER (WHERE is_registered AND has_documents AND email_confirmed_at IS NOT NULL)::bigint AS email_verified,
+                COUNT(*) FILTER (
+                    WHERE is_registered AND has_documents AND email_confirmed_at IS NOT NULL
+                      AND (
+                        verification_status IN ('pending', 'approved')
+                        OR (
+                            verification_status = 'rejected'
+                            AND kyc_reviewed_at IS NOT NULL
+                            AND kyc_reviewed_by IS NOT NULL
+                        )
+                      )
+                )::bigint AS kyc_submitted,
+                COUNT(*) FILTER (
+                    WHERE is_registered AND has_documents AND email_confirmed_at IS NOT NULL
+                      AND verification_status = 'approved'
+                )::bigint AS kyc_approved,
+                COUNT(*) FILTER (
+                    WHERE is_registered AND has_documents AND email_confirmed_at IS NOT NULL
+                      AND verification_status = 'pending'
+                )::bigint AS kyc_pending,
+                COUNT(*) FILTER (
+                    WHERE is_registered AND has_documents AND email_confirmed_at IS NOT NULL
+                      AND verification_status = 'rejected'
+                      AND kyc_reviewed_at IS NOT NULL
+                      AND kyc_reviewed_by IS NOT NULL
+                )::bigint AS kyc_rejected,
+                COUNT(*) FILTER (
+                    WHERE is_registered AND has_documents AND email_confirmed_at IS NOT NULL
+                      AND verification_status = 'rejected'
+                      AND (kyc_reviewed_at IS NULL OR kyc_reviewed_by IS NULL)
+                )::bigint AS kyc_rejected_status_only,
+                COUNT(*) FILTER (
+                    WHERE is_registered AND has_documents AND email_confirmed_at IS NOT NULL
+                      AND verification_status = 'approved'
+                      AND has_redeemed
+                )::bigint AS first_redemption,
+                (
+                    SELECT COUNT(*)::bigint FROM students s2
+                    WHERE NOT EXISTS (SELECT 1 FROM student_kyc sk2 WHERE sk2.student_id = s2.id)
+                ) AS excluded_legacy
+            FROM flags
+        `;
+
+        const emailVerified = Number(row.email_verified);
+        const kycPending = Number(row.kyc_pending);
+        const kycRejected = Number(row.kyc_rejected);
+        const kycRejectedStatusOnly = Number(row.kyc_rejected_status_only);
+        const kycSubmitted = Number(row.kyc_submitted);
+        const kycApproved = Number(row.kyc_approved);
 
         const rawStages = [
-            { key: 'registered', label: 'Account Created', count: registered },
-            { key: 'email_verified', label: 'Email Verified', count: emailVerified },
-            { key: 'profile_complete', label: 'Profile Completed', count: profileComplete },
-            { key: 'id_uploaded', label: 'ID Uploaded', count: idUploaded },
-            { key: 'selfie_uploaded', label: 'Selfie Uploaded', count: selfieUploaded },
-            { key: 'pending_review', label: 'Submitted for KYC', count: pendingReview },
-            { key: 'approved', label: 'KYC Approved', count: approved },
+            { key: 'documents_submitted', label: 'Documents Submitted', count: Number(row.documents_submitted), stageType: 'progression' as const },
+            { key: 'email_verified', label: 'Email Verified', count: emailVerified, stageType: 'progression' as const },
+            {
+                key: 'kyc_submitted',
+                label: 'Submitted for KYC',
+                count: kycSubmitted,
+                stageType: 'progression' as const,
+                kycStatusBreakdown: { pending: kycPending, rejected: kycRejected },
+            },
+            { key: 'kyc_approved', label: 'KYC Approved', count: kycApproved, stageType: 'progression' as const },
         ];
 
-        const topOfFunnel = registered || 1;
+        const topOfFunnel = rawStages[0]?.count || 1;
         const stages = rawStages.map((stage, index) => {
-            const prevCount = index === 0 ? registered : rawStages[index - 1].count;
-            const dropoffPct = index === 0 ? 0 : 
-                prevCount > 0 ? ((prevCount - stage.count) / prevCount) * 100 : 0;
-            
+            const prevCount = index === 0 ? topOfFunnel : rawStages[index - 1].count;
+            const exits = index === 0 ? 0 : Math.max(0, prevCount - stage.count);
+            const dropoffPct = index === 0 ? 0 : prevCount > 0 ? (exits / prevCount) * 100 : 0;
+
             return {
                 stage: stage.label,
                 count: stage.count,
                 percentOfTotal: Math.round((stage.count / topOfFunnel) * 100 * 10) / 10,
-                dropoffPct: Math.round(dropoffPct * 10) / 10
+                dropoffPct: Math.round(dropoffPct * 10) / 10,
+                exits,
+                previousStage: index === 0 ? null : rawStages[index - 1].label,
+                previousCount: index === 0 ? null : prevCount,
+                shareOfPreviousPct: null,
+                stageType: 'progression' as const,
+                ...(stage.kycStatusBreakdown
+                    ? { kycStatusBreakdown: stage.kycStatusBreakdown }
+                    : {}),
             };
         });
 
-        return { stages };
+        const firstRedemptionCount = Number(row.first_redemption);
+        const firstRedemptionExits = Math.max(0, kycApproved - firstRedemptionCount);
+        const firstRedemptionDropoffPct =
+            kycApproved > 0 ? Math.round((firstRedemptionExits / kycApproved) * 1000) / 10 : 0;
+
+        return {
+            stages,
+            excludedLegacyAccounts: Number(row.excluded_legacy),
+            totalStudentsInDb: Number(row.account_created) + Number(row.excluded_legacy),
+            kycBreakdown: {
+                approved: kycApproved,
+                pending: kycPending,
+                rejected: kycRejected,
+                rejectedStatusOnly: kycRejectedStatusOnly,
+            },
+            firstRedemption: {
+                count: firstRedemptionCount,
+                exits: firstRedemptionExits,
+                dropoffPct: firstRedemptionDropoffPct,
+                previousStage: 'KYC Approved',
+                previousCount: kycApproved,
+            },
+        };
     }
 }
