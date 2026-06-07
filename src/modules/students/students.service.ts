@@ -1195,24 +1195,16 @@ export class StudentsService {
         },
       });
 
-      // 3. Handle KYC record
+      // 3. Handle KYC record — preserve ID card paths for future selfie-change review
       if (latestKyc) {
-        if (approveRejectDto.action === 'approve') {
-          // Delete KYC data immediately after approving (selfie already saved)
-          await tx.student_kyc.delete({
-            where: { id: latestKyc.id },
-          });
-        } else {
-          // For rejection, update KYC with review info (keep for audit trail)
-          await tx.student_kyc.update({
-            where: { id: latestKyc.id },
-            data: {
-              reviewed_by: reviewerId,
-              reviewed_at: now,
-              review_notes: approveRejectDto.reviewNotes || null,
-            },
-          });
-        }
+        await tx.student_kyc.update({
+          where: { id: latestKyc.id },
+          data: {
+            reviewed_by: reviewerId,
+            reviewed_at: now,
+            review_notes: approveRejectDto.reviewNotes || null,
+          },
+        });
       }
     }, {
       timeout: 20000, // Increase timeout to 20 seconds
@@ -1695,6 +1687,7 @@ export class StudentsService {
   async getLeaderboard(
     page: number = 1,
     limit: number = 10,
+    period: 'alltime' | 'monthly' = 'alltime',
   ): Promise<{
     items: Array<{
       rank: number;
@@ -1706,9 +1699,83 @@ export class StudentsService {
   }> {
     const skip = calculateSkip(page, limit);
 
+    if (period === 'monthly') {
+      const monthStart = Prisma.sql`DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi'`;
+
+      const [countResult, monthlyRows] = await Promise.all([
+        this.prisma.$queryRaw<[{ count: bigint }]>`
+          WITH monthly_counts AS (
+            SELECT r.student_id
+            FROM redemptions r
+            JOIN students s ON s.id = r.student_id
+            WHERE r.verified_by IS NOT NULL
+              AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
+              AND s.verification_status = 'approved'
+              AND r.created_at >= ${monthStart}
+            GROUP BY r.student_id
+            HAVING COUNT(*) > 0
+          )
+          SELECT COUNT(*)::bigint AS count FROM monthly_counts
+        `,
+        this.prisma.$queryRaw<
+          Array<{
+            student_id: string;
+            monthly_count: bigint;
+            first_name: string;
+            last_name: string;
+            parchi_id: string | null;
+            university: string;
+            profile_picture: string | null;
+          }>
+        >`
+          WITH monthly_counts AS (
+            SELECT
+              r.student_id,
+              COUNT(*)::bigint AS monthly_count
+            FROM redemptions r
+            JOIN students s ON s.id = r.student_id
+            WHERE r.verified_by IS NOT NULL
+              AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
+              AND s.verification_status = 'approved'
+              AND r.created_at >= ${monthStart}
+            GROUP BY r.student_id
+            HAVING COUNT(*) > 0
+          )
+          SELECT
+            mc.student_id,
+            mc.monthly_count,
+            s.first_name,
+            s.last_name,
+            s.parchi_id,
+            s.university,
+            s.profile_picture
+          FROM monthly_counts mc
+          JOIN students s ON s.id = mc.student_id
+          ORDER BY mc.monthly_count DESC, s.id ASC
+          LIMIT ${limit} OFFSET ${skip}
+        `,
+      ]);
+
+      const total = Number(countResult[0]?.count ?? 0);
+
+      const items = monthlyRows.map((row, index) => ({
+        rank: skip + index + 1,
+        name: `${row.first_name} ${row.last_name}`,
+        userId: row.student_id,
+        parchiId: row.parchi_id,
+        university: row.university,
+        redemptions: Number(row.monthly_count),
+        profilePicture: row.profile_picture ?? null,
+      }));
+
+      return {
+        items,
+        pagination: calculatePaginationMeta(total, page, limit),
+      };
+    }
+
     const leaderboardWhere = { verification_status: 'approved' } as const;
 
-    // Run count and data fetch in parallel — uses idx_students_leaderboard index
     const [total, students] = await Promise.all([
       this.prisma.students.count({ where: leaderboardWhere }),
       this.prisma.students.findMany({
@@ -1725,7 +1792,6 @@ export class StudentsService {
         orderBy: [
           { lifetime_redemptions: 'desc' },
           { last_redemption_at: 'desc' },
-          // Stable tie-breaker so rank ordering is deterministic.
           { id: 'asc' },
         ],
         skip,
@@ -1733,7 +1799,6 @@ export class StudentsService {
       }),
     ]);
 
-    // Calculate rank based on skip + index + 1
     const items = students.map((student, index) => ({
       rank: skip + index + 1,
       name: `${student.first_name} ${student.last_name}`,
@@ -1748,6 +1813,165 @@ export class StudentsService {
       items,
       pagination: calculatePaginationMeta(total, page, limit),
     };
+  }
+
+  async submitSelfieChangeRequest(
+    userId: string,
+    file: { buffer: Buffer; mimetype?: string },
+  ) {
+    const student = await this.prisma.students.findUnique({
+      where: { user_id: userId },
+      include: { users: true },
+    });
+
+    if (!student) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
+    }
+
+    const existingPending = await this.prisma.selfie_change_requests.findFirst({
+      where: { student_id: student.id, status: 'pending' },
+    });
+
+    if (existingPending) {
+      throw new BadRequestException('You already have a pending selfie change request');
+    }
+
+    const signupKey = student.users.email
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '_');
+
+    const selfieImageUrl = await this.authService.uploadStudentKycFile(
+      file,
+      'selfie-change-requests',
+      signupKey,
+    );
+
+    const request = await this.prisma.selfie_change_requests.create({
+      data: {
+        student_id: student.id,
+        new_selfie_path: selfieImageUrl,
+        status: 'pending',
+      },
+    });
+
+    return {
+      id: request.id,
+      status: request.status,
+      createdAt: request.created_at,
+    };
+  }
+
+  async getSelfieChangeRequestStatus(userId: string) {
+    const student = await this.prisma.students.findUnique({
+      where: { user_id: userId },
+    });
+
+    if (!student) {
+      throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
+    }
+
+    const pending = await this.prisma.selfie_change_requests.findFirst({
+      where: { student_id: student.id, status: 'pending' },
+      orderBy: { created_at: 'desc' },
+    });
+
+    return {
+      hasPendingRequest: !!pending,
+      request: pending
+        ? {
+            id: pending.id,
+            status: pending.status,
+            createdAt: pending.created_at,
+          }
+        : null,
+    };
+  }
+
+  async getSelfieChangeRequests(status: string = 'pending') {
+    const requests = await this.prisma.selfie_change_requests.findMany({
+      where: { status },
+      orderBy: { created_at: 'asc' },
+      include: {
+        students: {
+          select: {
+            id: true,
+            first_name: true,
+            last_name: true,
+            parchi_id: true,
+            university: true,
+            verification_selfie_path: true,
+            student_kyc: {
+              select: {
+                student_id_card_front_path: true,
+              },
+              orderBy: { created_at: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    return requests.map((req) => ({
+      id: req.id,
+      status: req.status,
+      newSelfiePath: req.new_selfie_path,
+      adminNote: req.admin_note,
+      createdAt: req.created_at,
+      resolvedAt: req.resolved_at,
+      student: {
+        id: req.students.id,
+        firstName: req.students.first_name,
+        lastName: req.students.last_name,
+        parchiId: req.students.parchi_id,
+        university: req.students.university,
+        verificationSelfie: req.students.verification_selfie_path,
+        idCardFrontPath:
+          req.students.student_kyc[0]?.student_id_card_front_path ?? null,
+      },
+    }));
+  }
+
+  async resolveSelfieChangeRequest(
+    requestId: string,
+    action: 'approve' | 'reject',
+    adminNote?: string,
+  ) {
+    const request = await this.prisma.selfie_change_requests.findUnique({
+      where: { id: requestId },
+      include: { students: true },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Selfie change request not found');
+    }
+
+    if (request.status !== 'pending') {
+      throw new BadRequestException('This request has already been resolved');
+    }
+
+    const now = new Date();
+    const status = action === 'approve' ? 'approved' : 'rejected';
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.selfie_change_requests.update({
+        where: { id: requestId },
+        data: {
+          status,
+          admin_note: adminNote || null,
+          resolved_at: now,
+        },
+      });
+
+      if (action === 'approve') {
+        await tx.students.update({
+          where: { id: request.student_id },
+          data: { verification_selfie_path: request.new_selfie_path },
+        });
+      }
+    });
+
+    return { id: requestId, status, resolvedAt: now };
   }
 
   /**

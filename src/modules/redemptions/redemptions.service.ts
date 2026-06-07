@@ -1476,6 +1476,7 @@ export class RedemptionsService {
    */
   async getStudentRedemptionStats(
     currentUser: CurrentUser,
+    period: 'alltime' | 'monthly' = 'alltime',
   ): Promise<RedemptionStatsResponse> {
     if (currentUser.role !== ROLES.STUDENT) {
       throw new ForbiddenException(
@@ -1491,10 +1492,59 @@ export class RedemptionsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.STUDENT.NOT_FOUND);
     }
 
-    // 1. Total Redemptions (Ground truth from student.lifetime_redemptions)
+    if (period === 'monthly') {
+      const monthlyResult = await this.prisma.$queryRaw<
+        [{ monthly_count: bigint }]
+      >`
+        SELECT COUNT(*)::bigint AS monthly_count
+        FROM redemptions r
+        WHERE r.student_id = ${student.id}::uuid
+          AND r.verified_by IS NOT NULL
+          AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
+          AND r.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi'
+      `;
+      const totalRedemptions = Number(monthlyResult[0]?.monthly_count ?? 0);
+
+      const rankResult = await this.prisma.$queryRaw<[{ rank: bigint }]>`
+        WITH monthly_counts AS (
+          SELECT
+            r.student_id,
+            COUNT(*)::bigint AS monthly_count
+          FROM redemptions r
+          JOIN students s ON s.id = r.student_id
+          WHERE r.verified_by IS NOT NULL
+            AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
+            AND s.verification_status = 'approved'
+            AND r.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi'
+          GROUP BY r.student_id
+        )
+        SELECT COUNT(*)::bigint + 1 AS rank
+        FROM monthly_counts mc
+        WHERE mc.monthly_count > ${totalRedemptions}::bigint
+           OR (mc.monthly_count = ${totalRedemptions}::bigint AND mc.student_id < ${student.id}::uuid)
+      `;
+      const leaderboardPosition =
+        totalRedemptions > 0 ? Number(rankResult[0]?.rank ?? 0) : 0;
+
+      const bonusResult = await this.prisma.$queryRaw<[{ count: bigint }]>`
+        SELECT COUNT(*)::bigint AS count
+        FROM redemptions r
+        WHERE r.student_id = ${student.id}::uuid
+          AND r.is_bonus_applied = true
+          AND r.verified_by IS NOT NULL
+          AND r.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi'
+      `;
+      const bonusesUnlocked = Number(bonusResult[0]?.count ?? 0);
+
+      return {
+        totalRedemptions,
+        bonusesUnlocked,
+        leaderboardPosition,
+      };
+    }
+
     const totalRedemptions = student.lifetime_redemptions || 0;
 
-    // 2. Bonuses Unlocked
     const bonusesUnlocked = await this.prisma.redemptions.count({
       where: {
         student_id: student.id,
@@ -1503,10 +1553,6 @@ export class RedemptionsService {
       },
     });
 
-    // 3. Leaderboard Position
-    // Must match /students/leaderboard ordering exactly:
-    //   1) total_redemptions DESC
-    //   2) id ASC (stable tie-breaker)
     const higherRedemptionsCount = await this.prisma.students.count({
       where: {
         verification_status: 'approved',

@@ -8,7 +8,7 @@ export interface PlatformOverview {
 
 export interface UserManagement {
   verificationQueue: number; // pending student KYC
-  suspendedRejected: number; // rejected + inactive users
+  suspendedRejected: number; // currently rejected + deactivated approved/expired students
 }
 
 export interface TopMerchant {

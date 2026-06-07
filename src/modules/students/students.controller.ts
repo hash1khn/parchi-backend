@@ -2,11 +2,16 @@ import {
   Controller,
   Get,
   Patch,
+  Post,
   Query,
   HttpCode,
   HttpStatus,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { StudentsService } from './students.service';
 import { QueryLeaderboardDto } from './dto/query-leaderboard.dto';
 import { createPaginatedResponse, createApiResponse } from '../../utils/serializer.util';
@@ -29,7 +34,11 @@ export class StudentsController {
     const page = queryDto.page || 1;
     const limit = queryDto.limit || 10;
 
-    const result = await this.studentsService.getLeaderboard(page, limit);
+    const result = await this.studentsService.getLeaderboard(
+      page,
+      limit,
+      queryDto.period || 'alltime',
+    );
     return createPaginatedResponse(
       result.items,
       result.pagination,
@@ -44,6 +53,34 @@ export class StudentsController {
   async markAppIntroSeen(@CurrentUser() user: any) {
     await this.studentsService.markAppIntroSeen(user.id);
     return createApiResponse(null, 'App intro marked as seen');
+  }
+
+  @Post('selfie-change-request')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  async submitSelfieChangeRequest(
+    @CurrentUser() user: any,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Selfie image file is required');
+    }
+    const data = await this.studentsService.submitSelfieChangeRequest(user.id, {
+      buffer: file.buffer,
+      mimetype: file.mimetype,
+    });
+    return createApiResponse(data, 'Selfie change request submitted successfully');
+  }
+
+  @Get('selfie-change-request/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async getSelfieChangeRequestStatus(@CurrentUser() user: any) {
+    const data = await this.studentsService.getSelfieChangeRequestStatus(user.id);
+    return createApiResponse(data, 'Selfie change request status fetched');
   }
 }
 

@@ -366,6 +366,7 @@ export class QrRedemptionsService {
             verification_status: true,
             lifetime_redemptions: true,
             profile_picture: true,
+            verification_selfie_path: true,
           },
         },
         offers: {
@@ -396,6 +397,7 @@ export class QrRedemptionsService {
         verificationStatus: r.students.verification_status,
         totalRedemptions: r.students.lifetime_redemptions || 0,
         profilePicture: r.students.profile_picture,
+        verificationSelfie: r.students.verification_selfie_path,
       },
       offer: {
         id: r.offers.id,

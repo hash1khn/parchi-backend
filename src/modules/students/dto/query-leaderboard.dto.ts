@@ -1,7 +1,10 @@
-import { IsOptional, IsInt, Min, Max } from 'class-validator';
+import { IsOptional, IsInt, Min, Max, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class QueryLeaderboardDto {
+  @IsOptional()
+  @IsIn(['alltime', 'monthly'])
+  period?: 'alltime' | 'monthly' = 'alltime';
   @IsOptional()
   @Type(() => Number)
   @IsInt()

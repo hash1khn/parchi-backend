@@ -133,19 +133,27 @@ export class NotificationsService implements OnModuleInit {
     }
   }
 
-  async getNotificationHistory(page: number = 1, limit: number = 10) {
+  async getNotificationHistory(page: number = 1, limit: number = 10, typeFilter?: string) {
     try {
       const skip = (page - 1) * limit;
 
+      const where: any = {};
+      if (typeFilter === 'broadcast') {
+        where.type = { in: ['broadcast', 'targeted'] };
+      } else if (typeFilter === 'redemption') {
+        where.type = 'personal';
+      }
+
       const [data, total] = await Promise.all([
         this.prisma.notifications.findMany({
+          where,
           skip,
           take: limit,
           orderBy: {
             created_at: 'desc',
           },
         }),
-        this.prisma.notifications.count(),
+        this.prisma.notifications.count({ where }),
       ]);
 
       return {
@@ -494,6 +502,34 @@ export class NotificationsService implements OnModuleInit {
     } catch (error) {
       this.logger.error(`Error checking unread notifications for ${userId}:`, error);
       return false; // Default to false on error to avoid blocking UI
+    }
+  }
+
+  async getRecipientEstimate(targetType: string, targetValue?: string): Promise<{ count: number }> {
+    try {
+      const baseWhere = {
+        verification_status: 'approved' as const,
+        users: { is_active: true },
+      };
+
+      let count: number;
+
+      if (targetType === 'university' && targetValue) {
+        count = await this.prisma.students.count({
+          where: { ...baseWhere, university: targetValue },
+        });
+      } else if (targetType === 'founders_club') {
+        count = await this.prisma.students.count({
+          where: { ...baseWhere, is_founders_club: true },
+        });
+      } else {
+        count = await this.prisma.students.count({ where: baseWhere });
+      }
+
+      return { count };
+    } catch (error) {
+      this.logger.error('Error estimating notification recipients:', error);
+      throw error;
     }
   }
 

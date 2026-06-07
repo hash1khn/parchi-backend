@@ -55,8 +55,12 @@ export class RedemptionsController {
   @HttpCode(HttpStatus.OK)
   async getStudentRedemptionStats(
     @CurrentUser() currentUser: ICurrentUser,
+    @Query('period') period?: 'alltime' | 'monthly',
   ) {
-    const data = await this.redemptionsService.getStudentRedemptionStats(currentUser);
+    const data = await this.redemptionsService.getStudentRedemptionStats(
+      currentUser,
+      period || 'alltime',
+    );
     return createApiResponse(data, API_RESPONSE_MESSAGES.REDEMPTION.STATS_SUCCESS);
   }
 

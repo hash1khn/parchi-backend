@@ -189,23 +189,22 @@ export class AdminDashboardService {
             },
         });
 
-        // Rejected students + inactive users
-        const rejectedStudents = await this.prisma.students.count({
-            where: {
-                verification_status: 'rejected',
-            },
-        });
-
-        const inactiveUsers = await this.prisma.public_users.count({
-            where: {
-                is_active: false,
-                role: 'student',
-            },
-        });
+        // Live count: currently rejected + deactivated (suspended) approved/expired students
+        const [rejectedStudents, suspendedStudents] = await Promise.all([
+            this.prisma.students.count({
+                where: { verification_status: 'rejected' },
+            }),
+            this.prisma.students.count({
+                where: {
+                    verification_status: { in: ['approved', 'expired'] },
+                    users: { is_active: false },
+                },
+            }),
+        ]);
 
         return {
             verificationQueue,
-            suspendedRejected: rejectedStudents + inactiveUsers,
+            suspendedRejected: rejectedStudents + suspendedStudents,
         };
     }
 
@@ -823,23 +822,85 @@ export class AdminDashboardService {
                 unique_students_triggered:  bigint;
                 users_returned_after_bonus: bigint;
             }]>`
-                WITH bonus_events AS (
+                WITH base_redemptions AS (
+                    SELECT
+                        r.id,
+                        r.student_id,
+                        r.created_at,
+                        r.offer_id,
+                        r.is_bonus_applied,
+                        mb.merchant_id
+                    FROM redemptions r
+                    JOIN offers o ON o.id = r.offer_id
+                    JOIN merchant_branches mb ON mb.id = r.branch_id
+                    WHERE r.verified_by IS NOT NULL
+                      AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
+                      AND (o.redemption_strategy IS NULL OR o.redemption_strategy != 'soho_hierarchical')
+                      ${dateFilter}
+                ),
+                merchant_numbered AS (
+                    SELECT
+                        br.id,
+                        br.student_id,
+                        br.created_at,
+                        br.is_bonus_applied,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY br.student_id, br.merchant_id
+                            ORDER BY br.created_at, br.id
+                        ) AS seq,
+                        lp.redemptions_required
+                    FROM base_redemptions br
+                    JOIN loyalty_programs lp
+                      ON lp.merchant_id = br.merchant_id
+                     AND lp.scope = 'merchant'
+                     AND lp.is_active = true
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM loyalty_programs lp2
+                        WHERE lp2.offer_id = br.offer_id
+                          AND lp2.scope = 'offer'
+                          AND lp2.is_active = true
+                    )
+                ),
+                offer_numbered AS (
+                    SELECT
+                        br.id,
+                        br.student_id,
+                        br.created_at,
+                        br.is_bonus_applied,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY br.student_id, br.offer_id
+                            ORDER BY br.created_at, br.id
+                        ) AS seq,
+                        lp.redemptions_required
+                    FROM base_redemptions br
+                    JOIN loyalty_programs lp
+                      ON lp.offer_id = br.offer_id
+                     AND lp.scope = 'offer'
+                     AND lp.is_active = true
+                ),
+                loyalty_bonus AS (
                     SELECT id, student_id, created_at
-                    FROM redemptions
-                    ${baseWhere}
-                    AND is_bonus_applied = true
+                    FROM merchant_numbered
+                    WHERE is_bonus_applied = true
+                      AND seq % redemptions_required = 0
+                    UNION
+                    SELECT id, student_id, created_at
+                    FROM offer_numbered
+                    WHERE is_bonus_applied = true
+                      AND seq % redemptions_required = 0
                 )
                 SELECT
-                    COUNT(be.id)                       AS total_bonus_triggers,
-                    COUNT(DISTINCT be.student_id)       AS unique_students_triggered,
+                    COUNT(lb.id)                       AS total_bonus_triggers,
+                    COUNT(DISTINCT lb.student_id)       AS unique_students_triggered,
                     COUNT(DISTINCT CASE
-                        WHEN r.created_at > be.created_at
-                         AND r.created_at <= be.created_at + INTERVAL '30 days'
-                        THEN be.student_id
+                        WHEN r.created_at > lb.created_at
+                         AND r.created_at <= lb.created_at + INTERVAL '30 days'
+                        THEN lb.student_id
                     END)                               AS users_returned_after_bonus
-                FROM bonus_events be
+                FROM loyalty_bonus lb
                 LEFT JOIN redemptions r
-                    ON  r.student_id      = be.student_id
+                    ON  r.student_id      = lb.student_id
                     AND r.verified_by     IS NOT NULL
                     AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
                     AND r.is_bonus_applied = false

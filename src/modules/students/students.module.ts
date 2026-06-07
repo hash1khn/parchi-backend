@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { AdminStudentsController } from './admin-students.controller';
+import { AdminSelfieChangeController } from './admin-selfie-change.controller';
 import { StudentsController } from './students.controller';
 import { StudentsService } from './students.service';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -10,7 +11,7 @@ import { SohoStrategy } from '../redemptions/strategies/soho.strategy';
 
 @Module({
   imports: [PrismaModule, forwardRef(() => AuthModule), MailModule],
-  controllers: [AdminStudentsController, StudentsController],
+  controllers: [AdminStudentsController, AdminSelfieChangeController, StudentsController],
   providers: [StudentsService, SohoStrategy],
   exports: [StudentsService],
 })
