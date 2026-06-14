@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedemptionsService } from '../redemptions/redemptions.service';
+import { AuditService } from '../audit/audit.service';
 import { InitiateQrRedemptionDto } from './dto/initiate-qr-redemption.dto';
 import { RejectQrRedemptionDto } from './dto/reject-qr-redemption.dto';
 import { UpdateQrSettingsDto } from './dto/update-qr-settings.dto';
@@ -27,6 +28,7 @@ export class QrRedemptionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redemptionsService: RedemptionsService,
+    private readonly auditService: AuditService,
   ) {}
 
   // ── Public: list active offers at a branch ────────────────────────────────
@@ -177,6 +179,19 @@ export class QrRedemptionsService {
           expires_at: expiresAt,
           redemption_id: redemption.id,
         },
+      });
+
+      await this.logQrRedemptionCreated({
+        redemptionId: redemption.id,
+        qrRequestId: record.id,
+        studentId: student.id,
+        offerId: dto.offerId,
+        branchId: dto.branchId,
+        verifiedByUserId: branch.user_id ?? currentUser.id,
+        method: 'auto_approve',
+        notes: 'QR auto-approved',
+        isBonusApplied: redemption.isBonusApplied,
+        bonusDiscountApplied: redemption.bonusDiscountApplied,
       });
 
       return {
@@ -450,6 +465,18 @@ export class QrRedemptionsService {
       data: { status: 'approved', redemption_id: redemption.id },
     });
 
+    await this.logQrRedemptionCreated({
+      redemptionId: redemption.id,
+      qrRequestId: requestId,
+      studentId: request.student_id,
+      offerId: request.offer_id,
+      branchId: request.branch_id,
+      verifiedByUserId: currentUser.id,
+      method: 'manual_approve',
+      isBonusApplied: redemption.isBonusApplied,
+      bonusDiscountApplied: redemption.bonusDiscountApplied,
+    });
+
     return { success: true };
   }
 
@@ -476,6 +503,15 @@ export class QrRedemptionsService {
     await (this.prisma as any).qr_redemption_requests.update({
       where: { id: requestId },
       data: { status: 'rejected', rejection_reason: dto.rejectionReason ?? null },
+    });
+
+    await this.logQrRedemptionRejected({
+      qrRequestId: requestId,
+      studentId: request.student_id,
+      offerId: request.offer_id,
+      branchId: request.branch_id,
+      rejectedByUserId: currentUser.id,
+      reason: dto.rejectionReason ?? null,
     });
 
     return { success: true };
@@ -531,6 +567,135 @@ export class QrRedemptionsService {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+
+  private async logQrRedemptionCreated(params: {
+    redemptionId: string;
+    qrRequestId: string;
+    studentId: string;
+    offerId: string;
+    branchId: string;
+    verifiedByUserId: string;
+    method: 'auto_approve' | 'manual_approve';
+    notes?: string;
+    isBonusApplied: boolean;
+    bonusDiscountApplied: number | null;
+  }): Promise<void> {
+    const context = await this.getQrAuditContext(
+      params.studentId,
+      params.offerId,
+      params.branchId,
+    );
+
+    await this.auditService.logCreate(
+      'CREATE_QR_REDEMPTION',
+      'redemptions',
+      params.redemptionId,
+      {
+        qrRequestId: params.qrRequestId,
+        method: params.method,
+        notes: params.notes,
+        isBonusApplied: params.isBonusApplied,
+        bonusDiscountApplied: params.bonusDiscountApplied,
+        student: context.student,
+        offer: context.offer,
+        branch: context.branch,
+      },
+      params.verifiedByUserId,
+    );
+  }
+
+  private async logQrRedemptionRejected(params: {
+    qrRequestId: string;
+    studentId: string;
+    offerId: string;
+    branchId: string;
+    rejectedByUserId: string;
+    reason: string | null;
+  }): Promise<void> {
+    const context = await this.getQrAuditContext(
+      params.studentId,
+      params.offerId,
+      params.branchId,
+    );
+
+    await this.auditService.logAction(
+      'REJECT_QR_REDEMPTION',
+      'qr_redemption_requests',
+      params.qrRequestId,
+      {
+        reason: params.reason,
+        student: context.student,
+        offer: context.offer,
+        branch: context.branch,
+      },
+      params.rejectedByUserId,
+    );
+  }
+
+  private async getQrAuditContext(
+    studentId: string,
+    offerId: string,
+    branchId: string,
+  ): Promise<{
+    student: {
+      id: string;
+      parchiId: string;
+      firstName: string;
+      lastName: string;
+      university: string | null;
+    } | null;
+    offer: { id: string; title: string } | null;
+    branch: {
+      id: string;
+      branchName: string;
+      merchantName: string | null;
+    } | null;
+  }> {
+    const [student, offer, branch] = await Promise.all([
+      this.prisma.students.findUnique({
+        where: { id: studentId },
+        select: {
+          id: true,
+          parchi_id: true,
+          first_name: true,
+          last_name: true,
+          university: true,
+        },
+      }),
+      this.prisma.offers.findUnique({
+        where: { id: offerId },
+        select: { id: true, title: true },
+      }),
+      this.prisma.merchant_branches.findUnique({
+        where: { id: branchId },
+        select: {
+          id: true,
+          branch_name: true,
+          merchants: { select: { business_name: true } },
+        },
+      }),
+    ]);
+
+    return {
+      student: student
+        ? {
+            id: student.id,
+            parchiId: student.parchi_id ?? '',
+            firstName: student.first_name,
+            lastName: student.last_name,
+            university: student.university,
+          }
+        : null,
+      offer: offer ? { id: offer.id, title: offer.title } : null,
+      branch: branch
+        ? {
+            id: branch.id,
+            branchName: branch.branch_name,
+            merchantName: branch.merchants?.business_name ?? null,
+          }
+        : null,
+    };
+  }
 
   private formatRequest(r: any) {
     return {
