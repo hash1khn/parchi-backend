@@ -32,4 +32,12 @@ export class UpdateConfigDto {
   @IsOptional()
   @IsBoolean()
   is_under_maintenance?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  auto_queue_offers?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  auto_queue_partners?: boolean;
 }

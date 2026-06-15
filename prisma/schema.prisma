@@ -1005,6 +1005,8 @@ model app_configs {
   force_update_title       String?   @default("Time for an Upgrade! 🚀")
   force_update_message     String?   @default("To keep your Parchiyan safe and enjoy new deals, please update to the latest version.")
   is_under_maintenance     Boolean?  @default(false)
+  auto_queue_offers        Boolean   @default(true)
+  auto_queue_partners      Boolean   @default(true)
   created_at               DateTime? @default(now()) @db.Timestamptz(6)
   updated_at               DateTime? @default(now()) @db.Timestamptz(6)
   min_android_version      String    @default("1.0.0")

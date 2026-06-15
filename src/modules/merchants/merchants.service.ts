@@ -737,6 +737,8 @@ export class MerchantsService {
       updateData.is_active = updateDto.isActive;
     }
 
+    const wasApproved = merchant.verification_status === 'approved';
+
     // Update merchant
     const updatedMerchant = await this.prisma.merchants.update({
       where: { id },
@@ -745,6 +747,22 @@ export class MerchantsService {
         users: true,
       },
     });
+
+    if (!wasApproved && updatedMerchant.verification_status === 'approved') {
+      const appConfig = await this.prisma.app_configs.findFirst();
+      if (!appConfig || appConfig.auto_queue_partners) {
+        await this.prisma.notification_queue.create({
+          data: {
+            title: '🗣️ NEW PARTNER DROP',
+            content: `${updatedMerchant.business_name} is now live on Parchi, get X% off on your next visit! T&Cs apply.`,
+            image_url: updatedMerchant.logo_path || null,
+            target_topic: 'students_all',
+            status: 'pending',
+          },
+        });
+        this.logger.log(`Auto-created partner drop notification queue item for merchant ${updatedMerchant.id}`);
+      }
+    }
 
     // Update user is_active if provided (keep in sync with merchant is_active)
     if (updateDto.isActive !== undefined) {

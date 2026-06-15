@@ -19,6 +19,8 @@ export class SystemConfigService {
           force_update_title: 'Time for an Upgrade! 🚀',
           force_update_message: 'To keep your Parchiyan safe and enjoy new deals, please update to the latest version.',
           is_under_maintenance: false,
+          auto_queue_offers: true,
+          auto_queue_partners: true,
         },
       });
     }

@@ -929,6 +929,19 @@ export class AuthService {
           },
         });
 
+        const appConfig = await tx.app_configs.findFirst();
+        if (!appConfig || appConfig.auto_queue_partners) {
+          await tx.notification_queue.create({
+            data: {
+              title: '🗣️ NEW PARTNER DROP',
+              content: `${merchant.business_name} is now live on Parchi, get X% off on your next visit! T&Cs apply.`,
+              image_url: merchant.logo_path || null,
+              target_topic: 'students_all',
+              status: 'pending',
+            },
+          });
+        }
+
         return {
           user: publicUser,
           merchant,
