@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-06-15T08-56-02-532Z",
+  "created_at": "2026-06-15T08:56:40.706Z",
+  "files": {
+    "students": "students_2026-06-15T08-56-02-532Z.json",
+    "student_branch_stats": "student_branch_stats_2026-06-15T08-56-02-532Z.json",
+    "student_merchant_stats": "student_merchant_stats_2026-06-15T08-56-02-532Z.json",
+    "student_offer_stats": "student_offer_stats_2026-06-15T08-56-02-532Z.json",
+    "offers": "offers_2026-06-15T08-56-02-532Z.json"
+  },
+  "row_counts": {
+    "students": 2319,
+    "student_branch_stats": 2995,
+    "student_merchant_stats": 906,
+    "student_offer_stats": 905,
+    "offers": 48
+  }
+}
