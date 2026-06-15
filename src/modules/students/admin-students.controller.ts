@@ -9,15 +9,15 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
-  ParseIntPipe,
   ParseUUIDPipe,
-  DefaultValuePipe,
   UseInterceptors,
   UploadedFile,
   Post,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { StudentsService } from './students.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -62,6 +62,55 @@ export class AdminStudentsController {
     );
   }
 
+  @Get('filter-fields')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async getStudentFilterFields() {
+    const data = this.studentsService.getStudentFilterFields();
+    return createApiResponse(data, 'Filter fields retrieved successfully');
+  }
+
+  @Get('export')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async exportStudents(
+    @Query() queryDto: QueryStudentsDto,
+    @Res() res: Response,
+  ) {
+    const result = await this.studentsService.exportStudents({
+      legacy: {
+        status: queryDto.status,
+        institute: queryDto.institute,
+        emailVerified: queryDto.emailVerified,
+        university: queryDto.university,
+        gender: queryDto.gender,
+        kycStatus: queryDto.kycStatus,
+        minRedemptions: queryDto.minRedemptions,
+        maxRedemptions: queryDto.maxRedemptions,
+        dateFrom: queryDto.dateFrom,
+        dateTo: queryDto.dateTo,
+        hasRedeemed: queryDto.hasRedeemed,
+        foundersClub: queryDto.foundersClub,
+      },
+      filters: queryDto.filters,
+      search: queryDto.search,
+    });
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="students-export-${dateStr}.csv"`,
+    );
+    if (result.truncated) {
+      res.setHeader('X-Export-Truncated', 'true');
+      res.setHeader('X-Export-Total', String(result.total));
+    }
+    res.send(result.csv);
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.ADMIN)
@@ -88,6 +137,7 @@ export class AdminStudentsController {
       queryDto.dateTo,
       queryDto.hasRedeemed,
       queryDto.foundersClub,
+      queryDto.filters,
     );
     return createPaginatedResponse(
       result.items,

@@ -5,12 +5,15 @@ import {
   Min,
   Max,
   IsString,
+  IsArray,
+  ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform, plainToInstance } from 'class-transformer';
 import {
   VERIFICATION_STATUS,
   type VerificationStatus,
 } from '../../../constants/app.constants';
+import { StudentFilterClauseDto } from '../filters/student-filter.dto';
 
 
 export class QueryStudentsDto {
@@ -89,5 +92,21 @@ export class QueryStudentsDto {
   @IsOptional()
   @IsString()
   foundersClub?: string; // 'true' or 'false' from query
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (!value) return undefined;
+    try {
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      if (!Array.isArray(parsed)) return undefined;
+      return plainToInstance(StudentFilterClauseDto, parsed);
+    } catch {
+      return undefined;
+    }
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => StudentFilterClauseDto)
+  filters?: StudentFilterClauseDto[];
 }
 

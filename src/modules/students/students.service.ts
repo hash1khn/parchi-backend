@@ -24,6 +24,85 @@ import {
 import { PaginationMeta } from '../../utils/pagination.util';
 import { SohoStrategy } from '../redemptions/strategies/soho.strategy';
 import { generateParchiId } from '../../utils/parchi-id.util';
+import { rowsToCsv } from '../../utils/csv.util';
+import { buildStudentFilterWhere } from './filters/student-filter.builder';
+import {
+  getStudentFilterFieldsMetadata,
+  validateStudentFilterClauses,
+} from './filters/student-filter.registry';
+import { StudentFilterClause } from './filters/student-filter.types';
+import { StudentFilterClauseDto } from './filters/student-filter.dto';
+
+const STUDENT_LIST_INCLUDE = {
+  users: {
+    select: {
+      id: true,
+      email: true,
+      phone: true,
+      is_active: true,
+      users: {
+        select: {
+          email_confirmed_at: true,
+        },
+      },
+    },
+  },
+  verified_by_user: {
+    select: {
+      id: true,
+      email: true,
+      role: true,
+    },
+  },
+  student_kyc: {
+    orderBy: { submitted_at: 'desc' as const },
+    take: 1,
+    include: {
+      users: {
+        select: { email: true },
+      },
+    },
+  },
+} satisfies Prisma.studentsInclude;
+
+const EXPORT_BATCH_SIZE = 1000;
+const EXPORT_MAX_ROWS = 50000;
+
+export const STUDENT_EXPORT_COLUMNS = [
+  'parchi_id',
+  'first_name',
+  'last_name',
+  'email',
+  'phone',
+  'university',
+  'gender',
+  'degree',
+  'year_of_study',
+  'graduation_year',
+  'platform',
+  'verification_status',
+  'is_founders_club',
+  'lifetime_redemptions',
+  'total_savings',
+  'created_at',
+  'date_of_birth',
+  'is_active',
+] as const;
+
+export interface LegacyStudentFilterParams {
+  status?: VerificationStatus;
+  institute?: string;
+  emailVerified?: string;
+  university?: string;
+  gender?: string;
+  kycStatus?: string;
+  minRedemptions?: number;
+  maxRedemptions?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  hasRedeemed?: string;
+  foundersClub?: string;
+}
 
 export interface StudentVerificationResponse {
   parchiId: string;
@@ -323,6 +402,335 @@ export class StudentsService {
   }
 
   /**
+   * Get filter field metadata for the admin filter builder
+   */
+  getStudentFilterFields() {
+    return getStudentFilterFieldsMetadata();
+  }
+
+  /**
+   * Build Prisma where conditions from legacy flat query params
+   */
+  private buildLegacyStudentConditions(
+    params: LegacyStudentFilterParams,
+  ): Prisma.studentsWhereInput[] {
+    const conditions: Prisma.studentsWhereInput[] = [];
+
+    if (params.emailVerified !== undefined) {
+      const isVerified = params.emailVerified === 'true';
+      conditions.push({
+        users: {
+          users: isVerified
+            ? { email_confirmed_at: { not: null } }
+            : { email_confirmed_at: null },
+        },
+      });
+    }
+
+    if (params.kycStatus) {
+      const statusList = params.kycStatus.split(',').map((s) => s.trim());
+      const enumStatuses = statusList.filter(
+        (s) => s !== 'suspended',
+      ) as VerificationStatus[];
+      const hasSuspended = statusList.includes('suspended');
+
+      const kycConditions: Prisma.studentsWhereInput[] = [];
+      if (enumStatuses.length > 0) {
+        kycConditions.push({ verification_status: { in: enumStatuses } });
+      }
+      if (hasSuspended) {
+        kycConditions.push({ users: { is_active: false } });
+      }
+
+      if (kycConditions.length > 0) {
+        conditions.push({ OR: kycConditions });
+      }
+    } else if (params.status) {
+      conditions.push({ verification_status: params.status });
+    }
+
+    if (params.university || params.institute) {
+      conditions.push({
+        university: {
+          contains: params.university || params.institute,
+          mode: 'insensitive',
+        },
+      });
+    }
+
+    if (params.gender) {
+      conditions.push({
+        gender: { equals: params.gender, mode: 'insensitive' },
+      });
+    }
+
+    if (params.minRedemptions !== undefined) {
+      conditions.push({ lifetime_redemptions: { gte: params.minRedemptions } });
+    }
+    if (params.maxRedemptions !== undefined) {
+      conditions.push({ lifetime_redemptions: { lte: params.maxRedemptions } });
+    }
+
+    if (params.dateFrom || params.dateTo) {
+      const dateCond: Prisma.DateTimeFilter = {};
+      if (params.dateFrom) dateCond.gte = new Date(params.dateFrom);
+      if (params.dateTo) dateCond.lte = new Date(params.dateTo);
+      conditions.push({ created_at: dateCond });
+    }
+
+    if (params.hasRedeemed !== undefined) {
+      if (params.hasRedeemed === 'true') {
+        conditions.push({ lifetime_redemptions: { gt: 0 } });
+      } else if (params.hasRedeemed === 'false') {
+        conditions.push({ lifetime_redemptions: 0 });
+      }
+    }
+
+    if (params.foundersClub !== undefined) {
+      conditions.push({
+        is_founders_club: params.foundersClub === 'true',
+      });
+    }
+
+    return conditions;
+  }
+
+  /**
+   * Combine legacy params, dynamic filters, and search into a single where clause
+   */
+  buildStudentWhereClause(options: {
+    legacy?: LegacyStudentFilterParams;
+    filters?: StudentFilterClauseDto[];
+    search?: string;
+  }): Prisma.studentsWhereInput {
+    const conditions: Prisma.studentsWhereInput[] = [];
+
+    if (options.legacy) {
+      conditions.push(...this.buildLegacyStudentConditions(options.legacy));
+    }
+
+    if (options.filters && options.filters.length > 0) {
+      validateStudentFilterClauses(options.filters as StudentFilterClause[]);
+      conditions.push(...buildStudentFilterWhere(options.filters as StudentFilterClause[]));
+    }
+
+    if (options.search) {
+      conditions.push({
+        OR: [
+          { first_name: { contains: options.search, mode: 'insensitive' } },
+          { last_name: { contains: options.search, mode: 'insensitive' } },
+          { parchi_id: { contains: options.search, mode: 'insensitive' } },
+          {
+            users: {
+              email: { contains: options.search, mode: 'insensitive' },
+            },
+          },
+          {
+            users: {
+              phone: { contains: options.search, mode: 'insensitive' },
+            },
+          },
+        ],
+      });
+    }
+
+    if (conditions.length === 0) {
+      return {};
+    }
+    return { AND: conditions };
+  }
+
+  /**
+   * Batch-infer platform for students with null platform column
+   */
+  private async batchInferPlatforms(
+    students: { user_id: string; platform: string | null }[],
+  ): Promise<Map<string, string>> {
+    const inferredPlatforms = new Map<string, string>();
+    const studentsWithNullPlatform = students.filter((s) => !s.platform);
+
+    if (studentsWithNullPlatform.length === 0) {
+      return inferredPlatforms;
+    }
+
+    const userIds = studentsWithNullPlatform.map((s) => s.user_id);
+
+    const fcmTokens = await this.prisma.user_fcm_tokens.findMany({
+      where: {
+        user_id: { in: userIds },
+        platform: { not: null, notIn: ['unknown', 'undefined', ''] },
+      },
+      orderBy: { updated_at: 'desc' },
+      select: { user_id: true, platform: true },
+    });
+
+    fcmTokens.forEach((t) => {
+      if (t.platform && !inferredPlatforms.has(t.user_id)) {
+        inferredPlatforms.set(t.user_id, t.platform);
+      }
+    });
+
+    const remainingUserIds = userIds.filter((id) => !inferredPlatforms.has(id));
+    if (remainingUserIds.length > 0) {
+      const events = await this.prisma.analytics_events.findMany({
+        where: {
+          user_id: { in: remainingUserIds },
+          platform: { not: null, notIn: ['unknown', 'undefined', ''] },
+        },
+        orderBy: { created_at: 'desc' },
+        select: { user_id: true, platform: true },
+      });
+
+      events.forEach((e) => {
+        if (e.user_id && e.platform && !inferredPlatforms.has(e.user_id)) {
+          inferredPlatforms.set(e.user_id, e.platform);
+        }
+      });
+    }
+
+    return inferredPlatforms;
+  }
+
+  /**
+   * Query students with shared include and platform inference
+   */
+  private async queryStudents(
+    whereClause: Prisma.studentsWhereInput,
+    options: { page?: number; limit?: number; skip?: number; take?: number },
+  ) {
+    const [students, total] = await Promise.all([
+      this.prisma.students.findMany({
+        where: whereClause,
+        include: STUDENT_LIST_INCLUDE,
+        orderBy: { created_at: 'desc' },
+        ...(options.skip !== undefined ? { skip: options.skip } : {}),
+        ...(options.take !== undefined ? { take: options.take } : {}),
+      }),
+      this.prisma.students.count({ where: whereClause }),
+    ]);
+
+    const inferredPlatforms = await this.batchInferPlatforms(students);
+
+    const formattedStudents = await Promise.all(
+      students.map((student) => {
+        const inferredPlatform = inferredPlatforms.get(student.user_id);
+        return this.formatStudentResponse(student, inferredPlatform);
+      }),
+    );
+
+    return { students: formattedStudents, total };
+  }
+
+  /**
+   * Export students as CSV matching the current filter set
+   */
+  async exportStudents(options: {
+    legacy?: LegacyStudentFilterParams;
+    filters?: StudentFilterClauseDto[];
+    search?: string;
+  }): Promise<{ csv: string; truncated: boolean; total: number }> {
+    const whereClause = this.buildStudentWhereClause(options);
+    const total = await this.prisma.students.count({ where: whereClause });
+    const truncated = total > EXPORT_MAX_ROWS;
+    const exportLimit = truncated ? EXPORT_MAX_ROWS : total;
+
+    const rows: Record<string, unknown>[] = [];
+    let cursor: string | undefined;
+    let fetched = 0;
+
+    while (fetched < exportLimit) {
+      const batchSize = Math.min(EXPORT_BATCH_SIZE, exportLimit - fetched);
+      const batch = await this.prisma.students.findMany({
+        where: whereClause,
+        include: {
+          users: {
+            select: {
+              email: true,
+              phone: true,
+              is_active: true,
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+        take: batchSize,
+        ...(cursor
+          ? { skip: 1, cursor: { id: cursor } }
+          : {}),
+      });
+
+      if (batch.length === 0) break;
+
+      const inferredPlatforms = await this.batchInferPlatforms(batch);
+
+      for (const student of batch) {
+        rows.push(
+          this.formatStudentExportRow(
+            student,
+            inferredPlatforms.get(student.user_id),
+          ),
+        );
+      }
+
+      fetched += batch.length;
+      cursor = batch[batch.length - 1].id;
+
+      if (batch.length < batchSize) break;
+    }
+
+    const csv = rowsToCsv(
+      [...STUDENT_EXPORT_COLUMNS],
+      rows,
+    );
+
+    return { csv, truncated, total };
+  }
+
+  private formatStudentExportRow(
+    student: {
+      parchi_id: string | null;
+      first_name: string;
+      last_name: string;
+      university: string;
+      gender: string | null;
+      degree: string | null;
+      year_of_study: string | null;
+      graduation_year: number | null;
+      platform: string | null;
+      verification_status: string | null;
+      is_founders_club: boolean | null;
+      lifetime_redemptions: number | null;
+      total_savings: Prisma.Decimal | null;
+      created_at: Date | null;
+      date_of_birth: Date | null;
+      users: { email: string; phone: string | null; is_active: boolean | null };
+    },
+    inferredPlatform?: string,
+  ): Record<string, unknown> {
+    return {
+      parchi_id: student.parchi_id || 'PENDING',
+      first_name: student.first_name,
+      last_name: student.last_name,
+      email: student.users.email,
+      phone: student.users.phone || '',
+      university: student.university,
+      gender: student.gender || '',
+      degree: student.degree || '',
+      year_of_study: student.year_of_study || '',
+      graduation_year: student.graduation_year ?? '',
+      platform: student.platform || inferredPlatform || '',
+      verification_status: student.verification_status || '',
+      is_founders_club: student.is_founders_club ? 'true' : 'false',
+      lifetime_redemptions: student.lifetime_redemptions ?? 0,
+      total_savings: Number(student.total_savings || 0),
+      created_at: student.created_at?.toISOString() || '',
+      date_of_birth: student.date_of_birth
+        ? student.date_of_birth.toISOString().split('T')[0]
+        : '',
+      is_active: student.users.is_active ? 'true' : 'false',
+    };
+  }
+
+  /**
    * Get all students
    * Admin only
    */
@@ -343,218 +751,39 @@ export class StudentsService {
     dateTo?: string,
     hasRedeemed?: string,
     foundersClub?: string,
+    filters?: StudentFilterClauseDto[],
   ): Promise<{ items: any[]; pagination: PaginationMeta }> {
     if (groupBy) {
       return this.getStudentSegmentation(groupBy);
     }
 
     const skip = calculateSkip(page, limit);
-    const whereClause: Prisma.studentsWhereInput = {};
-    const conditions: Prisma.studentsWhereInput[] = [];
+    const whereClause = this.buildStudentWhereClause({
+      legacy: {
+        status,
+        institute,
+        emailVerified,
+        university,
+        gender,
+        kycStatus,
+        minRedemptions,
+        maxRedemptions,
+        dateFrom,
+        dateTo,
+        hasRedeemed,
+        foundersClub,
+      },
+      filters,
+      search,
+    });
 
-    if (emailVerified !== undefined) {
-      const isVerified = emailVerified === 'true';
-      conditions.push({
-        users: {
-          users: isVerified 
-            ? { email_confirmed_at: { not: null } }
-            : { email_confirmed_at: null }
-        },
-      });
-    }
-
-    // Handle KYC Status (supporting multi-select comma separated)
-    if (kycStatus) {
-      const statusList = kycStatus.split(',').map(s => s.trim());
-      const enumStatuses = statusList.filter(s => s !== 'suspended') as VerificationStatus[];
-      const hasSuspended = statusList.includes('suspended');
-
-      const kycConditions: Prisma.studentsWhereInput[] = [];
-      if (enumStatuses.length > 0) {
-        kycConditions.push({ verification_status: { in: enumStatuses } });
-      }
-      if (hasSuspended) {
-        kycConditions.push({ users: { is_active: false } });
-      }
-      
-      if (kycConditions.length > 0) {
-        conditions.push({ OR: kycConditions });
-      }
-    } else if (status) {
-      conditions.push({ verification_status: status });
-    }
-
-    // University filter (checking both institute and university fields for compatibility)
-    if (university || institute) {
-      conditions.push({
-        university: {
-          contains: university || institute,
-          mode: 'insensitive',
-        },
-      });
-    }
-
-    if (gender) {
-      conditions.push({ gender: { equals: gender, mode: 'insensitive' } });
-    }
-
-    // Redemption range
-    if (minRedemptions !== undefined) {
-      conditions.push({ lifetime_redemptions: { gte: minRedemptions } });
-    }
-    if (maxRedemptions !== undefined) {
-      conditions.push({ lifetime_redemptions: { lte: maxRedemptions } });
-    }
-
-    // Date joined range
-    if (dateFrom || dateTo) {
-      const dateCond: Prisma.DateTimeFilter = {};
-      if (dateFrom) dateCond.gte = new Date(dateFrom);
-      if (dateTo) dateCond.lte = new Date(dateTo);
-      conditions.push({ created_at: dateCond });
-    }
-
-    // Has redeemed toggle
-    if (hasRedeemed !== undefined) {
-      if (hasRedeemed === 'true') {
-        conditions.push({ lifetime_redemptions: { gt: 0 } });
-      } else if (hasRedeemed === 'false') {
-        conditions.push({ lifetime_redemptions: 0 });
-      }
-    }
-
-    // Founders Club toggle
-    if (foundersClub !== undefined) {
-      conditions.push({ is_founders_club: foundersClub === 'true' });
-    }
-
-    if (search) {
-      conditions.push({
-        OR: [
-          { first_name: { contains: search, mode: 'insensitive' } },
-          { last_name: { contains: search, mode: 'insensitive' } },
-          { parchi_id: { contains: search, mode: 'insensitive' } },
-          {
-            users: {
-              email: { contains: search, mode: 'insensitive' },
-            },
-          },
-          {
-            users: {
-              phone: { contains: search, mode: 'insensitive' },
-            },
-          },
-        ],
-      });
-    }
-
-    if (conditions.length > 0) {
-      whereClause.AND = conditions;
-    }
-
-    const [students, total] = await Promise.all([
-      this.prisma.students.findMany({
-        where: whereClause,
-        include: {
-          users: {
-            select: {
-              id: true,
-              email: true,
-              phone: true,
-              is_active: true,
-              users: {
-                select: {
-                  email_confirmed_at: true,
-                }
-              }
-            },
-          },
-          verified_by_user: {
-            select: {
-              id: true,
-              email: true,
-              role: true,
-            },
-          },
-          student_kyc: {
-            orderBy: {
-              submitted_at: 'desc',
-            },
-            take: 1, // Get the latest KYC submission
-            include: {
-              users: {
-                select: {
-                  email: true,
-                }
-              }
-            },
-          },
-        },
-        orderBy: {
-          created_at: 'desc',
-        },
-        skip,
-        take: limit,
-      }),
-      this.prisma.students.count({
-        where: whereClause,
-      }),
-    ]);
-
-    // Batch fetch inferred platforms for students who have null platform
-    const studentsWithNullPlatform = students.filter(s => !s.platform);
-    const inferredPlatforms = new Map<string, string>();
-
-    if (studentsWithNullPlatform.length > 0) {
-      const userIds = studentsWithNullPlatform.map(s => s.user_id);
-      
-      // 1. Try FCM Tokens
-      const fcmTokens = await this.prisma.user_fcm_tokens.findMany({
-        where: { 
-          user_id: { in: userIds }, 
-          platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
-        },
-        orderBy: { updated_at: 'desc' },
-        select: { user_id: true, platform: true }
-      });
-      
-      fcmTokens.forEach(t => {
-        if (t.platform && !inferredPlatforms.has(t.user_id)) {
-          inferredPlatforms.set(t.user_id, t.platform);
-        }
-      });
-
-      // 2. Try Analytics Events for remaining
-      const remainingUserIds = userIds.filter(id => !inferredPlatforms.has(id));
-      if (remainingUserIds.length > 0) {
-        const events = await this.prisma.analytics_events.findMany({
-          where: { 
-            user_id: { in: remainingUserIds }, 
-            platform: { not: null, notIn: ['unknown', 'undefined', ''] } 
-          },
-          orderBy: { created_at: 'desc' },
-          select: { user_id: true, platform: true }
-        });
-        
-        events.forEach(e => {
-          if (e.user_id && e.platform && !inferredPlatforms.has(e.user_id)) {
-            inferredPlatforms.set(e.user_id, e.platform);
-          }
-        });
-      }
-    }
-
-
-
-    const formattedStudents = await Promise.all(
-      students.map((student) => {
-        const inferredPlatform = inferredPlatforms.get(student.user_id);
-        return this.formatStudentResponse(student, inferredPlatform);
-      }),
-    );
+    const { students, total } = await this.queryStudents(whereClause, {
+      skip,
+      take: limit,
+    });
 
     return {
-      items: formattedStudents,
+      items: students,
       pagination: calculatePaginationMeta(total, page, limit),
     };
   }
@@ -1497,6 +1726,9 @@ export class StudentsService {
       instituteId: student.institute_id ?? null,
       instituteName: student.institutes?.name ?? null,
       studentIdNumber: student.student_id_number ?? null,
+      gender: student.gender ?? null,
+      degree: student.degree ?? null,
+      yearOfStudy: student.year_of_study ?? null,
     };
   }
 
