@@ -61,6 +61,7 @@ export interface BranchResponse {
   createdAt: Date | null;
   updatedAt: Date | null;
   qrAutoApprove?: boolean;
+  email?: string | null;
 }
 
 export interface BranchAssignmentResponse {
@@ -1069,6 +1070,11 @@ export class MerchantsService {
             business_name: true,
           },
         },
+        users: {
+          select: {
+            email: true,
+          },
+        },
       },
       orderBy: {
         created_at: 'desc',
@@ -1090,6 +1096,7 @@ export class MerchantsService {
       createdAt: branch.created_at,
       updatedAt: branch.updated_at,
       qrAutoApprove: branch.qr_auto_approve ?? false,
+      email: branch.users?.email || null,
     }));
 
     return formattedBranches;
@@ -1110,6 +1117,11 @@ export class MerchantsService {
         merchants: {
           include: {
             users: true,
+          },
+        },
+        users: {
+          select: {
+            email: true,
           },
         },
       },
@@ -1153,6 +1165,7 @@ export class MerchantsService {
       isActive: branch.is_active,
       createdAt: branch.created_at,
       updatedAt: branch.updated_at,
+      email: branch.users?.email || null,
     };
 
     return formattedBranch;
