@@ -32,6 +32,7 @@ import { AssignOffersDto } from './dto/assign-offers.dto';
 import { UpdateBonusSettingsDto } from './dto/update-bonus-settings.dto';
 import { UpdateLoyaltyProgramDto } from './dto/update-loyalty-program.dto';
 import { SetFeaturedBrandsDto } from './dto/set-featured-brands.dto';
+import { SetRestaurantListPinDto } from './dto/set-restaurant-list-pin.dto';
 import { Audit } from '../../decorators/audit.decorator';
 import { createApiResponse, createPaginatedResponse } from '../../utils/serializer.util';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
@@ -76,6 +77,18 @@ export class MerchantsController {
   async setFeaturedBrands(@Body() setFeaturedBrandsDto: SetFeaturedBrandsDto) {
     const data = await this.merchantsService.setFeaturedBrands(setFeaturedBrandsDto);
     return createApiResponse(data, 'Featured brands updated successfully');
+  }
+
+  @Put('corporate/:id/restaurant-list-pin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async setRestaurantListPin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetRestaurantListPinDto,
+  ) {
+    const data = await this.merchantsService.setRestaurantListPin(id, dto.position);
+    return createApiResponse(data, 'Restaurant list pin position updated successfully');
   }
 
   @Get('student/list')

@@ -263,6 +263,61 @@ export class AdminDashboardService {
         return merchantsWithCounts;
     }
 
+    async getTopWeeklyRedeemers(limit: number = 10) {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        const grouped = await this.prisma.redemptions.groupBy({
+            by: ['student_id'],
+            where: {
+                created_at: { gte: sevenDaysAgo },
+                verified_by: { not: null },
+                OR: [
+                    { notes: null },
+                    { notes: { not: { startsWith: 'REJECTED:' } } },
+                ],
+            },
+            _count: { student_id: true },
+            orderBy: { _count: { student_id: 'desc' } },
+            take: limit,
+        });
+
+        if (grouped.length === 0) {
+            return [];
+        }
+
+        const studentIds = grouped.map((g) => g.student_id);
+        const students = await this.prisma.students.findMany({
+            where: { id: { in: studentIds } },
+            select: {
+                id: true,
+                first_name: true,
+                last_name: true,
+                university: true,
+                parchi_id: true,
+                profile_picture: true,
+            },
+        });
+
+        const studentMap = new Map(students.map((s) => [s.id, s]));
+
+        return grouped
+            .map((g) => {
+                const student = studentMap.get(g.student_id);
+                if (!student) return null;
+                return {
+                    id: student.id,
+                    firstName: student.first_name,
+                    lastName: student.last_name,
+                    university: student.university,
+                    parchiId: student.parchi_id,
+                    profilePicture: student.profile_picture,
+                    redemptionCount: g._count.student_id,
+                };
+            })
+            .filter((item): item is NonNullable<typeof item> => item !== null);
+    }
+
     async getKycRejectionStats() {
         const funnelQualifiedStudent = {
             users: {

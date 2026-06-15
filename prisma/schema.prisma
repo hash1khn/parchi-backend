@@ -491,6 +491,7 @@ model merchants {
   banner_url                   String?
   terms_and_conditions         String?
   featured_order               Int?
+  restaurant_list_pinned_position Int?
   redemption_fee               Decimal                  @default(0.00) @db.Decimal
   sub_category                 String?                  @db.VarChar
   loyalty_programs             loyalty_programs[]

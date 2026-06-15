@@ -394,6 +394,10 @@ export class StudentsService {
       });
     }
 
+    if (gender) {
+      conditions.push({ gender: { equals: gender, mode: 'insensitive' } });
+    }
+
     // Redemption range
     if (minRedemptions !== undefined) {
       conditions.push({ lifetime_redemptions: { gte: minRedemptions } });

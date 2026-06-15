@@ -96,6 +96,19 @@ export class AdminDashboardController {
         );
     }
 
+    @Get('top-weekly-redeemers')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async getTopWeeklyRedeemers(@Query('limit') limit?: string) {
+        const parsedLimit = limit ? Math.min(parseInt(limit, 10) || 10, 50) : 10;
+        const data = await this.adminDashboardService.getTopWeeklyRedeemers(parsedLimit);
+        return createApiResponse(
+            data,
+            'Top weekly redeemers retrieved successfully',
+        );
+    }
+
     @Get('financials')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(ROLES.ADMIN)

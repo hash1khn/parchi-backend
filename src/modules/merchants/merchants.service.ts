@@ -43,6 +43,7 @@ export interface CorporateMerchantResponse {
   bannerUrl: string | null;
   termsAndConditions: string | null;
   redemptionFee: number;
+  restaurantListPinnedPosition?: number | null;
 }
 
 export interface BranchResponse {
@@ -329,10 +330,82 @@ export class MerchantsService {
         bannerUrl: merchant.banner_url,
         termsAndConditions: merchant.terms_and_conditions,
         redemptionFee: Number(merchant.redemption_fee),
+        restaurantListPinnedPosition: (merchant as any).restaurant_list_pinned_position ?? null,
       }),
     );
 
     return formattedMerchants;
+  }
+
+  /**
+   * Re-insert pinned merchants at their 1-based positions in the redemption-sorted list.
+   */
+  private applyRestaurantListPinnedOrder<
+    T extends { id: string; restaurantListPinnedPosition?: number | null },
+  >(sorted: T[]): T[] {
+    const pinned = sorted
+      .filter((m) => m.restaurantListPinnedPosition != null)
+      .sort(
+        (a, b) =>
+          (a.restaurantListPinnedPosition as number) -
+          (b.restaurantListPinnedPosition as number),
+      );
+    let list = sorted.filter((m) => m.restaurantListPinnedPosition == null);
+
+    for (const merchant of pinned) {
+      const index = Math.max(
+        0,
+        Math.min(
+          (merchant.restaurantListPinnedPosition as number) - 1,
+          list.length,
+        ),
+      );
+      list = [...list.slice(0, index), merchant, ...list.slice(index)];
+    }
+
+    return list;
+  }
+
+  async setRestaurantListPin(
+    merchantId: string,
+    position: number | null | undefined,
+  ): Promise<{ id: string; restaurantListPinnedPosition: number | null }> {
+    const merchant = await this.prisma.merchants.findUnique({
+      where: { id: merchantId },
+      select: { id: true },
+    });
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
+
+    const normalizedPosition =
+      position === undefined || position === null ? null : position;
+
+    if (normalizedPosition !== null) {
+      const conflict = await this.prisma.merchants.findFirst({
+        where: {
+          id: { not: merchantId },
+          restaurant_list_pinned_position: normalizedPosition,
+        },
+        select: { id: true, business_name: true },
+      });
+      if (conflict) {
+        throw new BadRequestException(
+          `Position ${normalizedPosition} is already assigned to ${conflict.business_name}`,
+        );
+      }
+    }
+
+    const updated = await this.prisma.merchants.update({
+      where: { id: merchantId },
+      data: { restaurant_list_pinned_position: normalizedPosition },
+      select: { id: true, restaurant_list_pinned_position: true },
+    });
+
+    return {
+      id: updated.id,
+      restaurantListPinnedPosition: updated.restaurant_list_pinned_position,
+    };
   }
 
   /**
@@ -462,6 +535,7 @@ export class MerchantsService {
         business_name: true,
         banner_url: true,
         category: true,
+        restaurant_list_pinned_position: true,
         offers: {
           select: {
             _count: {
@@ -493,20 +567,24 @@ export class MerchantsService {
         bannerUrl: merchant.banner_url,
         category: merchant.category,
         totalRedemptions,
+        restaurantListPinnedPosition: merchant.restaurant_list_pinned_position,
       };
     });
 
-    // Sort by total redemptions (descending)
+    // Sort by total redemptions (descending), then apply admin pin overrides
     merchantsWithRedemptions.sort(
       (a, b) => b.totalRedemptions - a.totalRedemptions,
     );
+    const orderedMerchants = this.applyRestaurantListPinnedOrder(
+      merchantsWithRedemptions,
+    );
 
     // Manual Pagination
-    const totalItems = merchantsWithRedemptions.length;
+    const totalItems = orderedMerchants.length;
     const startIndex = (normalizedPage - 1) * normalizedLimit;
     const endIndex = Math.min(startIndex + normalizedLimit, totalItems);
 
-    const paginatedItems = merchantsWithRedemptions.slice(startIndex, endIndex);
+    const paginatedItems = orderedMerchants.slice(startIndex, endIndex);
 
     const pagination = calculatePaginationMeta(
       totalItems,

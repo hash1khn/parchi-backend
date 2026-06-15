@@ -1286,6 +1286,18 @@ export class RedemptionsService {
         });
       }
 
+      // Revert student_offer_stats
+      await (tx as any).student_offer_stats.updateMany({
+        where: {
+          student_id: existingRedemption.student_id,
+          offer_id: existingRedemption.offer_id,
+        },
+        data: {
+          redemption_count: { decrement: 1 },
+          total_savings: { decrement: totalSavings },
+        },
+      });
+
       return updatedRedemption;
     });
 
