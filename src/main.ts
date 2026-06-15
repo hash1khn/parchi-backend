@@ -30,6 +30,10 @@ async function bootstrap() {
   // ── Gzip compression (reduces JSON payload by ~70 %) ─────────────────────
   app.use(compression());
 
+  // Disable ETag — empty 304 bodies break the dashboard fetch client
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('etag', false);
+
   // ── HTTP request logging ──────────────────────────────────────────────────
   const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
   app.use(morgan(morganFormat));

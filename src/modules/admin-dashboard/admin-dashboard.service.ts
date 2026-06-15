@@ -417,24 +417,38 @@ export class AdminDashboardService {
     }
 
     private async getUniversityDistribution(groupBy: 'institution' | 'city' = 'institution') {
-        const rawUniversities = await this.prisma.students.findMany({
-            where: { verification_status: 'approved' },
-            select: { university: true },
-        });
-
-        const groupingMap = new Map<string, number>();
-        rawUniversities.forEach(s => {
-            let key = s.university;
-            if (groupBy === 'city') {
-                const parts = s.university.split(',');
-                key = parts.length > 1 ? parts[parts.length - 1].trim() : 'Other';
-            }
-            groupingMap.set(key, (groupingMap.get(key) || 0) + 1);
-        });
-
-        const universities = Array.from(groupingMap.entries())
-            .map(([university, count]) => ({ university, studentCount: count }))
-            .sort((a, b) => b.studentCount - a.studentCount);
+        const universities: { university: string; studentCount: number }[] =
+            groupBy === 'city'
+                ? await this.prisma.$queryRaw<{ university: string; student_count: number }[]>`
+                    SELECT
+                        TRIM(REVERSE(SPLIT_PART(REVERSE(university), ',', 1))) AS university,
+                        CAST(COUNT(*) AS INTEGER) AS student_count
+                    FROM students
+                    WHERE verification_status = 'approved'
+                      AND university IS NOT NULL
+                    GROUP BY TRIM(REVERSE(SPLIT_PART(REVERSE(university), ',', 1)))
+                    ORDER BY student_count DESC
+                  `.then((rows) =>
+                      rows.map((r) => ({
+                          university: r.university || 'Other',
+                          studentCount: r.student_count,
+                      })),
+                  )
+                : await this.prisma.$queryRaw<{ university: string; student_count: number }[]>`
+                    SELECT
+                        university,
+                        CAST(COUNT(*) AS INTEGER) AS student_count
+                    FROM students
+                    WHERE verification_status = 'approved'
+                      AND university IS NOT NULL
+                    GROUP BY university
+                    ORDER BY student_count DESC
+                  `.then((rows) =>
+                      rows.map((r) => ({
+                          university: r.university,
+                          studentCount: r.student_count,
+                      })),
+                  );
 
         // Get redemption counts per university/city via raw query
         let redemptionCounts: any[];
