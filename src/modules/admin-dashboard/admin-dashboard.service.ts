@@ -19,8 +19,6 @@ export class AdminDashboardService {
 
     async getDashboardStats(startDate?: Date, endDate?: Date, universityGroupBy: 'institution' | 'city' = 'institution'): Promise<AdminDashboardStatsResponse> {
         try {
-            console.log('Fetching dashboard stats...', { startDate, endDate, universityGroupBy });
-            
             // Run all queries in parallel for performance
             const [
                 platformOverview,
