@@ -97,39 +97,42 @@ export class AnalyticsService {
       if (endDate) where.created_at.lte = endDate;
     }
 
-    const distribution = await this.prisma.analytics_events.groupBy({
+    const distribution = await this.prisma.students.groupBy({
       by: ['platform'],
-      where: {
-        ...where,
-        event_name: 'app_opened',
-      },
+      where,
       _count: {
-        platform: true,
+        id: true,
       },
     });
 
-    return distribution.map((item) => ({
-      platform: item.platform || 'Unknown',
-      count: item._count.platform,
+    const platformMap = new Map<string, number>();
+    distribution.forEach((item) => {
+      const platform = (item.platform || 'unknown').toLowerCase();
+      platformMap.set(platform, (platformMap.get(platform) || 0) + item._count.id);
+    });
+
+    return Array.from(platformMap.entries()).map(([platform, count]) => ({
+      platform,
+      count,
     }));
   }
 
   async getDailyPlatformDistribution(startDate?: Date, endDate?: Date) {
-    const where: any = {};
+    const where: any = {
+      created_at: {
+        not: null,
+      },
+    };
     if (startDate || endDate) {
-      where.created_at = {};
       if (startDate) where.created_at.gte = startDate;
       if (endDate) where.created_at.lte = endDate;
     }
 
-    const distribution = await this.prisma.analytics_events.groupBy({
+    const distribution = await this.prisma.students.groupBy({
       by: ['created_at', 'platform'],
-      where: {
-        ...where,
-        event_name: 'app_opened',
-      },
+      where,
       _count: {
-        platform: true,
+        id: true,
       },
       orderBy: {
         created_at: 'asc',
@@ -141,6 +144,7 @@ export class AnalyticsService {
     const dateMap = new Map<string, { ios: number; android: number }>();
 
     distribution.forEach((item) => {
+      if (!item.created_at) return;
       const dateStr = item.created_at.toISOString().split('T')[0];
       const platform = (item.platform || 'unknown').toLowerCase();
       
@@ -149,8 +153,8 @@ export class AnalyticsService {
       }
       
       const counts = dateMap.get(dateStr)!;
-      if (platform === 'ios') counts.ios += item._count.platform;
-      else if (platform === 'android') counts.android += item._count.platform;
+      if (platform === 'ios') counts.ios += item._count.id;
+      else if (platform === 'android') counts.android += item._count.id;
     });
 
     dateMap.forEach((counts, date) => {
