@@ -6,6 +6,8 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
 import { ROLES } from '../../constants/app.constants';
 import { createApiResponse } from '../../utils/serializer.util';
+import { CurrentUser } from '../../decorators/current-user.decorator';
+import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 
 @Controller('admin/notifications')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -15,8 +17,11 @@ export class NotificationsController {
 
   @Post('broadcast')
   @HttpCode(HttpStatus.OK)
-  async sendBroadcast(@Body() createBroadcastDto: CreateBroadcastDto) {
-    const result = await this.notificationsService.sendBroadcastNotification(createBroadcastDto);
+  async sendBroadcast(
+    @Body() createBroadcastDto: CreateBroadcastDto,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    const result = await this.notificationsService.sendBroadcastNotification(createBroadcastDto, currentUser);
     return createApiResponse(result, 'Broadcast notification sent successfully');
   }
 
@@ -29,8 +34,11 @@ export class NotificationsController {
 
   @Post('queue/:id/send')
   @HttpCode(HttpStatus.OK)
-  async sendFromQueue(@Param('id', ParseUUIDPipe) id: string) {
-    const result = await this.notificationsService.sendFromQueue(id);
+  async sendFromQueue(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    const result = await this.notificationsService.sendFromQueue(id, currentUser);
     return createApiResponse(result, 'Notification sent from queue successfully');
   }
 

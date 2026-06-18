@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import * as admin from 'firebase-admin';
 import { CreateBroadcastDto } from './dto/create-broadcast.dto';
+import { AuditService } from '../audit/audit.service';
+import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 
 @Injectable()
 export class NotificationsService implements OnModuleInit {
@@ -11,6 +13,7 @@ export class NotificationsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly auditService: AuditService,
   ) {}
 
   onModuleInit() {
@@ -49,7 +52,7 @@ export class NotificationsService implements OnModuleInit {
     }
   }
 
-  async sendBroadcastNotification(createBroadcastDto: CreateBroadcastDto) {
+  async sendBroadcastNotification(createBroadcastDto: CreateBroadcastDto, currentUser?: ICurrentUser) {
     try {
       const defaultImageUrl = 'https://zjghfwnrzazmukykgyhh.supabase.co/storage/v1/object/public/logo/parchi-app-icon.png';
       const imageUrl = createBroadcastDto.imageUrl || defaultImageUrl;
@@ -90,14 +93,34 @@ export class NotificationsService implements OnModuleInit {
       };
 
       // 3. Send via Firebase
+      let result: { success: boolean; messageId?: string; error?: string; notification: typeof notification };
       if (admin.apps.length > 0) {
         const response = await admin.messaging().send(message);
         this.logger.log(`Successfully sent broadcast message: ${response}`);
-        return { success: true, messageId: response, notification };
+        result = { success: true, messageId: response, notification };
       } else {
         this.logger.warn('Firebase app not initialized, skipping push notification');
-        return { success: false, error: 'Firebase not initialized', notification };
+        result = { success: false, error: 'Firebase not initialized', notification };
       }
+
+      await this.auditService.logAction(
+        'SEND_BROADCAST_NOTIFICATION',
+        'notifications',
+        notification.id,
+        {
+          title: notification.title,
+          content: notification.content,
+          imageUrl: notification.image_url,
+          linkUrl: notification.link_url,
+          targetType: createBroadcastDto.targetType,
+          targetValue: createBroadcastDto.targetValue,
+          targetTopic,
+          success: result.success,
+        },
+        currentUser?.id,
+      );
+
+      return result;
     } catch (error) {
       this.logger.error('Error sending broadcast notification:', error);
       throw error;
@@ -256,7 +279,7 @@ export class NotificationsService implements OnModuleInit {
     return this.buildPartnerDropContent(merchant.id, businessName);
   }
 
-  async sendFromQueue(id: string) {
+  async sendFromQueue(id: string, currentUser?: ICurrentUser) {
     try {
       // 1. Fetch queue item
       const queueItem = await this.prisma.notification_queue.findUnique({
@@ -300,6 +323,7 @@ export class NotificationsService implements OnModuleInit {
       };
 
       // 4. Send via Firebase
+      let result: { success: boolean; messageId?: string; error?: string; notification: typeof notification };
       if (admin.apps.length > 0) {
         const response = await admin.messaging().send(message);
         this.logger.log(`Successfully sent queue notification ${id}: ${response}`);
@@ -313,11 +337,30 @@ export class NotificationsService implements OnModuleInit {
           },
         });
 
-        return { success: true, messageId: response, notification };
+        result = { success: true, messageId: response, notification };
       } else {
         this.logger.warn('Firebase app not initialized, skipping push notification');
-        return { success: false, error: 'Firebase not initialized', notification };
+        result = { success: false, error: 'Firebase not initialized', notification };
       }
+
+      await this.auditService.logAction(
+        'SEND_QUEUE_NOTIFICATION',
+        'notifications',
+        notification.id,
+        {
+          queueItemId: queueItem.id,
+          title: queueItem.title,
+          content,
+          imageUrl: queueItem.image_url,
+          linkUrl: queueItem.link_url,
+          targetTopic: queueItem.target_topic,
+          suggestedBy: queueItem.suggested_by,
+          success: result.success,
+        },
+        currentUser?.id,
+      );
+
+      return result;
     } catch (error) {
       this.logger.error(`Error sending notification from queue ${id}:`, error);
       throw error;
