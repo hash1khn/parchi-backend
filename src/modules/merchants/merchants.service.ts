@@ -8,6 +8,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Prisma } from '@prisma/client';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 import { UpdateCorporateAccountDto } from './dto/update-corporate-account.dto';
@@ -142,7 +143,10 @@ export interface MerchantDetailsForStudentsResponse {
 
 @Injectable()
 export class MerchantsService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) { }
   private readonly logger = new Logger(MerchantsService.name);
 
   /**
@@ -752,10 +756,14 @@ export class MerchantsService {
     if (!wasApproved && updatedMerchant.verification_status === 'approved') {
       const appConfig = await this.prisma.app_configs.findFirst();
       if (!appConfig || appConfig.auto_queue_partners) {
+        const content = await this.notificationsService.buildPartnerDropContent(
+          updatedMerchant.id,
+          updatedMerchant.business_name,
+        );
         await this.prisma.notification_queue.create({
           data: {
             title: '🗣️ NEW PARTNER DROP',
-            content: `${updatedMerchant.business_name} is now live on Parchi, get X% off on your next visit! T&Cs apply.`,
+            content,
             image_url: updatedMerchant.logo_path || null,
             target_topic: 'students_all',
             status: 'pending',

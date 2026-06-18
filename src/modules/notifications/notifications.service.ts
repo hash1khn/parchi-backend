@@ -171,6 +171,91 @@ export class NotificationsService implements OnModuleInit {
   }
 
 
+  /**
+   * Build the partner-drop notification body with the merchant's best active offer discount.
+   */
+  async buildPartnerDropContent(
+    merchantId: string,
+    businessName: string,
+  ): Promise<string> {
+    const discountPhrase = await this.getPartnerDropDiscountPhrase(merchantId);
+    return `${businessName} is now live on Parchi, get ${discountPhrase} on your next visit! T&Cs apply.`;
+  }
+
+  private async getPartnerDropDiscountPhrase(merchantId: string): Promise<string> {
+    const now = new Date();
+    const offers = await this.prisma.offers.findMany({
+      where: {
+        merchant_id: merchantId,
+        status: 'active',
+        valid_from: { lte: now },
+        valid_until: { gte: now },
+      },
+      select: {
+        discount_type: true,
+        discount_value: true,
+        additional_item: true,
+      },
+    });
+
+    if (!offers.length) {
+      return 'exclusive student deals';
+    }
+
+    const percentageOffers = offers
+      .filter((o) => o.discount_type === 'percentage')
+      .sort((a, b) => Number(b.discount_value) - Number(a.discount_value));
+    const offer = percentageOffers[0] ?? offers[0];
+
+    return this.formatPartnerDropDiscountPhrase(offer);
+  }
+
+  private formatPartnerDropDiscountPhrase(offer: {
+    discount_type: string;
+    discount_value: { toString(): string } | number;
+    additional_item: string | null;
+  }): string {
+    const value = Number(offer.discount_value);
+    if (offer.discount_type === 'percentage') {
+      return `${value}% off`;
+    }
+    if (offer.discount_type === 'fixed') {
+      return `Rs. ${value} off`;
+    }
+    if (offer.discount_type === 'item') {
+      return offer.additional_item
+        ? `a free ${offer.additional_item}`
+        : 'a free item';
+    }
+    return 'exclusive student deals';
+  }
+
+  private async resolveStalePartnerDropContent(content: string): Promise<string> {
+    const placeholder = ', get X% off on your next visit!';
+    const markerIndex = content.indexOf(placeholder);
+    if (markerIndex <= 0) {
+      return content;
+    }
+
+    const prefix = `${content.slice(0, markerIndex)} is now live on Parchi`;
+    if (!prefix.endsWith(' is now live on Parchi')) {
+      return content;
+    }
+
+    const businessName = content.slice(0, markerIndex);
+    const merchant = await this.prisma.merchants.findFirst({
+      where: { business_name: businessName },
+      select: { id: true },
+      orderBy: { created_at: 'desc' },
+    });
+
+    if (!merchant) {
+      return content;
+    }
+
+    return this.buildPartnerDropContent(merchant.id, businessName);
+  }
+
   async sendFromQueue(id: string) {
     try {
       // 1. Fetch queue item
@@ -186,11 +271,13 @@ export class NotificationsService implements OnModuleInit {
         throw new BadRequestException('Notification has already been sent');
       }
 
+      const content = await this.resolveStalePartnerDropContent(queueItem.content);
+
       // 2. Save to Database (History)
       const notification = await this.prisma.notifications.create({
         data: {
           title: queueItem.title,
-          content: queueItem.content,
+          content,
           image_url: queueItem.image_url,
           link_url: queueItem.link_url,
           type: 'broadcast', // derived from queue, assumming broadcast for now
@@ -201,7 +288,7 @@ export class NotificationsService implements OnModuleInit {
       const message: admin.messaging.Message = {
         notification: {
           title: queueItem.title,
-          body: queueItem.content,
+          body: content,
           ...(queueItem.image_url && { imageUrl: queueItem.image_url }),
         },
         data: {
