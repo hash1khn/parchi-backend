@@ -202,6 +202,7 @@ export class QrRedemptionsService {
           id: redemption.id,
           isBonusApplied: redemption.isBonusApplied,
           bonusDiscountApplied: redemption.bonusDiscountApplied,
+          bonusDiscountType: redemption.bonusDiscountType,
         },
       };
     }
@@ -267,12 +268,14 @@ export class QrRedemptionsService {
             discount_value: true,
             max_discount_amount: true,
             additional_item: true,
+            redemption_strategy: true,
           },
         },
         merchant_branches: {
           select: {
             id: true,
             branch_name: true,
+            merchant_id: true,
             merchants: { select: { business_name: true, logo_path: true } },
           },
         },
@@ -297,10 +300,22 @@ export class QrRedemptionsService {
         where: { id: request.redemption_id },
       });
       if (redemption) {
+        const bonusDiscountType = redemption.is_bonus_applied
+          ? await this.redemptionsService.resolveBonusDiscountType(
+              request.merchant_branches.merchant_id,
+              request.offer_id,
+              {
+                redemptionStrategy: request.offers?.redemption_strategy,
+                isBonusApplied: true,
+              },
+            )
+          : null;
+
         request.redemption = {
           id: redemption.id,
           isBonusApplied: redemption.is_bonus_applied,
           bonusDiscountApplied: redemption.bonus_discount_applied ? Number(redemption.bonus_discount_applied) : null,
+          bonusDiscountType,
           offer: request.offers ? {
             title: request.offers.title,
             formattedDiscount: this.formatDiscount(request.offers),

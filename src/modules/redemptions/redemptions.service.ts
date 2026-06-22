@@ -40,6 +40,7 @@ export interface RedemptionResponse {
   branchId: string;
   isBonusApplied: boolean;
   bonusDiscountApplied: number | null;
+  bonusDiscountType?: string | null;
   verifiedBy: string | null;
   notes: string | null;
   createdAt: Date | null;
@@ -314,6 +315,7 @@ export class RedemptionsService {
         // Calculate bonus / strategy discount
         let isBonusApplied = false;
         let bonusDiscountApplied: number | null = null;
+        let bonusDiscountType: string | null = null;
         let strategyNote: string | null = null;
         let calculatedStrategyDiscount: number | undefined;
 
@@ -327,6 +329,7 @@ export class RedemptionsService {
           calculatedStrategyDiscount = strategyResult.discountValue;
           strategyNote = strategyResult.note || null;
           bonusDiscountApplied = calculatedStrategyDiscount;
+          bonusDiscountType = 'percentage';
           isBonusApplied = true;
         }
 
@@ -344,6 +347,7 @@ export class RedemptionsService {
 
             if ((redemptionCount + 1) % activeProgram.redemptions_required === 0) {
               isBonusApplied = true;
+              bonusDiscountType = activeProgram.discount_type;
               if (activeProgram.discount_type === 'percentage') {
                 bonusDiscountApplied = Number(activeProgram.discount_value);
                 if (activeProgram.max_discount_amount) {
@@ -472,7 +476,7 @@ export class RedemptionsService {
                 address: true, 
                 city: true,
                 merchants: {
-                  select: { business_name: true }
+                  select: { id: true, business_name: true }
                 }
               },
             },
@@ -506,6 +510,13 @@ export class RedemptionsService {
       const rawDiscountValue = Number(rawOffer?.discount_value ?? 0);
       const bonusDiscountApplied = Number((redemption as any).bonus_discount_applied ?? 0);
       const isBonusApplied = (redemption as any).is_bonus_applied === true;
+      const merchantId = (redemption as any).merchant_branches?.merchants?.id;
+      const bonusDiscountType = isBonusApplied && merchantId
+        ? await this.resolveBonusDiscountType(merchantId, (redemption as any).offer_id, {
+            redemptionStrategy: rawOffer?.redemption_strategy,
+            isBonusApplied: true,
+          })
+        : null;
       const additionalItem: string | null = rawOffer?.additional_item ?? null;
 
       const merchantName = (redemption as any).merchant_branches?.merchants?.business_name || 'Parchi Partner';
@@ -515,16 +526,15 @@ export class RedemptionsService {
       let notificationBody: string;
 
       if (isBonusApplied && bonusDiscountApplied > 0) {
-        // Bonus was applied — bonus discount_type mirrors the branch_bonus_settings discount_type
-        // We stored the final bonus value; check the base offer type to determine unit
-        if (rawDiscountType === 'percentage') {
+        if (bonusDiscountType === 'percentage') {
           notificationBody = `You got a ${bonusDiscountApplied}% discount at ${branchName}! (Loyalty Bonus)`;
-        } else if (rawDiscountType === 'fixed') {
+        } else if (bonusDiscountType === 'fixed') {
           notificationBody = `You saved Rs. ${bonusDiscountApplied} at ${branchName}! (Loyalty Bonus)`;
         } else {
-          // item-type offer with a bonus — free item reward
           notificationBody = `You earned a free item at ${branchName}! (Loyalty Bonus)`;
         }
+      } else if (isBonusApplied) {
+        notificationBody = `You earned a loyalty bonus at ${branchName}!`;
       } else if (rawDiscountType === 'percentage') {
         notificationBody = `You got a ${rawDiscountValue}% discount at ${branchName}!`;
       } else if (rawDiscountType === 'fixed') {
@@ -810,8 +820,8 @@ export class RedemptionsService {
       this.prisma.redemptions.count({ where: whereClause }),
     ]);
 
-    const formattedRedemptions = redemptions.map((r) =>
-      this.formatListRedemptionResponse(r),
+    const formattedRedemptions = await Promise.all(
+      redemptions.map((r) => this.formatListRedemptionResponse(r)),
     );
 
     return {
@@ -891,7 +901,7 @@ export class RedemptionsService {
       );
     }
 
-    return this.formatRedemptionResponse(redemption);
+    return await this.formatRedemptionResponse(redemption);
   }
 
   /**
@@ -1019,8 +1029,8 @@ export class RedemptionsService {
       this.prisma.redemptions.count({ where: whereClause }),
     ]);
 
-    const formattedRedemptions = redemptions.map((r) =>
-      this.formatRedemptionResponse(r),
+    const formattedRedemptions = await Promise.all(
+      redemptions.map((r) => this.formatRedemptionResponse(r)),
     );
 
     return {
@@ -1098,7 +1108,7 @@ export class RedemptionsService {
       );
     }
 
-    return this.formatRedemptionResponse(redemption);
+    return await this.formatRedemptionResponse(redemption);
   }
 
   /**
@@ -1301,7 +1311,7 @@ export class RedemptionsService {
       return updatedRedemption;
     });
 
-    return this.formatRedemptionResponse(redemption);
+    return await this.formatRedemptionResponse(redemption);
   }
 
   /**
@@ -1421,8 +1431,8 @@ export class RedemptionsService {
       this.prisma.redemptions.count({ where: whereClause }),
     ]);
 
-    const formattedRedemptions = redemptions.map((r) =>
-      this.formatRedemptionResponse(r),
+    const formattedRedemptions = await Promise.all(
+      redemptions.map((r) => this.formatRedemptionResponse(r)),
     );
 
     return {
@@ -1479,7 +1489,7 @@ export class RedemptionsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.REDEMPTION.NOT_FOUND);
     }
 
-    return this.formatRedemptionResponse(redemption);
+    return await this.formatRedemptionResponse(redemption);
   }
 
   /**
@@ -1603,13 +1613,22 @@ export class RedemptionsService {
    * Format a lightweight redemption response for list views.
    * Only includes fields returned by the slim list SELECT (no offer join, no branch address/id).
    */
-  private formatListRedemptionResponse(redemption: any): RedemptionResponse {
+  private async formatListRedemptionResponse(redemption: any): Promise<RedemptionResponse> {
     const status =
       redemption.notes && redemption.notes.toUpperCase().includes('REJECTED')
         ? 'rejected'
         : redemption.verified_by
           ? 'verified'
           : 'pending';
+
+    const merchantId = redemption.merchant_branches?.merchants?.id;
+    const bonusDiscountType =
+      redemption.is_bonus_applied && merchantId
+        ? await this.resolveBonusDiscountType(merchantId, redemption.offer_id, {
+            redemptionStrategy: redemption.offers?.redemption_strategy,
+            isBonusApplied: true,
+          })
+        : null;
 
     return {
       id: redemption.id,
@@ -1620,6 +1639,7 @@ export class RedemptionsService {
       bonusDiscountApplied: redemption.bonus_discount_applied
         ? Number(redemption.bonus_discount_applied)
         : null,
+      bonusDiscountType,
       verifiedBy: redemption.verified_by,
       notes: redemption.notes,
       createdAt: redemption.created_at,
@@ -1646,15 +1666,55 @@ export class RedemptionsService {
   }
 
   /**
+   * Resolve how a loyalty bonus discount should be displayed (percentage, fixed, item).
+   */
+  async resolveBonusDiscountType(
+    merchantId: string,
+    offerId: string,
+    options?: { redemptionStrategy?: string | null; isBonusApplied?: boolean },
+  ): Promise<string | null> {
+    if (!options?.isBonusApplied) return null;
+    if (options.redemptionStrategy === 'soho_hierarchical') return 'percentage';
+
+    const loyaltyPrograms = await (this.prisma as any).loyalty_programs.findMany({
+      where: {
+        merchant_id: merchantId,
+        OR: [{ scope: 'merchant' }, { scope: 'offer', offer_id: offerId }],
+        is_active: true,
+      },
+    });
+
+    const activeOfferProgram = loyaltyPrograms.find(
+      (p: any) => p.scope === 'offer' && p.offer_id === offerId,
+    );
+    const activeMerchantProgram = loyaltyPrograms.find((p: any) => p.scope === 'merchant');
+    const activeProgram = activeOfferProgram || activeMerchantProgram;
+    return activeProgram?.discount_type ?? 'percentage';
+  }
+
+  /**
    * Format redemption response
    */
-  private formatRedemptionResponse(redemption: any): RedemptionResponse {
+  private async formatRedemptionResponse(redemption: any): Promise<RedemptionResponse> {
     const status =
       redemption.notes && redemption.notes.toUpperCase().includes('REJECTED')
         ? 'rejected'
         : redemption.verified_by
           ? 'verified'
           : 'pending';
+
+    const merchantId = redemption.merchant_branches?.merchants?.id;
+    const bonusDiscountType =
+      redemption.is_bonus_applied && merchantId
+        ? await this.resolveBonusDiscountType(merchantId, redemption.offer_id, {
+            redemptionStrategy: redemption.offers?.redemption_strategy,
+            isBonusApplied: true,
+          })
+        : null;
+
+    const offerDiscountType = redemption.is_bonus_applied && bonusDiscountType
+      ? bonusDiscountType
+      : redemption.offers?.discount_type;
 
     return {
       id: redemption.id,
@@ -1665,6 +1725,7 @@ export class RedemptionsService {
       bonusDiscountApplied: redemption.bonus_discount_applied
         ? Number(redemption.bonus_discount_applied)
         : null,
+      bonusDiscountType,
       verifiedBy: redemption.verified_by,
       notes: redemption.notes,
       createdAt: redemption.created_at,
@@ -1673,7 +1734,7 @@ export class RedemptionsService {
         ? {
           id: redemption.offers.id,
           title: redemption.offers.title,
-          discountType: redemption.offers.discount_type,
+          discountType: offerDiscountType,
           discountValue: redemption.bonus_discount_applied
             ? Number(redemption.bonus_discount_applied)
             : Number(redemption.offers.discount_value),
@@ -1706,7 +1767,11 @@ export class RedemptionsService {
         : undefined,
       discountDetails:
         redemption.is_bonus_applied && redemption.bonus_discount_applied
-          ? `(${Number(redemption.bonus_discount_applied)}% OFF)`
+          ? bonusDiscountType === 'fixed'
+            ? `(Rs. ${Number(redemption.bonus_discount_applied)} OFF)`
+            : bonusDiscountType === 'item'
+              ? '(Bonus Reward)'
+              : `(${Number(redemption.bonus_discount_applied)}% OFF)`
           : undefined,
     };
   }
@@ -1998,7 +2063,7 @@ export class RedemptionsService {
     verifiedById: string;
     notes?: string;
     imageUrl?: string;
-  }): Promise<{ id: string; isBonusApplied: boolean; bonusDiscountApplied: number | null }> {
+  }): Promise<{ id: string; isBonusApplied: boolean; bonusDiscountApplied: number | null; bonusDiscountType: string | null }> {
     const { studentId, offerId, branchId, verifiedById, notes, imageUrl } = params;
     const now = new Date();
     const recentWindow = new Date(now.getTime() - this.DUPLICATE_PREVENTION_WINDOW_MS);
@@ -2059,6 +2124,8 @@ export class RedemptionsService {
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
 
+    let bonusDiscountType: string | null = null;
+
     const newRedemption = await this.prisma.$transaction(
       async (tx) => {
         if (offer.daily_limit) {
@@ -2092,6 +2159,7 @@ export class RedemptionsService {
           calculatedStrategyDiscount = strategyResult.discountValue;
           strategyNote = strategyResult.note || null;
           bonusDiscountApplied = calculatedStrategyDiscount;
+          bonusDiscountType = 'percentage';
           isBonusApplied = true;
         }
 
@@ -2107,6 +2175,7 @@ export class RedemptionsService {
 
             if ((redemptionCount + 1) % activeProgram.redemptions_required === 0) {
               isBonusApplied = true;
+              bonusDiscountType = activeProgram.discount_type;
               if (activeProgram.discount_type === 'percentage') {
                 bonusDiscountApplied = Number(activeProgram.discount_value);
                 if (activeProgram.max_discount_amount) {
@@ -2216,6 +2285,7 @@ export class RedemptionsService {
       id: newRedemption.id,
       isBonusApplied: newRedemption.is_bonus_applied ?? false,
       bonusDiscountApplied: newRedemption.bonus_discount_applied !== null ? Number(newRedemption.bonus_discount_applied) : null,
+      bonusDiscountType,
     };
   }
 }
