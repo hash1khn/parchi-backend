@@ -1457,7 +1457,7 @@ export class AuthService {
         email: true,
         role: true,
         students: {
-          select: { first_name: true, last_name: true },
+          select: { id: true, first_name: true, last_name: true },
         },
       },
     });
@@ -1474,6 +1474,23 @@ export class AuthService {
       firstName = user.students?.first_name ?? 'there';
       userRole = user.role;
       hasPublicProfile = true;
+
+      // Clean up relations to avoid foreign key constraint violations during delete cascade
+      if (user.students) {
+        const studentId = user.students.id;
+        await this.prisma.$transaction(async (tx) => {
+          await tx.student_offer_stats.deleteMany({
+            where: { student_id: studentId },
+          });
+          await tx.redemptions.deleteMany({
+            where: { student_id: studentId },
+          });
+          await tx.audit_logs.updateMany({
+            where: { user_id: user.id },
+            data: { user_id: null },
+          });
+        });
+      }
     } else {
       // Fallback: Check auth_users table (Supabase internal schema)
       const authUser = await this.prisma.auth_users.findFirst({

@@ -1298,11 +1298,23 @@ export class StudentsService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      // 1. Delete student offer stats
+      await tx.student_offer_stats.deleteMany({
+        where: { student_id: student.id },
+      });
+
+      // 2. Delete redemptions
+      await tx.redemptions.deleteMany({
+        where: { student_id: student.id },
+      });
+
+      // 3. Nullify audit log user refs
       await tx.audit_logs.updateMany({
         where: { user_id: student.user_id },
         data: { user_id: null },
       });
 
+      // 4. Delete the public user
       await tx.public_users.delete({
         where: { id: student.user_id },
       });
