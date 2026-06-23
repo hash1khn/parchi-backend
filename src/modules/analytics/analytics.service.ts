@@ -90,26 +90,14 @@ export class AnalyticsService {
 
 
   async getPlatformDistribution(startDate?: Date, endDate?: Date) {
-    const where: any = {};
-    if (startDate || endDate) {
-      where.created_at = {};
-      if (startDate) where.created_at.gte = startDate;
-      if (endDate) where.created_at.lte = endDate;
-    }
-
-    const distribution = await this.prisma.students.groupBy({
-      by: ['platform'],
-      where,
-      _count: {
-        id: true,
-      },
-    });
+    const students = await this.fetchStudentsForPlatformStats(startDate, endDate);
+    const resolved = await this.resolvePlatformsForStudents(students);
 
     const platformMap = new Map<string, number>();
-    distribution.forEach((item) => {
-      const platform = (item.platform || 'unknown').toLowerCase();
-      platformMap.set(platform, (platformMap.get(platform) || 0) + item._count.id);
-    });
+    for (const platform of resolved.values()) {
+      if (!platform) continue;
+      platformMap.set(platform, (platformMap.get(platform) || 0) + 1);
+    }
 
     return Array.from(platformMap.entries()).map(([platform, count]) => ({
       platform,
@@ -118,49 +106,164 @@ export class AnalyticsService {
   }
 
   async getDailyPlatformDistribution(startDate?: Date, endDate?: Date) {
-    const where: any = {
-      created_at: {
-        not: null,
-      },
-    };
-    if (startDate || endDate) {
-      if (startDate) where.created_at.gte = startDate;
-      if (endDate) where.created_at.lte = endDate;
-    }
+    const students = await this.fetchStudentsForPlatformStats(startDate, endDate);
+    const resolved = await this.resolvePlatformsForStudents(students);
 
-    const distribution = await this.prisma.students.groupBy({
-      by: ['created_at', 'platform'],
-      where,
-      _count: {
-        id: true,
-      },
-      orderBy: {
-        created_at: 'asc',
-      },
-    });
-
-    // Group by date
-    const dailyData: { date: string; ios: number; android: number }[] = [];
     const dateMap = new Map<string, { ios: number; android: number }>();
 
-    distribution.forEach((item) => {
-      if (!item.created_at) return;
-      const dateStr = item.created_at.toISOString().split('T')[0];
-      const platform = (item.platform || 'unknown').toLowerCase();
-      
+    for (const student of students) {
+      if (!student.created_at) continue;
+      const platform = resolved.get(student.id);
+      if (!platform) continue;
+
+      const dateStr = student.created_at.toISOString().split('T')[0];
       if (!dateMap.has(dateStr)) {
         dateMap.set(dateStr, { ios: 0, android: 0 });
       }
-      
+
       const counts = dateMap.get(dateStr)!;
-      if (platform === 'ios') counts.ios += item._count.id;
-      else if (platform === 'android') counts.android += item._count.id;
+      if (platform === 'ios') counts.ios += 1;
+      else counts.android += 1;
+    }
+
+    return Array.from(dateMap.entries())
+      .map(([date, counts]) => ({ date, ...counts }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  private async fetchStudentsForPlatformStats(startDate?: Date, endDate?: Date) {
+    const where: { created_at: { not: null; gte?: Date; lte?: Date } } = {
+      created_at: { not: null },
+    };
+    if (startDate) where.created_at.gte = startDate;
+    if (endDate) where.created_at.lte = endDate;
+
+    return this.prisma.students.findMany({
+      where,
+      select: {
+        id: true,
+        user_id: true,
+        created_at: true,
+        platform: true,
+      },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
+  /**
+   * Resolve ios/android for charting without mutating students.platform.
+   * Priority: stored students.platform → earliest FCM device → signup-time analytics.
+   * user_fcm_tokens keeps every device; this only picks the first registered device for attribution.
+   */
+  private async resolvePlatformsForStudents(
+    students: { id: string; user_id: string; created_at: Date | null; platform: string | null }[],
+  ): Promise<Map<string, 'ios' | 'android'>> {
+    const resolved = new Map<string, 'ios' | 'android'>();
+    const needsInference: typeof students = [];
+
+    for (const student of students) {
+      const stored = this.normalizeChartPlatform(student.platform);
+      if (stored) {
+        resolved.set(student.id, stored);
+      } else {
+        needsInference.push(student);
+      }
+    }
+
+    if (needsInference.length === 0) return resolved;
+
+    const userIds = needsInference.map((s) => s.user_id);
+    const signupTimeByUser = new Map(
+      needsInference.map((s) => [s.user_id, s.created_at?.getTime() ?? 0]),
+    );
+
+    const fcmTokens = await this.prisma.user_fcm_tokens.findMany({
+      where: {
+        user_id: { in: userIds },
+        platform: { not: null, notIn: ['unknown', 'undefined', ''] },
+      },
+      orderBy: { created_at: 'asc' },
+      select: { user_id: true, platform: true },
     });
 
-    dateMap.forEach((counts, date) => {
-      dailyData.push({ date, ...counts });
-    });
+    const earliestFcmByUser = new Map<string, string>();
+    for (const token of fcmTokens) {
+      if (!earliestFcmByUser.has(token.user_id) && token.platform) {
+        earliestFcmByUser.set(token.user_id, token.platform);
+      }
+    }
 
-    return dailyData.sort((a, b) => a.date.localeCompare(b.date));
+    const remainingUserIds = userIds.filter((id) => !earliestFcmByUser.has(id));
+    const analyticsByUser = new Map<string, string>();
+
+    if (remainingUserIds.length > 0) {
+      const events = await this.prisma.analytics_events.findMany({
+        where: {
+          user_id: { in: remainingUserIds },
+          platform: { not: null, notIn: ['unknown', 'undefined', ''] },
+          event_name: {
+            in: [
+              'app_opened',
+              'signup_step_1_start',
+              'signup_step_1_complete',
+              'signup_step_2_start',
+              'signup_step_2_complete',
+              'kyc_submitted',
+            ],
+          },
+        },
+        select: { user_id: true, platform: true, created_at: true },
+      });
+
+      for (const userId of remainingUserIds) {
+        const signupTime = signupTimeByUser.get(userId) ?? 0;
+        if (!signupTime) continue;
+
+        let closestPlatform: string | null = null;
+        let minDiff = Infinity;
+
+        for (const event of events) {
+          if (event.user_id !== userId || !event.created_at || !event.platform) continue;
+          const diff = Math.abs(event.created_at.getTime() - signupTime);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestPlatform = event.platform;
+          }
+        }
+
+        if (closestPlatform && minDiff < 5 * 60 * 1000) {
+          analyticsByUser.set(userId, closestPlatform);
+        }
+      }
+    }
+
+    for (const student of needsInference) {
+      const fromFcm = this.normalizeChartPlatform(
+        earliestFcmByUser.get(student.user_id) ?? null,
+      );
+      if (fromFcm) {
+        resolved.set(student.id, fromFcm);
+        continue;
+      }
+
+      const fromAnalytics = this.normalizeChartPlatform(
+        analyticsByUser.get(student.user_id) ?? null,
+      );
+      if (fromAnalytics) {
+        resolved.set(student.id, fromAnalytics);
+      }
+    }
+
+    return resolved;
+  }
+
+  private normalizeChartPlatform(
+    platform: string | null | undefined,
+  ): 'ios' | 'android' | null {
+    if (!platform) return null;
+    const normalized = platform.trim().toLowerCase();
+    if (normalized === 'ios') return 'ios';
+    if (normalized === 'android') return 'android';
+    return null;
   }
 }
