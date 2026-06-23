@@ -13,6 +13,7 @@ import { RejectQrRedemptionDto } from './dto/reject-qr-redemption.dto';
 import { UpdateQrSettingsDto } from './dto/update-qr-settings.dto';
 import { ROLES } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
+import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
 
 const QR_REQUEST_TTL_MINUTES = 2;
 const DEEP_LINK_BASE = 'https://www.parchipakistan.com/redeem';
@@ -156,6 +157,13 @@ export class QrRedemptionsService {
     }
     if (new Date(offer.valid_from) > now || new Date(offer.valid_until) < now) {
       throw new BadRequestException('Offer has expired');
+    }
+
+    // One redemption per branch per day guard — applies regardless of offer.
+    // Checked here so the student is blocked immediately on initiate, rather
+    // than discovering it only when staff later try to approve a pending request.
+    if (await this.redemptionsService.hasRedeemedAtBranchToday(student.id, dto.branchId)) {
+      throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_DAILY_LIMIT_REACHED);
     }
 
     const expiresAt = new Date(now.getTime() + QR_REQUEST_TTL_MINUTES * 60 * 1000);

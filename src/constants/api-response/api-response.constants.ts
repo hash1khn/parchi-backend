@@ -107,7 +107,7 @@ export const API_RESPONSE_MESSAGES = {
     OFFER_NOT_ACTIVE: 'Offer is not active or expired',
     OFFER_NOT_AVAILABLE_AT_BRANCH: 'Offer is not available at this branch',
     OFFER_LIMIT_REACHED: 'Offer redemption limit reached',
-    STUDENT_DAILY_LIMIT_REACHED: 'Student has reached daily limit for this offer',
+    BRANCH_DAILY_LIMIT_REACHED: 'Student has already redeemed at this branch today. Only one redemption is allowed per branch per day.',
     BRANCH_NOT_FOUND: 'Branch not found',
     BRANCH_NOT_ACTIVE: 'Branch is inactive',
     BRANCH_ACCESS_DENIED: 'Access denied. You can only manage redemptions for your own branch',

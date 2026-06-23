@@ -298,6 +298,11 @@ export class RedemptionsService {
           }
         }
 
+        // One redemption per branch per day guard — applies regardless of offer
+        if (await this.hasRedeemedAtBranchToday(student.id, branchId, tx)) {
+          throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_DAILY_LIMIT_REACHED);
+        }
+
         // Duplicate-redemption guard
         const recentRedemption = await tx.redemptions.findFirst({
           where: {
@@ -1666,6 +1671,29 @@ export class RedemptionsService {
   }
 
   /**
+   * Whether the student already has a non-rejected redemption at this branch
+   * today (Pakistan calendar day), regardless of which offer was redeemed.
+   * Used to enforce the one-redemption-per-branch-per-day rule across the
+   * manual entry and QR flows. Pass the active transaction client when
+   * called from inside a $transaction so the check is part of that atomic unit.
+   */
+  async hasRedeemedAtBranchToday(
+    studentId: string,
+    branchId: string,
+    client: any = this.prisma,
+  ): Promise<boolean> {
+    const existing = await client.redemptions.findFirst({
+      where: {
+        student_id: studentId,
+        branch_id: branchId,
+        created_at: { gte: startOfPakistanDay(new Date()) },
+        NOT: { notes: { contains: 'REJECTED', mode: 'insensitive' } },
+      },
+    });
+    return !!existing;
+  }
+
+  /**
    * Resolve how a loyalty bonus discount should be displayed (percentage, fixed, item).
    */
   async resolveBonusDiscountType(
@@ -2135,6 +2163,11 @@ export class RedemptionsService {
           if (todayCount >= offer.daily_limit) {
             throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_LIMIT_REACHED);
           }
+        }
+
+        // One redemption per branch per day guard — applies regardless of offer
+        if (await this.hasRedeemedAtBranchToday(studentId, branchId, tx)) {
+          throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.BRANCH_DAILY_LIMIT_REACHED);
         }
 
         const recent = await tx.redemptions.findFirst({
