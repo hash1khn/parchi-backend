@@ -33,6 +33,9 @@ export const API_RESPONSE_MESSAGES = {
     CHANGE_PASSWORD_INVALID_CURRENT: 'Current password is incorrect',
     CHANGE_PASSWORD_FAILED: 'Password change failed',
     USER_NOT_FOUND: 'User not found',
+    // Generic fallback for unexpected errors (DB/Supabase/network failures) —
+    // never leak raw error.message to the client, just point at connectivity.
+    GENERIC_ERROR: 'Something went wrong. Please check your internet connection and try again.',
   },
   // Merchant messages
   MERCHANT: {

@@ -173,7 +173,7 @@ export class AuthService {
       ) {
         throw error;
       }
-      throw new BadRequestException(error.message || 'Signup failed');
+      throw new InternalServerErrorException(API_RESPONSE_MESSAGES.AUTH.GENERIC_ERROR);
     }
   }
 
@@ -269,9 +269,9 @@ export class AuthService {
       ) {
         throw error;
       }
-      throw new UnauthorizedException(
-        API_RESPONSE_MESSAGES.AUTH.INVALID_CREDENTIALS,
-      );
+      // Unexpected failure (DB down, Supabase unreachable, etc.) — do NOT tell
+      // the user their credentials are wrong, that's misleading. Point at connectivity instead.
+      throw new InternalServerErrorException(API_RESPONSE_MESSAGES.AUTH.GENERIC_ERROR);
     }
   }
 
@@ -856,9 +856,7 @@ export class AuthService {
       ) {
         throw error;
       }
-      throw new BadRequestException(
-        error.message || 'Student signup failed',
-      );
+      throw new InternalServerErrorException(API_RESPONSE_MESSAGES.AUTH.GENERIC_ERROR);
     }
   }
 
@@ -980,9 +978,7 @@ export class AuthService {
       ) {
         throw error;
       }
-      throw new BadRequestException(
-        error.message || 'Corporate signup failed',
-      );
+      throw new InternalServerErrorException(API_RESPONSE_MESSAGES.AUTH.GENERIC_ERROR);
     }
   }
 
@@ -1157,9 +1153,7 @@ export class AuthService {
       ) {
         throw error;
       }
-      throw new BadRequestException(
-        error.message || 'Branch signup failed',
-      );
+      throw new InternalServerErrorException(API_RESPONSE_MESSAGES.AUTH.GENERIC_ERROR);
     }
   }
 
