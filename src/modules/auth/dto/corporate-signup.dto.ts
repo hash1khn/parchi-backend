@@ -7,24 +7,24 @@ import {
 } from 'class-validator';
 
 export class CorporateSignupDto {
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Business name is required.' })
   @IsString()
   name: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Email prefix is required.' })
   @IsString()
   emailPrefix: string;
 
-  @IsNotEmpty()
-  @IsEmail()
+  @IsNotEmpty({ message: 'Contact email is required.' })
+  @IsEmail({}, { message: 'Please enter a valid contact email address.' })
   contactEmail: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Password is required.' })
   @IsString()
-  @MinLength(6, { message: 'Password must be at least 6 characters long' })
+  @MinLength(6, { message: 'Password must be at least 6 characters long.' })
   password: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Contact number is required.' })
   @IsString()
   contact: string;
 

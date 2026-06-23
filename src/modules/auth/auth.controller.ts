@@ -13,9 +13,11 @@ import {
   Param,
   UploadedFiles,
   UseInterceptors,
+  UseFilters,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { MulterExceptionFilter } from '../../common/filters/multer-exception.filter';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
@@ -59,14 +61,31 @@ export class AuthController {
     return createApiResponse(data, API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_SUCCESS, HttpStatus.CREATED);
   }
 
+  // Friendly business limit enforced manually (see validateKycFile) — the
+  // interceptor's limit below is just a hard ceiling so a runaway upload
+  // can't be buffered into memory before we get a chance to reject it nicely.
+  private static readonly ALLOWED_KYC_MIME_TYPES = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'image/heif',
+  ];
+  private static readonly MAX_KYC_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+
   @Post('student/signup-with-files')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @UseFilters(MulterExceptionFilter)
   @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'studentIdCardFront', maxCount: 1 },
-      { name: 'studentIdCardBack', maxCount: 1 },
-      { name: 'selfieImage', maxCount: 1 },
-    ]),
+    FileFieldsInterceptor(
+      [
+        { name: 'studentIdCardFront', maxCount: 1 },
+        { name: 'studentIdCardBack', maxCount: 1 },
+        { name: 'selfieImage', maxCount: 1 },
+      ],
+      { limits: { fileSize: 12 * 1024 * 1024 } },
+    ),
   )
   @HttpCode(HttpStatus.CREATED)
   async studentSignupWithFiles(
@@ -87,8 +106,14 @@ export class AuthController {
       !studentIdCardBack ||
       !selfieImage
     ) {
-      throw new BadRequestException('All required KYC images must be uploaded');
+      throw new BadRequestException(
+        'Please upload your student ID (front and back) and a selfie to continue.',
+      );
     }
+
+    this.validateKycFile(studentIdCardFront, 'Student ID card (front)');
+    this.validateKycFile(studentIdCardBack, 'Student ID card (back)');
+    this.validateKycFile(selfieImage, 'Selfie photo');
 
     const data = await this.authService.studentSignupWithFiles(signupDto, {
       studentIdCardFront,
@@ -100,6 +125,15 @@ export class AuthController {
       API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_SUCCESS,
       HttpStatus.CREATED,
     );
+  }
+
+  private validateKycFile(file: any, label: string): void {
+    if (!AuthController.ALLOWED_KYC_MIME_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException(`${label} must be a JPG, PNG, or WEBP image.`);
+    }
+    if (file.size > AuthController.MAX_KYC_FILE_SIZE_BYTES) {
+      throw new BadRequestException(`${label} must be smaller than 10MB.`);
+    }
   }
 
   @Post('corporate/signup')

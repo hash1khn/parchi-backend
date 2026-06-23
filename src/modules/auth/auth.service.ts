@@ -135,11 +135,11 @@ export class AuthService {
       });
 
       if (authError) {
-        throw new BadRequestException(authError.message);
+        throw new BadRequestException(this.mapSupabaseAuthError(authError.message));
       }
 
       if (!authData.user) {
-        throw new BadRequestException('Failed to create user');
+        throw new BadRequestException(API_RESPONSE_MESSAGES.AUTH.GENERIC_ERROR);
       }
 
       // Determine initial is_active status based on role
@@ -175,6 +175,40 @@ export class AuthService {
       }
       throw new InternalServerErrorException(API_RESPONSE_MESSAGES.AUTH.GENERIC_ERROR);
     }
+  }
+
+  /**
+   * Supabase Auth (GoTrue) error messages are generally short and end-user-safe,
+   * but a few are either too technical (network blips) or worth rephrasing for
+   * clarity. Anything unrecognized passes through as-is rather than risking a
+   * silently wrong message.
+   */
+  private mapSupabaseAuthError(rawMessage: string | undefined): string {
+    const msg = (rawMessage || '').toLowerCase();
+
+    if (msg.includes('already registered') || msg.includes('already exists')) {
+      return "An account with this email already exists. Please log in instead, or contact support if you're having trouble.";
+    }
+    if (msg.includes('rate limit') || msg.includes('too many requests')) {
+      return 'Too many attempts with this email. Please wait a few minutes and try again.';
+    }
+    if (msg.includes('signup') && msg.includes('disabled')) {
+      return 'New signups are temporarily unavailable. Please try again later or contact support.';
+    }
+    if (msg.includes('invalid') && msg.includes('email')) {
+      return 'Please enter a valid email address.';
+    }
+    if (
+      !rawMessage ||
+      msg.includes('fetch') ||
+      msg.includes('network') ||
+      msg.includes('timeout') ||
+      msg.includes('econn')
+    ) {
+      return API_RESPONSE_MESSAGES.AUTH.GENERIC_ERROR;
+    }
+    // Covers password-policy messages etc. — already plain English and actionable.
+    return rawMessage;
   }
 
   private validateRole(role: UserRole): void {
@@ -735,14 +769,24 @@ export class AuthService {
 
           if (student && student.verification_status === 'rejected') {
             await this.handleRejectedStudentCleanup(student, existingUser);
-          } else {
+          } else if (!existingUser.is_active && existingUser.deactivation_reason) {
+            // Distinct from "pending" — an admin deliberately deactivated this account.
+            throw new ForbiddenException(
+              `Your account has been deactivated. Reason: ${existingUser.deactivation_reason}. ${API_RESPONSE_MESSAGES.AUTH.ACCOUNT_DEACTIVATED_CONTACT}`,
+            );
+          } else if (student && student.verification_status === 'approved') {
             throw new ConflictException(
-              API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_EMAIL_EXISTS,
+              'This email is already registered and verified. Please log in instead.',
+            );
+          } else {
+            // Default case: freshly submitted, still awaiting admin review.
+            throw new ConflictException(
+              "An account with this email is already awaiting admin review. We'll notify you by email once it's approved.",
             );
           }
         } else {
           throw new ConflictException(
-            API_RESPONSE_MESSAGES.AUTH.STUDENT_SIGNUP_EMAIL_EXISTS,
+            'This email is already registered to a different type of account. Please use a different email, or log in if it is yours.',
           );
         }
       }
@@ -777,7 +821,7 @@ export class AuthService {
 
       if (authError || !authData.user) {
         throw new BadRequestException(
-          authError?.message || 'Failed to create user account',
+          this.mapSupabaseAuthError(authError?.message),
         );
       }
 
@@ -789,8 +833,10 @@ export class AuthService {
       });
 
       if (existingPublicUser) {
+        // Race: another request for the same email finished between our first
+        // existence check and Supabase's signUp call completing.
         throw new ConflictException(
-          API_RESPONSE_MESSAGES.AUTH.EMAIL_ALREADY_REGISTERED,
+          'An account with this email is already being created. Please wait a moment and try again.',
         );
       }
 
@@ -852,7 +898,8 @@ export class AuthService {
       if (
         error instanceof ConflictException ||
         error instanceof BadRequestException ||
-        error instanceof UnprocessableEntityException
+        error instanceof UnprocessableEntityException ||
+        error instanceof ForbiddenException
       ) {
         throw error;
       }
@@ -895,7 +942,7 @@ export class AuthService {
 
       if (authError || !authData.user) {
         throw new BadRequestException(
-          authError?.message || 'Failed to create user account',
+          this.mapSupabaseAuthError(authError?.message),
         );
       }
 
@@ -1059,7 +1106,7 @@ export class AuthService {
 
       if (authError || !authData.user) {
         throw new BadRequestException(
-          authError?.message || 'Failed to create user account',
+          this.mapSupabaseAuthError(authError?.message),
         );
       }
 

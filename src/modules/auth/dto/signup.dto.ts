@@ -10,13 +10,13 @@ import { ROLES } from '../../../constants/app.constants';
 import type { UserRole } from '../../../constants/app.constants';
 
 export class SignupDto {
-  @IsEmail()
-  @IsNotEmpty()
+  @IsEmail({}, { message: 'Please enter a valid email address.' })
+  @IsNotEmpty({ message: 'Email is required.' })
   email: string;
 
   @IsString()
-  @IsNotEmpty()
-  @MinLength(6)
+  @IsNotEmpty({ message: 'Password is required.' })
+  @MinLength(6, { message: 'Password must be at least 6 characters long.' })
   password: string;
 
   @IsEnum(ROLES, {

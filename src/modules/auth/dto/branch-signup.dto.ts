@@ -8,33 +8,33 @@ import {
 } from 'class-validator';
 
 export class BranchSignupDto {
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Branch name is required.' })
   @IsString()
   name: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Email prefix is required.' })
   @IsString()
   emailPrefix: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Password is required.' })
   @IsString()
-  @MinLength(6, { message: 'Password must be at least 6 characters long' })
+  @MinLength(6, { message: 'Password must be at least 6 characters long.' })
   password: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Address is required.' })
   @IsString()
   address: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'City is required.' })
   @IsString()
   city: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Contact number is required.' })
   @IsString()
   contact: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all', { message: 'Linked corporate account ID is invalid.' })
   linkedCorporate?: string; // merchant_id (UUID) - Required for admin, optional for corporate merchant
 
   @IsOptional()

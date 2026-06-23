@@ -5,7 +5,7 @@ export const API_RESPONSE_MESSAGES = {
     LOGIN_SUCCESS: 'Login successful',
     LOGOUT_SUCCESS: 'Logout successful',
     INVALID_CREDENTIALS: 'Invalid email or password',
-    USER_ALREADY_EXISTS: 'User with this email already exists',
+    USER_ALREADY_EXISTS: 'An account with this email already exists. Please log in instead.',
     UNAUTHORIZED: 'Unauthorized access',
     FORBIDDEN: 'Access forbidden',
     TOKEN_INVALID: 'Invalid or expired token',
@@ -13,20 +13,18 @@ export const API_RESPONSE_MESSAGES = {
     ACCOUNT_PENDING: 'Account is pending approval',
     ACCOUNT_REJECTED: 'Account has been rejected',
     ACCOUNT_DEACTIVATED_CONTACT: 'For assistance, contact +92 328 5272244.',
-    EMAIL_ALREADY_REGISTERED: 'Email already registered', // [NEW]
     STUDENT_SIGNUP_SUCCESS:
       'Student signup request submitted successfully. Verification pending.',
-    STUDENT_SIGNUP_EMAIL_EXISTS: 'Email already registered',
     STUDENT_SIGNUP_INVALID_IMAGES: 'Invalid image URLs or images not accessible',
     CORPORATE_SIGNUP_SUCCESS:
       'Corporate account created successfully. Verification pending.',
-    CORPORATE_SIGNUP_EMAIL_EXISTS: 'Email already registered',
+    CORPORATE_SIGNUP_EMAIL_EXISTS: 'An account with this email already exists. Please use a different email address.',
     CORPORATE_SIGNUP_INVALID_LOGO: 'Invalid logo URL format',
     BRANCH_SIGNUP_SUCCESS:
       'Branch account created successfully. Verification pending.',
     BRANCH_SIGNUP_SUCCESS_ADMIN:
       'Branch account created successfully and activated.',
-    BRANCH_SIGNUP_EMAIL_EXISTS: 'Email already registered',
+    BRANCH_SIGNUP_EMAIL_EXISTS: 'An account with this email already exists. Please use a different email address.',
     BRANCH_SIGNUP_INVALID_CORPORATE: 'Invalid or non-existent corporate account',
     FORGOT_PASSWORD_SUCCESS: 'Password reset email sent successfully',
     CHANGE_PASSWORD_SUCCESS: 'Password changed successfully',

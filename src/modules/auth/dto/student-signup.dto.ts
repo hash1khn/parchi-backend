@@ -12,33 +12,33 @@ import {
 } from 'class-validator';
 
 export class StudentSignupDto {
-  @IsNotEmpty()
-  @IsString()
+  @IsNotEmpty({ message: 'First name is required.' })
+  @IsString({ message: 'First name must be text.' })
   firstName: string;
 
-  @IsNotEmpty()
-  @IsString()
+  @IsNotEmpty({ message: 'Last name is required.' })
+  @IsString({ message: 'Last name must be text.' })
   lastName: string;
 
-  @IsNotEmpty()
-  @IsEmail()
+  @IsNotEmpty({ message: 'Email is required.' })
+  @IsEmail({}, { message: 'Please enter a valid email address.' })
   email: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Password is required.' })
   @IsString()
-  @MinLength(6, { message: 'Password must be at least 6 characters long' })
+  @MinLength(6, { message: 'Password must be at least 6 characters long.' })
   password: string;
 
-  @IsNotEmpty()
-  @IsString()
+  @IsNotEmpty({ message: 'Phone number is required.' })
+  @IsString({ message: 'Phone number must be text.' })
   phone: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Please select your educational grade/level.' })
   @IsString()
   educationalGrade: string;
 
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Date of birth is required.' })
   @Transform(({ value }) => {
     if (typeof value !== 'string') return value;
     const trimmed = value.trim();
@@ -47,23 +47,23 @@ export class StudentSignupDto {
     const [, dd, mm, yyyy] = match;
     return `${yyyy}-${mm}-${dd}`;
   })
-  @IsISO8601()
+  @IsISO8601({}, { message: 'Please enter a valid date of birth (DD/MM/YYYY).' })
   dateOfBirth: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'University is required.' })
   @IsString()
   university: string;
 
-  @IsNotEmpty()
-  @IsUrl()
+  @IsNotEmpty({ message: 'Student ID card (front) is required.' })
+  @IsUrl({}, { message: 'Student ID card (front) failed to upload. Please try again.' })
   studentIdCardFrontUrl: string;
 
-  @IsNotEmpty()
-  @IsUrl()
+  @IsNotEmpty({ message: 'Student ID card (back) is required.' })
+  @IsUrl({}, { message: 'Student ID card (back) failed to upload. Please try again.' })
   studentIdCardBackUrl: string;
 
-  @IsNotEmpty()
-  @IsUrl()
+  @IsNotEmpty({ message: 'Selfie photo is required.' })
+  @IsUrl({}, { message: 'Selfie photo failed to upload. Please try again.' })
   selfieImageUrl: string;
 
   @IsOptional()
