@@ -93,16 +93,22 @@ export class AnalyticsService {
     const students = await this.fetchStudentsForPlatformStats(startDate, endDate);
     const resolved = await this.resolvePlatformsForStudents(students);
 
-    const platformMap = new Map<string, number>();
-    for (const platform of resolved.values()) {
-      if (!platform) continue;
-      platformMap.set(platform, (platformMap.get(platform) || 0) + 1);
+    let ios = 0;
+    let android = 0;
+    let unknown = 0;
+
+    for (const student of students) {
+      const platform = resolved.get(student.id);
+      if (platform === 'ios') ios += 1;
+      else if (platform === 'android') android += 1;
+      else unknown += 1;
     }
 
-    return Array.from(platformMap.entries()).map(([platform, count]) => ({
-      platform,
-      count,
-    }));
+    const results: { platform: string; count: number }[] = [];
+    if (ios > 0) results.push({ platform: 'ios', count: ios });
+    if (android > 0) results.push({ platform: 'android', count: android });
+    if (unknown > 0) results.push({ platform: 'unknown', count: unknown });
+    return results;
   }
 
   async getDailyPlatformDistribution(startDate?: Date, endDate?: Date) {
