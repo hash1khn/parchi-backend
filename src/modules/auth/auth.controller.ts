@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { extname } from 'path';
 import { MulterExceptionFilter } from '../../common/filters/multer-exception.filter';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
@@ -71,6 +72,14 @@ export class AuthController {
     'image/webp',
     'image/heic',
     'image/heif',
+  ];
+  private static readonly ALLOWED_KYC_EXTENSIONS = [
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.webp',
+    '.heic',
+    '.heif',
   ];
   private static readonly MAX_KYC_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
@@ -128,7 +137,17 @@ export class AuthController {
   }
 
   private validateKycFile(file: any, label: string): void {
-    if (!AuthController.ALLOWED_KYC_MIME_TYPES.includes(file.mimetype)) {
+    // Mobile upload clients (e.g. Dart's http.MultipartFile.fromPath without an
+    // explicit contentType) often send a generic "application/octet-stream"
+    // content-type instead of the real image MIME type, even for a valid
+    // JPG/PNG/WEBP file. Trusting the MIME type alone then rejects every
+    // upload from those clients, so fall back to the file extension before
+    // rejecting — only reject if BOTH checks fail.
+    const hasAllowedMimeType = AuthController.ALLOWED_KYC_MIME_TYPES.includes(file.mimetype);
+    const hasAllowedExtension = AuthController.ALLOWED_KYC_EXTENSIONS.includes(
+      extname(file.originalname || '').toLowerCase(),
+    );
+    if (!hasAllowedMimeType && !hasAllowedExtension) {
       throw new BadRequestException(`${label} must be a JPG, PNG, or WEBP image.`);
     }
     if (file.size > AuthController.MAX_KYC_FILE_SIZE_BYTES) {
