@@ -5,7 +5,7 @@ export const API_RESPONSE_MESSAGES = {
     LOGIN_SUCCESS: 'Login successful',
     LOGOUT_SUCCESS: 'Logout successful',
     INVALID_CREDENTIALS: 'Invalid email or password',
-    USER_ALREADY_EXISTS: 'User with this email already exists',
+    USER_ALREADY_EXISTS: 'An account with this email already exists. Please log in instead.',
     UNAUTHORIZED: 'Unauthorized access',
     FORBIDDEN: 'Access forbidden',
     TOKEN_INVALID: 'Invalid or expired token',
@@ -13,26 +13,27 @@ export const API_RESPONSE_MESSAGES = {
     ACCOUNT_PENDING: 'Account is pending approval',
     ACCOUNT_REJECTED: 'Account has been rejected',
     ACCOUNT_DEACTIVATED_CONTACT: 'For assistance, contact +92 328 5272244.',
-    EMAIL_ALREADY_REGISTERED: 'Email already registered', // [NEW]
     STUDENT_SIGNUP_SUCCESS:
       'Student signup request submitted successfully. Verification pending.',
-    STUDENT_SIGNUP_EMAIL_EXISTS: 'Email already registered',
     STUDENT_SIGNUP_INVALID_IMAGES: 'Invalid image URLs or images not accessible',
     CORPORATE_SIGNUP_SUCCESS:
       'Corporate account created successfully. Verification pending.',
-    CORPORATE_SIGNUP_EMAIL_EXISTS: 'Email already registered',
+    CORPORATE_SIGNUP_EMAIL_EXISTS: 'An account with this email already exists. Please use a different email address.',
     CORPORATE_SIGNUP_INVALID_LOGO: 'Invalid logo URL format',
     BRANCH_SIGNUP_SUCCESS:
       'Branch account created successfully. Verification pending.',
     BRANCH_SIGNUP_SUCCESS_ADMIN:
       'Branch account created successfully and activated.',
-    BRANCH_SIGNUP_EMAIL_EXISTS: 'Email already registered',
+    BRANCH_SIGNUP_EMAIL_EXISTS: 'An account with this email already exists. Please use a different email address.',
     BRANCH_SIGNUP_INVALID_CORPORATE: 'Invalid or non-existent corporate account',
     FORGOT_PASSWORD_SUCCESS: 'Password reset email sent successfully',
     CHANGE_PASSWORD_SUCCESS: 'Password changed successfully',
     CHANGE_PASSWORD_INVALID_CURRENT: 'Current password is incorrect',
     CHANGE_PASSWORD_FAILED: 'Password change failed',
     USER_NOT_FOUND: 'User not found',
+    // Generic fallback for unexpected errors (DB/Supabase/network failures) —
+    // never leak raw error.message to the client, just point at connectivity.
+    GENERIC_ERROR: 'Something went wrong. Please check your internet connection and try again.',
   },
   // Merchant messages
   MERCHANT: {
@@ -106,7 +107,7 @@ export const API_RESPONSE_MESSAGES = {
     OFFER_NOT_ACTIVE: 'Offer is not active or expired',
     OFFER_NOT_AVAILABLE_AT_BRANCH: 'Offer is not available at this branch',
     OFFER_LIMIT_REACHED: 'Offer redemption limit reached',
-    STUDENT_DAILY_LIMIT_REACHED: 'Student has reached daily limit for this offer',
+    BRANCH_DAILY_LIMIT_REACHED: 'Student has already redeemed at this branch today. Only one redemption is allowed per branch per day.',
     BRANCH_NOT_FOUND: 'Branch not found',
     BRANCH_NOT_ACTIVE: 'Branch is inactive',
     BRANCH_ACCESS_DENIED: 'Access denied. You can only manage redemptions for your own branch',
