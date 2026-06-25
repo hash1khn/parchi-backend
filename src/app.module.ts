@@ -21,6 +21,7 @@ import { AccountDeletionModule } from './modules/account-deletion/account-deleti
 import { SystemConfigModule } from './modules/system-config/system-config.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { QrRedemptionsModule } from './modules/qr-redemptions/qr-redemptions.module';
+import { CategoriesModule } from './modules/categories/categories.module';
 
 
 
@@ -57,6 +58,7 @@ import { QrRedemptionsModule } from './modules/qr-redemptions/qr-redemptions.mod
     SystemConfigModule,
     AnalyticsModule,
     QrRedemptionsModule,
+    CategoriesModule,
   ],
   controllers: [AppController],
   providers: [
