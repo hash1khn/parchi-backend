@@ -25,6 +25,11 @@ export class UpdateCorporateAccountDto {
   @IsEmail()
   contactEmail?: string;
 
+  /** Login email (admin only) — updates auth + public.users */
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
   @IsOptional()
   @IsString()
   contactPhone?: string;

@@ -8,6 +8,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthService } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Prisma } from '@prisma/client';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
@@ -29,6 +30,8 @@ import {
 export interface CorporateMerchantResponse {
   id: string;
   userId: string;
+  email: string;
+  emailPrefix: string | null;
   businessName: string;
   businessRegistrationNumber: string | null;
   contactEmail: string;
@@ -145,9 +148,106 @@ export interface MerchantDetailsForStudentsResponse {
 export class MerchantsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly authService: AuthService,
     private readonly notificationsService: NotificationsService,
   ) { }
   private readonly logger = new Logger(MerchantsService.name);
+
+  private formatCorporateMerchant(
+    merchant: {
+      id: string;
+      user_id: string;
+      business_name: string;
+      business_registration_number: string | null;
+      email_prefix: string | null;
+      contact_email: string;
+      contact_phone: string;
+      logo_path: string | null;
+      category: string | null;
+      sub_category?: string | null;
+      verification_status: string | null;
+      verified_at: Date | null;
+      is_active: boolean | null;
+      created_at: Date | null;
+      updated_at: Date | null;
+      banner_url: string | null;
+      terms_and_conditions: string | null;
+      redemption_fee: unknown;
+      restaurant_list_pinned_position?: number | null;
+      users: { email: string };
+    },
+    overrides?: Partial<Pick<CorporateMerchantResponse, 'isActive'>>,
+  ): CorporateMerchantResponse {
+    return {
+      id: merchant.id,
+      userId: merchant.user_id,
+      email: merchant.users.email,
+      emailPrefix: merchant.email_prefix,
+      businessName: merchant.business_name,
+      businessRegistrationNumber: merchant.business_registration_number,
+      contactEmail: merchant.contact_email,
+      contactPhone: merchant.contact_phone,
+      logoPath: merchant.logo_path,
+      category: merchant.category,
+      subCategory: (merchant as { sub_category?: string | null }).sub_category ?? null,
+      verificationStatus: merchant.verification_status || 'pending',
+      verifiedAt: merchant.verified_at,
+      isActive: overrides?.isActive ?? merchant.is_active,
+      createdAt: merchant.created_at,
+      updatedAt: merchant.updated_at,
+      bannerUrl: merchant.banner_url,
+      termsAndConditions: merchant.terms_and_conditions,
+      redemptionFee: Number(merchant.redemption_fee),
+      restaurantListPinnedPosition:
+        merchant.restaurant_list_pinned_position ?? null,
+    };
+  }
+
+  private async updateUserLoginEmail(
+    userId: string,
+    currentEmail: string,
+    newEmail: string,
+  ): Promise<void> {
+    const normalized = newEmail.trim().toLowerCase();
+    if (normalized === currentEmail.toLowerCase()) {
+      return;
+    }
+
+    const conflict = await this.prisma.public_users.findFirst({
+      where: {
+        email: normalized,
+        NOT: { id: userId },
+      },
+    });
+    if (conflict) {
+      throw new ConflictException('Email already in use');
+    }
+
+    const admin = this.authService.getAdminSupabaseClient();
+    const { error } = await admin.auth.admin.updateUserById(userId, {
+      email: normalized,
+    });
+    if (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to update email in auth provider',
+      );
+    }
+
+    await this.prisma.public_users.update({
+      where: { id: userId },
+      data: { email: normalized },
+    });
+  }
+
+  private syncMerchantEmailPrefix(
+    email: string,
+  ): string | null | undefined {
+    const domain = '@parchipakistan.com';
+    if (email.toLowerCase().endsWith(domain)) {
+      return email.slice(0, -domain.length).toLowerCase();
+    }
+    return null;
+  }
 
   /**
    * Get loyalty programs for a merchant
@@ -306,40 +406,25 @@ export class MerchantsService {
         { business_name: { contains: searchTerm, mode: 'insensitive' } },
         { contact_email: { contains: searchTerm, mode: 'insensitive' } },
         { contact_phone: { contains: searchTerm, mode: 'insensitive' } },
+        {
+          users: {
+            email: { contains: searchTerm, mode: 'insensitive' },
+          },
+        },
       ];
     }
 
     const merchants = await this.prisma.merchants.findMany({
       where: whereClause,
+      include: {
+        users: true,
+      },
       orderBy: {
         created_at: 'desc',
       },
     });
 
-    const formattedMerchants: CorporateMerchantResponse[] = merchants.map(
-      (merchant) => ({
-        id: merchant.id,
-        userId: merchant.user_id,
-        businessName: merchant.business_name,
-        businessRegistrationNumber: merchant.business_registration_number,
-        contactEmail: merchant.contact_email,
-        contactPhone: merchant.contact_phone,
-        logoPath: merchant.logo_path,
-        category: merchant.category,
-        subCategory: (merchant as any).sub_category,
-        verificationStatus: merchant.verification_status || 'pending',
-        verifiedAt: merchant.verified_at,
-        isActive: merchant.is_active,
-        createdAt: merchant.created_at,
-        updatedAt: merchant.updated_at,
-        bannerUrl: merchant.banner_url,
-        termsAndConditions: merchant.terms_and_conditions,
-        redemptionFee: Number(merchant.redemption_fee),
-        restaurantListPinnedPosition: (merchant as any).restaurant_list_pinned_position ?? null,
-      }),
-    );
-
-    return formattedMerchants;
+    return merchants.map((merchant) => this.formatCorporateMerchant(merchant));
   }
 
   /**
@@ -626,25 +711,7 @@ export class MerchantsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
     }
 
-    const formattedMerchant: CorporateMerchantResponse = {
-      id: merchant.id,
-      userId: merchant.user_id,
-      businessName: merchant.business_name,
-      businessRegistrationNumber: merchant.business_registration_number,
-      contactEmail: merchant.contact_email,
-      contactPhone: merchant.contact_phone,
-      logoPath: merchant.logo_path,
-      category: merchant.category,
-      subCategory: (merchant as any).sub_category,
-      verificationStatus: merchant.verification_status || 'pending',
-      verifiedAt: merchant.verified_at,
-      isActive: merchant.is_active,
-      createdAt: merchant.created_at,
-      updatedAt: merchant.updated_at,
-      bannerUrl: merchant.banner_url,
-      termsAndConditions: merchant.terms_and_conditions,
-      redemptionFee: Number(merchant.redemption_fee),
-    };
+    const formattedMerchant: CorporateMerchantResponse = this.formatCorporateMerchant(merchant);
 
     return formattedMerchant;
   }
@@ -686,7 +753,8 @@ export class MerchantsService {
       // Merchants cannot update isActive or verificationStatus (admin-only fields)
       if (
         updateDto.isActive !== undefined ||
-        updateDto.verificationStatus !== undefined
+        updateDto.verificationStatus !== undefined ||
+        updateDto.email !== undefined
       ) {
         throw new ForbiddenException(
           'You do not have permission to update this field',
@@ -694,8 +762,29 @@ export class MerchantsService {
       }
     }
 
+    if (updateDto.email !== undefined && currentUser.role !== ROLES.ADMIN) {
+      throw new ForbiddenException(
+        'Only administrators can update login email',
+      );
+    }
+
     // Prepare update data
     const updateData: any = {};
+
+    if (updateDto.email !== undefined) {
+      await this.updateUserLoginEmail(
+        merchant.user_id,
+        merchant.users.email,
+        updateDto.email,
+      );
+      const prefix = this.syncMerchantEmailPrefix(
+        updateDto.email.trim().toLowerCase(),
+      );
+      if (prefix !== undefined) {
+        updateData.email_prefix = prefix;
+      }
+    }
+
     if (updateDto.businessName !== undefined) {
       updateData.business_name = updateDto.businessName;
     }
@@ -813,28 +902,15 @@ export class MerchantsService {
       }
     }
 
-    const formattedMerchant: CorporateMerchantResponse = {
-      id: updatedMerchant.id,
-      userId: updatedMerchant.user_id,
-      businessName: updatedMerchant.business_name,
-      businessRegistrationNumber: updatedMerchant.business_registration_number,
-      contactEmail: updatedMerchant.contact_email,
-      contactPhone: updatedMerchant.contact_phone,
-      logoPath: updatedMerchant.logo_path,
-      category: updatedMerchant.category,
-      subCategory: (updatedMerchant as any).sub_category,
-      verificationStatus: updatedMerchant.verification_status || 'pending',
-      verifiedAt: updatedMerchant.verified_at,
-      isActive:
-        updateDto.isActive !== undefined
-          ? updateDto.isActive
-          : updatedMerchant.is_active,
-      createdAt: updatedMerchant.created_at,
-      updatedAt: updatedMerchant.updated_at,
-      bannerUrl: updatedMerchant.banner_url,
-      termsAndConditions: updatedMerchant.terms_and_conditions,
-      redemptionFee: Number(updatedMerchant.redemption_fee),
-    };
+    const formattedMerchant: CorporateMerchantResponse = this.formatCorporateMerchant(
+      updatedMerchant,
+      {
+        isActive:
+          updateDto.isActive !== undefined
+            ? updateDto.isActive
+            : updatedMerchant.is_active,
+      },
+    );
 
     return formattedMerchant;
   }
@@ -924,25 +1000,9 @@ export class MerchantsService {
       throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
     }
 
-    const formattedMerchant: CorporateMerchantResponse = {
-      id: updatedMerchant.id,
-      userId: updatedMerchant.user_id,
-      businessName: updatedMerchant.business_name,
-      businessRegistrationNumber: updatedMerchant.business_registration_number,
-      contactEmail: updatedMerchant.contact_email,
-      contactPhone: updatedMerchant.contact_phone,
-      logoPath: updatedMerchant.logo_path,
-      category: updatedMerchant.category,
-      subCategory: (updatedMerchant as any).sub_category,
-      verificationStatus: updatedMerchant.verification_status || 'pending',
-      verifiedAt: updatedMerchant.verified_at,
-      isActive: updatedMerchant.is_active,
-      createdAt: updatedMerchant.created_at,
-      updatedAt: updatedMerchant.updated_at,
-      bannerUrl: updatedMerchant.banner_url,
-      termsAndConditions: updatedMerchant.terms_and_conditions,
-      redemptionFee: Number(updatedMerchant.redemption_fee),
-    };
+    const formattedMerchant: CorporateMerchantResponse = this.formatCorporateMerchant(
+      updatedMerchant,
+    );
 
     return formattedMerchant;
   }
@@ -1232,6 +1292,29 @@ export class MerchantsService {
       );
     }
 
+    if (updateDto.email !== undefined && currentUser.role !== ROLES.ADMIN) {
+      throw new ForbiddenException(
+        'Only administrators can update login email',
+      );
+    }
+
+    if (updateDto.email !== undefined) {
+      if (!branch.user_id) {
+        throw new BadRequestException('Branch has no linked user account');
+      }
+      const branchUser = await this.prisma.public_users.findUnique({
+        where: { id: branch.user_id },
+      });
+      if (!branchUser) {
+        throw new NotFoundException('Branch user not found');
+      }
+      await this.updateUserLoginEmail(
+        branch.user_id,
+        branchUser.email,
+        updateDto.email,
+      );
+    }
+
     // Prepare update data
     const updateData: any = {};
     if (updateDto.branchName !== undefined) {
@@ -1269,6 +1352,7 @@ export class MerchantsService {
             business_name: true,
           },
         },
+        users: true,
       },
     });
 
@@ -1297,6 +1381,7 @@ export class MerchantsService {
       createdAt: updatedBranch.created_at,
       updatedAt: updatedBranch.updated_at,
       qrAutoApprove: updatedBranch.qr_auto_approve ?? false,
+      email: updatedBranch.users?.email ?? null,
     };
 
     return formattedBranch;

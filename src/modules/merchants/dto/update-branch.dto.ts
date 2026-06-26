@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsLatitude,
   IsLongitude,
+  IsEmail,
 } from 'class-validator';
 
 export class UpdateBranchDto {
@@ -38,5 +39,10 @@ export class UpdateBranchDto {
   @IsOptional()
   @IsBoolean()
   qrAutoApprove?: boolean;
+
+  /** Login email (admin only) — updates auth + public.users */
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 }
 
