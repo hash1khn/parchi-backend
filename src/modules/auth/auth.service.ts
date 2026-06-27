@@ -29,6 +29,10 @@ import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response
 import { ROLES, UserRole } from '../../constants/app.constants';
 import { JwtPayload } from '../../types/global.types';
 import { generateParchiId } from '../../utils/parchi-id.util';
+import {
+  formatPakistaniPhone,
+  isCompletePakistaniPhone,
+} from '../../utils/pakistani-phone.util';
 import { StudentSignupWithFilesDto } from './dto/student-signup-with-files.dto';
 import { randomUUID } from 'crypto';
 
@@ -935,6 +939,14 @@ export class AuthService {
         );
       }
 
+      if (!isCompletePakistaniPhone(signupDto.contact)) {
+        throw new UnprocessableEntityException(
+          API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_INVALID_CONTACT,
+        );
+      }
+
+      const formattedContact = formatPakistaniPhone(signupDto.contact)!;
+
       const { data: authData, error: authError } =
         await this.adminSupabase.auth.admin.createUser({
           email: signupDto.email,
@@ -942,7 +954,7 @@ export class AuthService {
           email_confirm: true,
           user_metadata: {
             role: ROLES.MERCHANT_CORPORATE,
-            phone: signupDto.contact || null,
+            phone: formattedContact,
           }
         });
 
@@ -959,7 +971,7 @@ export class AuthService {
           data: {
             id: userId,
             email: signupDto.email,
-            phone: signupDto.contact || null,
+            phone: formattedContact,
             role: ROLES.MERCHANT_CORPORATE,
             is_active: true,
           },
@@ -972,7 +984,7 @@ export class AuthService {
             business_registration_number: signupDto.regNumber || null,
             email_prefix: signupDto.emailPrefix,
             contact_email: signupDto.contactEmail,
-            contact_phone: signupDto.contact,
+            contact_phone: formattedContact,
             logo_path: signupDto.logo_path,
             banner_url: signupDto.banner_path || null,
             category: signupDto.category || null,
@@ -1008,7 +1020,7 @@ export class AuthService {
       await this.adminSupabase.auth.admin.updateUserById(userId, {
         user_metadata: {
           role: ROLES.MERCHANT_CORPORATE,
-          phone: signupDto.contact || null,
+          phone: formattedContact,
           merchant_id: result.merchant.id, // Store merchant ID in JWT
         },
       });
@@ -1099,6 +1111,14 @@ export class AuthService {
         throw new BadRequestException('Invalid user role for branch creation');
       }
 
+      if (!isCompletePakistaniPhone(signupDto.contact)) {
+        throw new UnprocessableEntityException(
+          API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_INVALID_CONTACT,
+        );
+      }
+
+      const formattedContact = formatPakistaniPhone(signupDto.contact)!;
+
       // 3. Create user in Supabase Auth with password from frontend
       const { data: authData, error: authError } =
         await this.adminSupabase.auth.admin.createUser({
@@ -1107,7 +1127,7 @@ export class AuthService {
           email_confirm: true,
           user_metadata: {
             role: ROLES.MERCHANT_BRANCH,
-            phone: signupDto.contact || null,
+            phone: formattedContact,
           }
         });
 
@@ -1148,7 +1168,7 @@ export class AuthService {
           data: {
             id: userId,
             email: signupDto.email,
-            phone: signupDto.contact || null,
+            phone: formattedContact,
             role: ROLES.MERCHANT_BRANCH,
             is_active: isActive,
           },
@@ -1162,7 +1182,7 @@ export class AuthService {
             branch_name: signupDto.name,
             address: signupDto.address,
             city: signupDto.city,
-            contact_phone: signupDto.contact || null,
+            contact_phone: formattedContact,
             latitude: latitude !== null ? latitude : undefined,
             longitude: longitude !== null ? longitude : undefined,
             is_active: isActive,
@@ -1179,7 +1199,7 @@ export class AuthService {
       await this.adminSupabase.auth.admin.updateUserById(userId, {
         user_metadata: {
           role: ROLES.MERCHANT_BRANCH,
-          phone: signupDto.contact || null,
+          phone: formattedContact,
           branch_id: result.branch.id, // Store branch ID in JWT
           merchant_id: merchantId,      // Store parent merchant ID in JWT
         },
@@ -1192,7 +1212,7 @@ export class AuthService {
         branchName: result.branch.branch_name,
         address: result.branch.address,
         city: result.branch.city,
-        contactPhone: result.branch.contact_phone,
+        contactPhone: formattedContact,
         latitude: result.branch.latitude?.toString() || null,
         longitude: result.branch.longitude?.toString() || null,
         linkedCorporate: merchantId,

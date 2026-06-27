@@ -21,6 +21,7 @@ export const API_RESPONSE_MESSAGES = {
     CORPORATE_SIGNUP_EMAIL_EXISTS: 'An account with this email already exists. Please use a different email address.',
     CORPORATE_SIGNUP_INVALID_LOGO: 'Invalid logo URL format',
     CORPORATE_SIGNUP_INVALID_BANNER: 'Invalid banner URL format',
+    CORPORATE_SIGNUP_INVALID_CONTACT: 'Contact phone must be 11 digits (03xx-xxxxxxx)',
     BRANCH_SIGNUP_SUCCESS:
       'Branch account created successfully. Verification pending.',
     BRANCH_SIGNUP_SUCCESS_ADMIN:

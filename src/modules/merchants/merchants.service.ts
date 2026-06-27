@@ -26,6 +26,7 @@ import {
   normalizePaginationParams,
   PaginationMeta,
 } from '../../utils/pagination.util';
+import { formatPakistaniPhone } from '../../utils/pakistani-phone.util';
 
 export interface CorporateMerchantResponse {
   id: string;
@@ -186,7 +187,7 @@ export class MerchantsService {
       businessName: merchant.business_name,
       businessRegistrationNumber: merchant.business_registration_number,
       contactEmail: merchant.contact_email,
-      contactPhone: merchant.contact_phone,
+      contactPhone: formatPakistaniPhone(merchant.contact_phone) ?? merchant.contact_phone,
       logoPath: merchant.logo_path,
       category: merchant.category,
       subCategory: (merchant as { sub_category?: string | null }).sub_category ?? null,
@@ -796,7 +797,7 @@ export class MerchantsService {
       updateData.contact_email = updateDto.contactEmail;
     }
     if (updateDto.contactPhone !== undefined) {
-      updateData.contact_phone = updateDto.contactPhone;
+      updateData.contact_phone = formatPakistaniPhone(updateDto.contactPhone);
     }
     if (updateDto.logoPath !== undefined) {
       updateData.logo_path = updateDto.logoPath;
@@ -1159,7 +1160,7 @@ export class MerchantsService {
       city: branch.city,
       latitude: branch.latitude ? Number(branch.latitude) : null,
       longitude: branch.longitude ? Number(branch.longitude) : null,
-      contactPhone: branch.contact_phone,
+      contactPhone: formatPakistaniPhone(branch.contact_phone),
       isActive: branch.is_active,
       createdAt: branch.created_at,
       updatedAt: branch.updated_at,
@@ -1229,7 +1230,7 @@ export class MerchantsService {
       city: branch.city,
       latitude: branch.latitude ? Number(branch.latitude) : null,
       longitude: branch.longitude ? Number(branch.longitude) : null,
-      contactPhone: branch.contact_phone,
+      contactPhone: formatPakistaniPhone(branch.contact_phone),
       isActive: branch.is_active,
       createdAt: branch.created_at,
       updatedAt: branch.updated_at,
@@ -1327,7 +1328,7 @@ export class MerchantsService {
       updateData.city = updateDto.city;
     }
     if (updateDto.contactPhone !== undefined) {
-      updateData.contact_phone = updateDto.contactPhone;
+      updateData.contact_phone = formatPakistaniPhone(updateDto.contactPhone);
     }
     if (updateDto.latitude !== undefined) {
       updateData.latitude = updateDto.latitude;
@@ -1376,7 +1377,7 @@ export class MerchantsService {
       longitude: updatedBranch.longitude
         ? Number(updatedBranch.longitude)
         : null,
-      contactPhone: updatedBranch.contact_phone,
+      contactPhone: formatPakistaniPhone(updatedBranch.contact_phone),
       isActive: updatedBranch.is_active,
       createdAt: updatedBranch.created_at,
       updatedAt: updatedBranch.updated_at,
@@ -1428,7 +1429,7 @@ export class MerchantsService {
         branch_name: createDto.branchName,
         address: createDto.address,
         city: createDto.city,
-        contact_phone: createDto.contactPhone,
+        contact_phone: formatPakistaniPhone(createDto.contactPhone),
         latitude: createDto.latitude,
         longitude: createDto.longitude,
         is_active: createDto.isActive ?? true,
@@ -1452,7 +1453,7 @@ export class MerchantsService {
       city: branch.city,
       latitude: branch.latitude ? Number(branch.latitude) : null,
       longitude: branch.longitude ? Number(branch.longitude) : null,
-      contactPhone: branch.contact_phone,
+      contactPhone: formatPakistaniPhone(branch.contact_phone),
       isActive: branch.is_active,
       createdAt: branch.created_at,
       updatedAt: branch.updated_at,
@@ -1912,7 +1913,7 @@ export class MerchantsService {
       longitude: updatedBranch.longitude
         ? Number(updatedBranch.longitude)
         : null,
-      contactPhone: updatedBranch.contact_phone,
+      contactPhone: formatPakistaniPhone(updatedBranch.contact_phone),
       isActive: updatedBranch.is_active,
       createdAt: updatedBranch.created_at,
       updatedAt: updatedBranch.updated_at,
@@ -2585,7 +2586,7 @@ export class MerchantsService {
         city: r.b_city!,
         latitude: r.b_latitude ? Number(r.b_latitude) : null,
         longitude: r.b_longitude ? Number(r.b_longitude) : null,
-        contactPhone: r.b_contact_phone,
+        contactPhone: formatPakistaniPhone(r.b_contact_phone),
       }));
 
     // Deduplicate branches (since raw query might return duplicate merchant-level data per branch)
