@@ -929,6 +929,12 @@ export class AuthService {
         );
       }
 
+      if (signupDto.banner_path && !urlPattern.test(signupDto.banner_path)) {
+        throw new UnprocessableEntityException(
+          API_RESPONSE_MESSAGES.AUTH.CORPORATE_SIGNUP_INVALID_BANNER,
+        );
+      }
+
       const { data: authData, error: authError } =
         await this.adminSupabase.auth.admin.createUser({
           email: signupDto.email,
@@ -968,6 +974,7 @@ export class AuthService {
             contact_email: signupDto.contactEmail,
             contact_phone: signupDto.contact,
             logo_path: signupDto.logo_path,
+            banner_url: signupDto.banner_path || null,
             category: signupDto.category || null,
             sub_category: signupDto.subCategory || null,
             verification_status: 'approved',

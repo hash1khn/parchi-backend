@@ -474,31 +474,31 @@ model merchant_branches {
 }
 
 model merchants {
-  id                           String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id                      String                   @unique @db.Uuid
-  business_name                String                   @db.VarChar(255)
-  business_registration_number String?                  @db.VarChar(100)
-  contact_email                String                   @db.VarChar(255)
-  contact_phone                String                   @db.VarChar(20)
-  logo_path                    String?
-  category                     String?                  @db.VarChar(100)
-  verification_status          verification_status?     @default(pending)
-  verified_at                  DateTime?                @db.Timestamptz(6)
-  is_active                    Boolean?                 @default(true)
-  created_at                   DateTime?                @default(now()) @db.Timestamptz(6)
-  updated_at                   DateTime?                @default(now()) @db.Timestamptz(6)
-  email_prefix                 String?                  @db.VarChar(100)
-  banner_url                   String?
-  terms_and_conditions         String?
-  featured_order               Int?
+  id                              String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                         String                   @unique @db.Uuid
+  business_name                   String                   @db.VarChar(255)
+  business_registration_number    String?                  @db.VarChar(100)
+  contact_email                   String                   @db.VarChar(255)
+  contact_phone                   String                   @db.VarChar(20)
+  logo_path                       String?
+  category                        String?                  @db.VarChar(100)
+  verification_status             verification_status?     @default(pending)
+  verified_at                     DateTime?                @db.Timestamptz(6)
+  is_active                       Boolean?                 @default(true)
+  created_at                      DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at                      DateTime?                @default(now()) @db.Timestamptz(6)
+  email_prefix                    String?                  @db.VarChar(100)
+  banner_url                      String?
+  terms_and_conditions            String?
+  featured_order                  Int?
+  redemption_fee                  Decimal                  @default(0.00) @db.Decimal
+  sub_category                    String?                  @db.VarChar
   restaurant_list_pinned_position Int?
-  redemption_fee               Decimal                  @default(0.00) @db.Decimal
-  sub_category                 String?                  @db.VarChar
-  loyalty_programs             loyalty_programs[]
-  merchant_branches            merchant_branches[]
-  users                        public_users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  offers                       offers[]
-  student_merchant_stats       student_merchant_stats[]
+  loyalty_programs                loyalty_programs[]
+  merchant_branches               merchant_branches[]
+  users                           public_users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  offers                          offers[]
+  student_merchant_stats          student_merchant_stats[]
 
   @@index([verification_status], map: "idx_merchants_status")
   @@index([featured_order], map: "idx_merchants_featured")
@@ -882,27 +882,27 @@ model institutes {
 }
 
 model merchant_categories {
-  id                      String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name                    String                    @unique @db.VarChar(255)
-  sort_order              Int                       @default(0)
-  is_active               Boolean?                  @default(true)
-  created_at              DateTime?                 @default(now()) @db.Timestamptz(6)
-  updated_at              DateTime?                 @default(now()) @db.Timestamptz(6)
-  merchant_subcategories  merchant_subcategories[]
+  id                     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                   String                   @unique @db.VarChar(255)
+  sort_order             Int                      @default(0)
+  is_active              Boolean?                 @default(true)
+  created_at             DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime?                @default(now()) @db.Timestamptz(6)
+  merchant_subcategories merchant_subcategories[]
 
   @@index([is_active], map: "idx_merchant_categories_active")
   @@schema("public")
 }
 
 model merchant_subcategories {
-  id                    String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  category_id           String              @db.Uuid
-  name                  String              @db.VarChar(255)
-  sort_order            Int                 @default(0)
-  is_active             Boolean?            @default(true)
-  created_at            DateTime?           @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime?           @default(now()) @db.Timestamptz(6)
-  merchant_categories   merchant_categories @relation(fields: [category_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                  String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  category_id         String              @db.Uuid
+  name                String              @db.VarChar(255)
+  sort_order          Int                 @default(0)
+  is_active           Boolean?            @default(true)
+  created_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  merchant_categories merchant_categories @relation(fields: [category_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([category_id, name])
   @@index([is_active], map: "idx_merchant_subcategories_active")
@@ -1033,12 +1033,12 @@ model app_configs {
   force_update_title       String?   @default("Time for an Upgrade! 🚀")
   force_update_message     String?   @default("To keep your Parchiyan safe and enjoy new deals, please update to the latest version.")
   is_under_maintenance     Boolean?  @default(false)
-  auto_queue_offers        Boolean   @default(true)
-  auto_queue_partners      Boolean   @default(true)
   created_at               DateTime? @default(now()) @db.Timestamptz(6)
   updated_at               DateTime? @default(now()) @db.Timestamptz(6)
   min_android_version      String    @default("1.0.0")
   min_ios_version          String    @default("1.0.0")
+  auto_queue_offers        Boolean   @default(true)
+  auto_queue_partners      Boolean   @default(true)
 
   @@schema("public")
 }

@@ -47,5 +47,9 @@ export class CorporateSignupDto {
   @IsNotEmpty()
   @IsString()
   logo_path: string; // URL returned from SupabaseStorageService
+
+  @IsOptional()
+  @IsString()
+  banner_path?: string; // URL returned from SupabaseStorageService
 }
 
