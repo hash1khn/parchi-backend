@@ -1053,6 +1053,12 @@ export class MerchantsService {
         });
       }
 
+      // loyalty_programs.merchant_id has no cascade, so merchant-scoped
+      // programs (offer_id null) must be removed before the merchant.
+      await tx.loyalty_programs.deleteMany({
+        where: { merchant_id: id },
+      });
+
       // Delete merchant -> cascades branches and related branch records.
       await tx.merchants.delete({
         where: { id },
