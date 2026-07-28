@@ -89,6 +89,13 @@ export class AnalyticsService {
   }
 
 
+  /**
+   * students.platform + signup capture shipped May 1, 2026.
+   * "Legacy / unknown" is only unresolved students created before this cutoff,
+   * so the bucket stays a frozen pre-tracking cohort.
+   */
+  private static readonly PLATFORM_TRACKING_CUTOFF = new Date('2026-05-01T00:00:00.000Z');
+
   async getPlatformDistribution(startDate?: Date, endDate?: Date) {
     const students = await this.fetchStudentsForPlatformStats(startDate, endDate);
     const resolved = await this.resolvePlatformsForStudents(students);
@@ -96,18 +103,29 @@ export class AnalyticsService {
     let ios = 0;
     let android = 0;
     let unknown = 0;
+    let untracked = 0;
 
     for (const student of students) {
       const platform = resolved.get(student.id);
       if (platform === 'ios') ios += 1;
       else if (platform === 'android') android += 1;
-      else unknown += 1;
+      else if (
+        student.created_at &&
+        student.created_at < AnalyticsService.PLATFORM_TRACKING_CUTOFF
+      ) {
+        // Pre-tracking cohort with no resolvable ios/android
+        unknown += 1;
+      } else {
+        // Post-cutoff (or missing created_at) with no resolvable platform
+        untracked += 1;
+      }
     }
 
     const results: { platform: string; count: number }[] = [];
     if (ios > 0) results.push({ platform: 'ios', count: ios });
     if (android > 0) results.push({ platform: 'android', count: android });
     if (unknown > 0) results.push({ platform: 'unknown', count: unknown });
+    if (untracked > 0) results.push({ platform: 'untracked', count: untracked });
     return results;
   }
 
