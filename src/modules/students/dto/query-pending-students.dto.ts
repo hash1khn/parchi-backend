@@ -10,6 +10,10 @@ import { Type } from 'class-transformer';
 
 export class QueryPendingStudentsDto {
   @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

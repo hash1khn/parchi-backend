@@ -1,13 +1,12 @@
 import { Transform } from 'class-transformer';
 import {
   IsEmail,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUrl,
   MinLength,
-  Length,
-  IsNumberString,
   IsISO8601,
 } from 'class-validator';
 
@@ -54,6 +53,12 @@ export class StudentSignupDto {
   @IsString()
   university: string;
 
+  @IsNotEmpty({ message: 'Gender is required.' })
+  @IsIn(['Male', 'Female', 'Other'], {
+    message: 'Gender must be Male, Female, or Other.',
+  })
+  gender: string;
+
   @IsNotEmpty({ message: 'Student ID card (front) is required.' })
   @IsUrl({}, { message: 'Student ID card (front) failed to upload. Please try again.' })
   studentIdCardFrontUrl: string;
@@ -70,4 +75,3 @@ export class StudentSignupDto {
   @IsString()
   platform?: string;
 }
-

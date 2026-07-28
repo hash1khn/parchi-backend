@@ -798,6 +798,15 @@ export class AdminDashboardService {
               ${dateFilter}
         `;
 
+        const studentFilter = studentId
+            ? Prisma.sql`AND student_id = ${studentId}::uuid`
+            : Prisma.empty;
+
+        const now = new Date();
+        const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const endOfLastMonth = startOfCurrentMonth;
+
         // For trend charts, if no dates are provided, we use defaults
         const dailyLimit = startDate ? Prisma.empty : Prisma.sql`AND created_at >= NOW() - INTERVAL '30 days'`;
         const weeklyLimit = startDate ? Prisma.empty : Prisma.sql`AND created_at >= NOW() - INTERVAL '12 weeks'`;
@@ -812,6 +821,8 @@ export class AdminDashboardService {
             repeatRatesResult,
             bonusResult,
             totalRegisteredResult,
+            thisMonthRedeemersResult,
+            lastMonthRedeemersResult,
         ] = await Promise.all([
             // 1. Unique redeemers
             this.prisma.$queryRaw<[{ count: bigint }]>`
@@ -999,13 +1010,49 @@ export class AdminDashboardService {
                     AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
                     AND r.is_bonus_applied = false
             `,
-            // 8. Total Registered Students
-            this.prisma.public_users.count({ where: { role: 'student' } }),
+            // 8. Total Registered Students (approved + active only — matches other student totals)
+            this.prisma.students.count({
+                where: {
+                    verification_status: 'approved',
+                    users: { is_active: true },
+                },
+            }),
+            // 9. Unique redeemers this calendar month
+            this.prisma.$queryRaw<[{ count: bigint }]>`
+                SELECT COUNT(DISTINCT student_id) AS count
+                FROM redemptions
+                WHERE verified_by IS NOT NULL
+                  AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                  AND created_at >= ${startOfCurrentMonth}
+                  ${studentFilter}
+            `,
+            // 10. Unique redeemers last calendar month
+            this.prisma.$queryRaw<[{ count: bigint }]>`
+                SELECT COUNT(DISTINCT student_id) AS count
+                FROM redemptions
+                WHERE verified_by IS NOT NULL
+                  AND (notes IS NULL OR notes NOT ILIKE 'REJECTED%')
+                  AND created_at >= ${startOfLastMonth}
+                  AND created_at < ${endOfLastMonth}
+                  ${studentFilter}
+            `,
         ]);
 
         // --- Transform results ---
         const uniqueRedeemers = Number(uniqueRedeemersResult[0]?.count ?? 0);
         const totalRegisteredStudents = Number(totalRegisteredResult ?? 0);
+        const uniqueRedeemersThisMonth = Number(thisMonthRedeemersResult[0]?.count ?? 0);
+        const uniqueRedeemersLastMonth = Number(lastMonthRedeemersResult[0]?.count ?? 0);
+        const momUniqueRedeemers = {
+            thisMonth: uniqueRedeemersThisMonth,
+            lastMonth: uniqueRedeemersLastMonth,
+            changePercent: uniqueRedeemersLastMonth > 0
+                ? Math.round(((uniqueRedeemersThisMonth - uniqueRedeemersLastMonth) / uniqueRedeemersLastMonth) * 1000) / 10
+                : 0,
+        };
+        const activeRedeemingPercent = totalRegisteredStudents > 0
+            ? Math.round((uniqueRedeemersThisMonth / totalRegisteredStudents) * 1000) / 10
+            : 0;
 
         const hist = histogramResult[0];
         const behaviorHistogram = [
@@ -1046,6 +1093,8 @@ export class AdminDashboardService {
         return {
             uniqueRedeemers,
             totalRegisteredStudents,
+            momUniqueRedeemers,
+            activeRedeemingPercent,
             volumeTrends: {
                 daily:   dailyTrends.map(r   => ({ date: r.date,   count: Number(r.count) })),
                 weekly:  weeklyTrends.map(r  => ({ date: r.date,   count: Number(r.count) })),

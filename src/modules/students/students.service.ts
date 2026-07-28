@@ -296,6 +296,7 @@ export class StudentsService {
     page: number = 1,
     limit: number = 12,
     sort: 'asc' | 'desc' = 'asc',
+    search?: string,
   ): Promise<{ items: StudentListResponse[]; pagination: PaginationMeta }> {
     const skip = calculateSkip(page, limit);
     const verifiedEmailWhere: Prisma.studentsWhereInput = {
@@ -312,12 +313,18 @@ export class StudentsService {
       },
     };
 
+    const searchWhere = this.buildStudentWhereClause({ search });
+    const where: Prisma.studentsWhereInput = {
+      AND: [
+        { verification_status: 'pending' },
+        verifiedEmailWhere,
+        ...(Object.keys(searchWhere).length > 0 ? [searchWhere] : []),
+      ],
+    };
+
     const [students, total] = await Promise.all([
       this.prisma.students.findMany({
-        where: {
-          verification_status: 'pending',
-          ...verifiedEmailWhere,
-        },
+        where,
         include: {
           users: {
             select: {
@@ -335,12 +342,7 @@ export class StudentsService {
         skip,
         take: limit,
       }),
-      this.prisma.students.count({
-        where: {
-          verification_status: 'pending',
-          ...verifiedEmailWhere,
-        },
-      }),
+      this.prisma.students.count({ where }),
     ]);
 
     // Batch fetch inferred platforms for students who have null platform

@@ -28,9 +28,20 @@ export interface FifthBonusStats {
   conversionRate: number; // percentage with 1 decimal
 }
 
+export interface MomUniqueRedeemers {
+  thisMonth: number;
+  lastMonth: number;
+  /** MoM change % (1 decimal). 0 when lastMonth is 0. */
+  changePercent: number;
+}
+
 export interface RedemptionAnalyticsResponse {
   uniqueRedeemers: number;
   totalRegisteredStudents: number;
+  /** Distinct verified redeemers this calendar month vs last month. */
+  momUniqueRedeemers: MomUniqueRedeemers;
+  /** % of approved+active students who redeemed at least once this calendar month. */
+  activeRedeemingPercent: number;
   volumeTrends: RedemptionVolumeBreakdown;
   behaviorHistogram: UserBehaviorBucket[];
   repeatRates: RepeatRateStat[];

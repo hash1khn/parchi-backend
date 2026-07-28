@@ -1,12 +1,11 @@
 import { Transform } from 'class-transformer';
 import {
   IsEmail,
+  IsIn,
   IsISO8601,
   IsNotEmpty,
-  IsNumberString,
   IsOptional,
   IsString,
-  Length,
   MinLength,
 } from 'class-validator';
 
@@ -52,6 +51,12 @@ export class StudentSignupWithFilesDto {
   @IsNotEmpty({ message: 'University is required.' })
   @IsString()
   university: string;
+
+  @IsNotEmpty({ message: 'Gender is required.' })
+  @IsIn(['Male', 'Female', 'Other'], {
+    message: 'Gender must be Male, Female, or Other.',
+  })
+  gender: string;
 
   @IsOptional()
   @IsString()

@@ -2,6 +2,7 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -111,8 +112,10 @@ export class UpdateStudentAdminDto {
   isActive?: boolean;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(20)
+  @ValidateIf((_, v) => v !== null)
+  @IsIn(['Male', 'Female', 'Other'], {
+    message: 'Gender must be Male, Female, or Other.',
+  })
   gender?: string | null;
 
   @IsOptional()

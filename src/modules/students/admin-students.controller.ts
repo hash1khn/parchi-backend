@@ -54,6 +54,7 @@ export class AdminStudentsController {
       page,
       limit,
       queryDto.sort,
+      queryDto.search,
     );
     return createPaginatedResponse(
       result.items,

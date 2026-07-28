@@ -868,6 +868,7 @@ export class AuthService {
              educational_grade: signupDto.educationalGrade,
              date_of_birth: new Date(signupDto.dateOfBirth),
              platform: signupDto.platform,
+             gender: signupDto.gender,
            },
         });
 
