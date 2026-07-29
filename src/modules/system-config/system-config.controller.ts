@@ -30,6 +30,8 @@ export class SystemConfigController {
     return createApiResponse({
       minAndroidVersion: config.min_android_version,
       minIosVersion: config.min_ios_version,
+      minAndroidBuildNumber: config.min_android_build_number,
+      minIosBuildNumber: config.min_ios_build_number,
       isUnderMaintenance: config.is_under_maintenance,
       forceUpdateTitle: config.force_update_title,
       forceUpdateMessage: config.force_update_message,
