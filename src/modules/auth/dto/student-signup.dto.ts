@@ -53,11 +53,13 @@ export class StudentSignupDto {
   @IsString()
   university: string;
 
-  @IsNotEmpty({ message: 'Gender is required.' })
+  // Optional for now: older app builds don't send this field yet.
+  // TODO: make required again once the userbase is off pre-gender-field app versions.
+  @IsOptional()
   @IsIn(['Male', 'Female', 'Other'], {
     message: 'Gender must be Male, Female, or Other.',
   })
-  gender: string;
+  gender?: string;
 
   @IsNotEmpty({ message: 'Student ID card (front) is required.' })
   @IsUrl({}, { message: 'Student ID card (front) failed to upload. Please try again.' })

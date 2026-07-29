@@ -52,11 +52,13 @@ export class StudentSignupWithFilesDto {
   @IsString()
   university: string;
 
-  @IsNotEmpty({ message: 'Gender is required.' })
+  // Optional for now: older app builds don't send this field yet.
+  // TODO: make required again once the userbase is off pre-gender-field app versions.
+  @IsOptional()
   @IsIn(['Male', 'Female', 'Other'], {
     message: 'Gender must be Male, Female, or Other.',
   })
-  gender: string;
+  gender?: string;
 
   @IsOptional()
   @IsString()
