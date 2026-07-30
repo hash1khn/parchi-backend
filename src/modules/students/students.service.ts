@@ -517,23 +517,29 @@ export class StudentsService {
     }
 
     if (options.search) {
-      conditions.push({
-        OR: [
-          { first_name: { contains: options.search, mode: 'insensitive' } },
-          { last_name: { contains: options.search, mode: 'insensitive' } },
-          { parchi_id: { contains: options.search, mode: 'insensitive' } },
-          {
-            users: {
-              email: { contains: options.search, mode: 'insensitive' },
+      const tokens = options.search.trim().split(/\s+/).filter(Boolean);
+      if (tokens.length > 0) {
+        const tokenConditions = tokens.map((token) => ({
+          OR: [
+            { first_name: { contains: token, mode: 'insensitive' as const } },
+            { last_name: { contains: token, mode: 'insensitive' as const } },
+            { parchi_id: { contains: token, mode: 'insensitive' as const } },
+            {
+              users: {
+                email: { contains: token, mode: 'insensitive' as const },
+              },
             },
-          },
-          {
-            users: {
-              phone: { contains: options.search, mode: 'insensitive' },
+            {
+              users: {
+                phone: { contains: token, mode: 'insensitive' as const },
+              },
             },
-          },
-        ],
-      });
+          ],
+        }));
+        conditions.push(
+          tokens.length === 1 ? tokenConditions[0] : { AND: tokenConditions },
+        );
+      }
     }
 
     if (conditions.length === 0) {

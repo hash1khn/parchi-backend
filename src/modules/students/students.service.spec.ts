@@ -156,4 +156,83 @@ describe('StudentsService (production readiness)', () => {
       expect(result.items[0].redemptions).toBe(5);
     });
   });
+
+  describe('buildStudentWhereClause search', () => {
+    it('matches a single token with OR across name/email/id/phone', () => {
+      const where = service.buildStudentWhereClause({ search: 'Fateh' });
+
+      expect(where).toEqual({
+        AND: [
+          {
+            OR: [
+              { first_name: { contains: 'Fateh', mode: 'insensitive' } },
+              { last_name: { contains: 'Fateh', mode: 'insensitive' } },
+              { parchi_id: { contains: 'Fateh', mode: 'insensitive' } },
+              { users: { email: { contains: 'Fateh', mode: 'insensitive' } } },
+              { users: { phone: { contains: 'Fateh', mode: 'insensitive' } } },
+            ],
+          },
+        ],
+      });
+    });
+
+    it('ANDs tokens so full names match across first_name and last_name', () => {
+      const where = service.buildStudentWhereClause({
+        search: 'Ahmed pervez fateh',
+      });
+
+      expect(where).toEqual({
+        AND: [
+          {
+            AND: [
+              {
+                OR: [
+                  { first_name: { contains: 'Ahmed', mode: 'insensitive' } },
+                  { last_name: { contains: 'Ahmed', mode: 'insensitive' } },
+                  { parchi_id: { contains: 'Ahmed', mode: 'insensitive' } },
+                  { users: { email: { contains: 'Ahmed', mode: 'insensitive' } } },
+                  { users: { phone: { contains: 'Ahmed', mode: 'insensitive' } } },
+                ],
+              },
+              {
+                OR: [
+                  { first_name: { contains: 'pervez', mode: 'insensitive' } },
+                  { last_name: { contains: 'pervez', mode: 'insensitive' } },
+                  { parchi_id: { contains: 'pervez', mode: 'insensitive' } },
+                  { users: { email: { contains: 'pervez', mode: 'insensitive' } } },
+                  { users: { phone: { contains: 'pervez', mode: 'insensitive' } } },
+                ],
+              },
+              {
+                OR: [
+                  { first_name: { contains: 'fateh', mode: 'insensitive' } },
+                  { last_name: { contains: 'fateh', mode: 'insensitive' } },
+                  { parchi_id: { contains: 'fateh', mode: 'insensitive' } },
+                  { users: { email: { contains: 'fateh', mode: 'insensitive' } } },
+                  { users: { phone: { contains: 'fateh', mode: 'insensitive' } } },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+    });
+
+    it('collapses repeated whitespace when tokenizing', () => {
+      const where = service.buildStudentWhereClause({
+        search: '  Ahmed   pervez  ',
+      });
+
+      const andBlock = (where as { AND: unknown[] }).AND[0] as {
+        AND: { OR: { first_name: { contains: string } }[] }[];
+      };
+      expect(andBlock.AND).toHaveLength(2);
+      expect(andBlock.AND[0].OR[0].first_name.contains).toBe('Ahmed');
+      expect(andBlock.AND[1].OR[0].first_name.contains).toBe('pervez');
+    });
+
+    it('ignores blank search after trim', () => {
+      expect(service.buildStudentWhereClause({ search: '   ' })).toEqual({});
+    });
+  });
 });
