@@ -234,5 +234,64 @@ describe('StudentsService (production readiness)', () => {
     it('ignores blank search after trim', () => {
       expect(service.buildStudentWhereClause({ search: '   ' })).toEqual({});
     });
+
+    it('matches digit-only queries as exact Parchi ID', () => {
+      const where = service.buildStudentWhereClause({ search: '11111' });
+
+      expect(where).toEqual({
+        AND: [
+          { parchi_id: { equals: '11111', mode: 'insensitive' } },
+        ],
+      });
+    });
+
+    it('does not treat emails as Parchi ID lookups', () => {
+      const where = service.buildStudentWhereClause({
+        search: 'bba2411111@szabist.pk',
+      });
+
+      expect(where).toEqual({
+        AND: [
+          {
+            OR: [
+              {
+                first_name: {
+                  contains: 'bba2411111@szabist.pk',
+                  mode: 'insensitive',
+                },
+              },
+              {
+                last_name: {
+                  contains: 'bba2411111@szabist.pk',
+                  mode: 'insensitive',
+                },
+              },
+              {
+                parchi_id: {
+                  contains: 'bba2411111@szabist.pk',
+                  mode: 'insensitive',
+                },
+              },
+              {
+                users: {
+                  email: {
+                    contains: 'bba2411111@szabist.pk',
+                    mode: 'insensitive',
+                  },
+                },
+              },
+              {
+                users: {
+                  phone: {
+                    contains: 'bba2411111@szabist.pk',
+                    mode: 'insensitive',
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      });
+    });
   });
 });

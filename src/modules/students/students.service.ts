@@ -518,7 +518,14 @@ export class StudentsService {
 
     if (options.search) {
       const tokens = options.search.trim().split(/\s+/).filter(Boolean);
-      if (tokens.length > 0) {
+      if (tokens.length === 0) {
+        // no-op
+      } else if (tokens.length === 1 && /^\d+$/.test(tokens[0])) {
+        // Digit-only query → exact Parchi ID match (avoid email/phone substring hits)
+        conditions.push({
+          parchi_id: { equals: tokens[0], mode: 'insensitive' },
+        });
+      } else {
         const tokenConditions = tokens.map((token) => ({
           OR: [
             { first_name: { contains: token, mode: 'insensitive' as const } },
