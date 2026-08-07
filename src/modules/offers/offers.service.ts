@@ -965,24 +965,15 @@ export class OffersService {
       );
     }
 
-    // Assign branches (upsert to handle duplicates)
-    await this.prisma.$transaction(async (tx) => {
-      // Remove existing assignments for these branches completely (from ANY offer)
-      // This enforces "One Active Offer Per Branch"
-      await tx.offer_branches.deleteMany({
-        where: {
-          // Removed offer_id constraint to delete assignments from any offer
-          branch_id: { in: assignDto.branchIds },
-        },
-      });
-
-      // Create new assignments
-      await tx.offer_branches.createMany({
-        data: assignDto.branchIds.map((branchId) => ({
-          offer_id: id,
-          branch_id: branchId,
-        })),
-      });
+    // Add this offer to the given branches, leaving any other offers already
+    // live at those branches untouched — a branch can run several offers at
+    // once and the student chooses between them at scan time.
+    await this.prisma.offer_branches.createMany({
+      data: assignDto.branchIds.map((branchId) => ({
+        offer_id: id,
+        branch_id: branchId,
+      })),
+      skipDuplicates: true,
     });
 
     // Fetch updated offer

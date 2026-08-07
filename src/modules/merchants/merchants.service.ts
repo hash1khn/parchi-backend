@@ -72,8 +72,8 @@ export interface BranchResponse {
 export interface BranchAssignmentResponse {
   id: string;
   branchName: string;
-  standardOfferId: string | null;
-  bonusOfferId: string | null;
+  /** Every offer live at this branch. A branch may carry several at once. */
+  offerIds: string[];
 }
 
 export interface BonusSettingsResponse {
@@ -1596,12 +1596,7 @@ export class MerchantsService {
     const formatted: BranchAssignmentResponse[] = branches.map((b) => ({
       id: b.id,
       branchName: b.branch_name,
-      // We return the first active offer as "standard" for backward compatibility if needed,
-      // or we can change the response structure.
-      // Based on previous logic, let's assume the first active offer is the standard one.
-      standardOfferId:
-        b.offer_branches.length > 0 ? b.offer_branches[0].offer_id : null,
-      bonusOfferId: null, // Bonus is now handled via settings, not a separate offer ID
+      offerIds: b.offer_branches.map((ob) => ob.offer_id),
     }));
 
     return formatted;
@@ -1639,59 +1634,53 @@ export class MerchantsService {
       throw new ForbiddenException(API_RESPONSE_MESSAGES.AUTH.FORBIDDEN);
     }
 
-    // Verify offers exist and belong to merchant
-    const offerIds = [dto.standardOfferId];
-    // If bonusOfferId was passed, we ignore it or treat it as another active offer if intended.
-    // For now, we only focus on standardOfferId as the primary active offer.
+    // Verify every offer exists and belongs to the branch's merchant.
+    const offerIds = [...new Set(dto.offerIds)];
 
-    // For admin, verify offer exists. For corporate, verify it belongs to them.
-    let count: number;
-    if (currentUser.role === ROLES.MERCHANT_CORPORATE) {
-      count = await this.prisma.offers.count({
-        where: {
-          id: { in: offerIds },
-          merchant_id: currentUser.merchant!.id, // Safe because we checked above
-        },
+    if (offerIds.length > 0) {
+      // Corporate users are additionally pinned to their own merchant; the
+      // branch ownership check above already guarantees these are the same id.
+      const merchantId =
+        currentUser.role === ROLES.MERCHANT_CORPORATE
+          ? currentUser.merchant!.id // Safe because we checked above
+          : branch.merchant_id;
+
+      const count = await this.prisma.offers.count({
+        where: { id: { in: offerIds }, merchant_id: merchantId },
       });
-    } else {
-      // Admin - just verify offer exists and belongs to same merchant as branch
-      count = await this.prisma.offers.count({
-        where: {
-          id: { in: offerIds },
-          merchant_id: branch.merchant_id,
-        },
-      });
+
+      if (count !== offerIds.length) {
+        const message =
+          currentUser.role === ROLES.ADMIN
+            ? 'One or more offers not found or do not belong to this merchant'
+            : 'One or more offers not found or do not belong to you';
+        throw new BadRequestException(message);
+      }
     }
 
-    if (count !== offerIds.length) {
-      const message =
-        currentUser.role === ROLES.ADMIN
-          ? 'One or more offers not found or do not belong to this merchant'
-          : 'One or more offers not found or do not belong to you';
-      throw new BadRequestException(message);
-    }
-
-    // Transaction to update offer_branches
+    // Set semantics: the branch ends up with exactly the offers in offerIds.
+    // A branch may hold any number of them simultaneously — the student picks
+    // which one to use when they scan the branch QR.
     await this.prisma.$transaction(async (tx) => {
-      // Remove all existing offers for this branch (enforce one offer per branch)
       await tx.offer_branches.deleteMany({
-        where: { branch_id: branchId },
+        where: { branch_id: branchId, offer_id: { notIn: offerIds } },
       });
 
-      // Create the selected offer assignment
-      await tx.offer_branches.create({
-        data: {
-          offer_id: dto.standardOfferId,
-          branch_id: branchId,
-        },
-      });
+      if (offerIds.length > 0) {
+        await tx.offer_branches.createMany({
+          data: offerIds.map((offerId) => ({
+            offer_id: offerId,
+            branch_id: branchId,
+          })),
+          skipDuplicates: true,
+        });
+      }
     });
 
     return {
       id: branch.id,
       branchName: branch.branch_name,
-      standardOfferId: dto.standardOfferId,
-      bonusOfferId: null,
+      offerIds,
     };
   }
 
@@ -2442,7 +2431,12 @@ export class MerchantsService {
         b.longitude::text           AS b_longitude,
         b.contact_phone             AS b_contact_phone,
 
-        -- All active offers for this merchant (consolidated)
+        -- All active, in-date-range offers for this merchant (consolidated).
+        -- This is a browse surface, so a day/time-scheduled offer (e.g.
+        -- "weekends only") still shows up outside its window — the offer
+        -- detail conveys the schedule. Only the actual redeem-now surfaces
+        -- (branch QR picker, redemption creation) enforce the day/time window,
+        -- via isOfferLiveNow in offer-schedule.util.
         (
           SELECT json_agg(
             json_build_object(

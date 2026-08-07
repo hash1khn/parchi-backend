@@ -28,6 +28,7 @@ import {
   startOfPakistanDay,
   zonedWallTimePakistanToUtc,
 } from '../../utils/pakistan-time.util';
+import { getOfferUnavailableReason } from '../../utils/offer-schedule.util';
 import { SohoStrategy } from './strategies/soho.strategy';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -196,49 +197,16 @@ export class RedemptionsService {
 
     const now = new Date();
 
-    if (offer.status !== 'active') {
-      throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_ACTIVE);
-    }
-    if (offer.valid_from > now || offer.valid_until < now) {
-      throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_ACTIVE);
-    }
     if (offer.merchant_id !== branch.merchant_id) {
       throw new BadRequestException(API_RESPONSE_MESSAGES.REDEMPTION.OFFER_NOT_AVAILABLE_AT_BRANCH);
     }
 
-    // Validate schedule
-    const scheduleType = offer.schedule_type || 'always';
-    if (scheduleType === 'custom') {
-      const allowedDays = offer.allowed_days || [];
-      if (allowedDays.length > 0) {
-        const today = now.getDay();
-        if (!allowedDays.includes(today)) {
-          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-          throw new BadRequestException(
-            `This offer is not available on ${dayNames[today]}. It is only available on: ${allowedDays.map((d) => dayNames[d]).join(', ')}`,
-          );
-        }
-      }
-
-      const startTime = offer.start_time;
-      const endTime = offer.end_time;
-      if (startTime && endTime) {
-        const currentTime = now.getHours() * 60 + now.getMinutes();
-        const toMinutes = (t: Date) => { const d = new Date(t); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
-        const startMinutes = toMinutes(startTime);
-        const endMinutes = toMinutes(endTime);
-        const isWithinWindow =
-          startMinutes <= endMinutes
-            ? currentTime >= startMinutes && currentTime <= endMinutes
-            : currentTime >= startMinutes || currentTime <= endMinutes;
-
-        if (!isWithinWindow) {
-          const fmt = (t: Date) => { const d = new Date(t); return `${d.getUTCHours().toString().padStart(2, '0')}:${d.getUTCMinutes().toString().padStart(2, '0')}`; };
-          throw new BadRequestException(
-            `This offer is only available between ${fmt(startTime)} and ${fmt(endTime)}. Current time is outside this window.`,
-          );
-        }
-      }
+    // Status, validity dates and day/time schedule, all evaluated in PKT.
+    // Same helper the listing endpoints filter with, so anything a student can
+    // see in the app is something they can actually redeem.
+    const unavailableReason = getOfferUnavailableReason(offer, now);
+    if (unavailableReason) {
+      throw new BadRequestException(unavailableReason);
     }
 
     // Check total limit (optimistic — the transaction will re-check with a lock)

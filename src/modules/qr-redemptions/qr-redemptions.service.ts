@@ -14,6 +14,10 @@ import { UpdateQrSettingsDto } from './dto/update-qr-settings.dto';
 import { ROLES } from '../../constants/app.constants';
 import { CurrentUser } from '../../types/global.types';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
+import {
+  isOfferLiveNow,
+  getOfferUnavailableReason,
+} from '../../utils/offer-schedule.util';
 
 const QR_REQUEST_TTL_MINUTES = 2;
 const DEEP_LINK_BASE = 'https://www.parchipakistan.com/redeem';
@@ -66,20 +70,21 @@ export class QrRedemptionsService {
             status: true,
             valid_from: true,
             valid_until: true,
+            schedule_type: true,
+            allowed_days: true,
+            start_time: true,
+            end_time: true,
           },
         },
       },
     });
 
+    // Only offers redeemable at this instant — status, dates and the day/time
+    // schedule. Listing an offer the redemption check would then reject is how
+    // students used to get errors after staff had already approved them.
     const activeOffers = offerBranches
       .map((ob: any) => ob.offers)
-      .filter(
-        (o: any) =>
-          o &&
-          o.status === 'active' &&
-          new Date(o.valid_from) <= now &&
-          new Date(o.valid_until) >= now,
-      )
+      .filter((o: any) => o && isOfferLiveNow(o, now))
       .map((o: any) => ({
         id: o.id,
         title: o.title,
@@ -142,6 +147,10 @@ export class QrRedemptionsService {
             valid_from: true,
             valid_until: true,
             merchant_id: true,
+            schedule_type: true,
+            allowed_days: true,
+            start_time: true,
+            end_time: true,
           },
         },
       },
@@ -152,11 +161,9 @@ export class QrRedemptionsService {
     }
 
     const offer = offerBranch.offers;
-    if (offer.status !== 'active') {
-      throw new BadRequestException('Offer is not active');
-    }
-    if (new Date(offer.valid_from) > now || new Date(offer.valid_until) < now) {
-      throw new BadRequestException('Offer has expired');
+    const unavailableReason = getOfferUnavailableReason(offer, now);
+    if (unavailableReason) {
+      throw new BadRequestException(unavailableReason);
     }
 
     // One redemption per branch per day guard — applies regardless of offer.
@@ -235,7 +242,18 @@ export class QrRedemptionsService {
           expires_at: { gt: now },
         },
       });
-      if (existing) return { record: existing };
+      // Same offer re-requested (e.g. a double-tap): hand back the same
+      // pending request instead of creating a duplicate.
+      if (existing && existing.offer_id === dto.offerId) return { record: existing };
+      // Different offer: the student changed their mind before staff acted.
+      // Expire the stale one rather than silently returning it — otherwise
+      // staff would approve a request for an offer the student never picked.
+      if (existing && existing.offer_id !== dto.offerId) {
+        await (tx as any).qr_redemption_requests.update({
+          where: { id: existing.id },
+          data: { status: 'expired' },
+        });
+      }
 
       const created = await (tx as any).qr_redemption_requests.create({
         data: {

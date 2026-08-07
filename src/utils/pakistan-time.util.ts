@@ -75,6 +75,28 @@ export function getHourInPakistan(d: Date): number {
   return Number(parts.find((p) => p.type === 'hour')?.value);
 }
 
+/** Day of week in PKT, 0 = Sunday .. 6 = Saturday (matches Date#getDay). */
+export function getDayOfWeekInPakistan(d: Date): number {
+  const { y, m, day } = getYmdInPakistan(d);
+  // Noon PKT is safely inside the calendar day regardless of the host timezone,
+  // so getUTCDay on that instant gives the PKT weekday.
+  return zonedWallTimePakistanToUtc(y, m, day, 12, 0, 0, 0).getUTCDay();
+}
+
+/** Minutes since midnight (0–1439) in PKT for this instant. */
+export function getMinutesOfDayInPakistan(d: Date): number {
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: PAKISTAN_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(d);
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value);
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value);
+  return hour * 60 + minute;
+}
+
 /** Pakistan calendar date of `d`, plus `deltaDays` (calendar days in PKT). */
 export function addPakistanCalendarDays(
   d: Date,
