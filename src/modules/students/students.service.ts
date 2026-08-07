@@ -768,11 +768,6 @@ export class StudentsService {
     foundersClub?: string,
     filters?: StudentFilterClauseDto[],
   ): Promise<{ items: any[]; pagination: PaginationMeta }> {
-    if (groupBy) {
-      return this.getStudentSegmentation(groupBy);
-    }
-
-    const skip = calculateSkip(page, limit);
     const whereClause = this.buildStudentWhereClause({
       legacy: {
         status,
@@ -792,6 +787,11 @@ export class StudentsService {
       search,
     });
 
+    if (groupBy) {
+      return this.getStudentSegmentation(groupBy, whereClause);
+    }
+
+    const skip = calculateSkip(page, limit);
     const { students, total } = await this.queryStudents(whereClause, {
       skip,
       take: limit,
@@ -1596,8 +1596,12 @@ export class StudentsService {
   /**
    * Get student segmentation by university or city
    */
-  private async getStudentSegmentation(groupBy: 'university' | 'city' = 'university') {
+  private async getStudentSegmentation(
+    groupBy: 'university' | 'city' = 'university',
+    where: Prisma.studentsWhereInput = {},
+  ) {
     const students = await this.prisma.students.findMany({
+      where,
       select: {
         university: true,
         verification_status: true,

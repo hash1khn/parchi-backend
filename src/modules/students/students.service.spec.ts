@@ -294,4 +294,42 @@ describe('StudentsService (production readiness)', () => {
       });
     });
   });
+
+  describe('getAllStudents groupBy', () => {
+    it('applies search where clause when aggregating by university', async () => {
+      prisma.students.findMany.mockResolvedValue([
+        {
+          university: 'SZABIST, Karachi',
+          verification_status: 'approved',
+        },
+      ]);
+
+      const result = await service.getAllStudents(
+        undefined,
+        1,
+        12,
+        'Ahmed pervez fateh',
+        undefined,
+        undefined,
+        'university',
+      );
+
+      expect(prisma.students.findMany).toHaveBeenCalledWith({
+        where: service.buildStudentWhereClause({
+          search: 'Ahmed pervez fateh',
+        }),
+        select: {
+          university: true,
+          verification_status: true,
+        },
+      });
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          group: 'SZABIST, Karachi',
+          total: 1,
+          approved: 1,
+        }),
+      ]);
+    });
+  });
 });
