@@ -754,7 +754,6 @@ export class AuthService {
     try {
       const signupEmailRedirectUrl =
         this.configService.get<string>('SIGNUP_EMAIL_REDIRECT_URL') ||
-        this.configService.get<string>('PASSWORD_RESET_REDIRECT_URL') ||
         'parchi://auth-callback';
 
       // 1. Check if email already exists
@@ -1251,11 +1250,17 @@ export class AuthService {
         return null;
       }
 
+      // Dedicated reset host so the app does not confuse recovery with signup
+      // (signup uses parchi://auth-callback). Must be allowlisted in Supabase.
+      const passwordResetRedirectUrl =
+        this.configService.get<string>('PASSWORD_RESET_REDIRECT_URL') ||
+        'parchi://reset-password';
+
       // Use Supabase to send password reset email
       const { error } = await this.supabase.auth.resetPasswordForEmail(
         forgotPasswordDto.email,
         {
-          redirectTo: this.configService.get<string>('PASSWORD_RESET_REDIRECT_URL') || undefined,
+          redirectTo: passwordResetRedirectUrl,
         },
       );
 
