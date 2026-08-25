@@ -7,7 +7,7 @@ export class FeaturedBrandDto {
 
   @IsInt()
   @Min(1)
-  @Max(6)
+  @Max(8)
   order: number;
 }
 

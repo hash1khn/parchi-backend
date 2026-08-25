@@ -502,7 +502,7 @@ export class MerchantsService {
   /**
    * Get all active brands (corporate merchants)
    * Accessible by students
-   * Featured brands (with featured_order 1-6) are shown first, then others alphabetically
+   * Featured brands (with featured_order 1-8) are shown first, then others alphabetically
    */
   async getAllBrands(): Promise<Partial<CorporateMerchantResponse>[]> {
     const brands = await this.prisma.merchants.findMany({
@@ -525,7 +525,7 @@ export class MerchantsService {
       },
     });
 
-    // Sort: featured brands first (by featured_order 1-6), then others alphabetically
+    // Sort: featured brands first (by featured_order 1-8), then others alphabetically
     brands.sort((a, b) => {
       // If both have featured_order, sort by featured_order
       if (a.featured_order !== null && b.featured_order !== null) {
@@ -2609,7 +2609,7 @@ export class MerchantsService {
   }
 
   /**
-   * Set featured brands (top 6 brands)
+   * Set featured brands (top 8 brands)
    * Admin only
    * Sets featured_order (1-6) for specified brands and clears it for others
    */
