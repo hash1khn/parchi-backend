@@ -45,6 +45,12 @@ export function startOfPakistanDay(d: Date): Date {
   return zonedWallTimePakistanToUtc(y, m, day, 0, 0, 0, 0);
 }
 
+/** Start of calendar month 00:00:00.000 PKT for the Pakistan calendar month of `d`. */
+export function startOfPakistanMonth(d: Date): Date {
+  const { y, m } = getYmdInPakistan(d);
+  return zonedWallTimePakistanToUtc(y, m, 1, 0, 0, 0, 0);
+}
+
 /** End of calendar day 23:59:59.999 PKT for the Pakistan calendar date of `d`. */
 export function endOfPakistanDay(d: Date): Date {
   const { y, m, day } = getYmdInPakistan(d);

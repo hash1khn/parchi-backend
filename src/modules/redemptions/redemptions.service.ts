@@ -28,6 +28,10 @@ import {
   startOfPakistanDay,
   zonedWallTimePakistanToUtc,
 } from '../../utils/pakistan-time.util';
+import {
+  countLoyaltyVisitsThisMonth,
+  isLoyaltyBonusVisit,
+} from '../../utils/loyalty-month.util';
 import { getOfferUnavailableReason } from '../../utils/offer-schedule.util';
 import { SohoStrategy } from './strategies/soho.strategy';
 import { AuditService } from '../audit/audit.service';
@@ -221,34 +225,16 @@ export class RedemptionsService {
     startOfDay.setHours(0, 0, 0, 0);
     const recentWindow = new Date(now.getTime() - this.DUPLICATE_PREVENTION_WINDOW_MS);
 
-    const [loyaltyPrograms, studentMerchantStats, studentOfferStats] = await Promise.all([
-      (this.prisma as any).loyalty_programs.findMany({
-        where: {
-          merchant_id: branch.merchant_id,
-          OR: [
-            { scope: 'merchant' },
-            { scope: 'offer', offer_id: createDto.offerId }
-          ],
-          is_active: true
-        }
-      }),
-      (this.prisma as any).student_merchant_stats.findUnique({
-        where: {
-          student_id_merchant_id: {
-            student_id: student.id,
-            merchant_id: branch.merchant_id,
-          },
-        },
-      }),
-      (this.prisma as any).student_offer_stats.findUnique({
-        where: {
-          student_id_offer_id: {
-            student_id: student.id,
-            offer_id: createDto.offerId,
-          },
-        },
-      }),
-    ]);
+    const loyaltyPrograms = await (this.prisma as any).loyalty_programs.findMany({
+      where: {
+        merchant_id: branch.merchant_id,
+        OR: [
+          { scope: 'merchant' },
+          { scope: 'offer', offer_id: createDto.offerId }
+        ],
+        is_active: true
+      }
+    });
 
     // ── Transaction: writes + race-condition guards only ─────────────────
     const redemption = await this.prisma.$transaction(
@@ -316,11 +302,14 @@ export class RedemptionsService {
           const activeProgram = activeOfferProgram || activeMerchantProgram;
 
           if (activeProgram) {
-            const redemptionCount = activeProgram.scope === 'offer' 
-              ? (studentOfferStats?.redemption_count || 0)
-              : (studentMerchantStats?.redemption_count || 0);
+            const visitsThisMonth = await countLoyaltyVisitsThisMonth(tx, {
+              studentId: student.id,
+              merchantId: branch.merchant_id,
+              offerId: activeProgram.scope === 'offer' ? createDto.offerId : undefined,
+              now,
+            });
 
-            if ((redemptionCount + 1) % activeProgram.redemptions_required === 0) {
+            if (isLoyaltyBonusVisit(visitsThisMonth + 1, activeProgram.redemptions_required)) {
               isBonusApplied = true;
               bonusDiscountType = activeProgram.discount_type;
               if (activeProgram.discount_type === 'percentage') {
@@ -2157,7 +2146,7 @@ export class RedemptionsService {
     const merchantId = branch.merchant_id;
 
     // Phase 2: parallel reads
-    const [student, offer, loyaltyPrograms, studentMerchantStats, studentOfferStats] =
+    const [student, offer, loyaltyPrograms] =
       await Promise.all([
         this.prisma.students.findUnique({
           where: { id: studentId },
@@ -2185,12 +2174,6 @@ export class RedemptionsService {
             OR: [{ scope: 'merchant' }, { scope: 'offer', offer_id: offerId }],
             is_active: true,
           },
-        }),
-        (this.prisma as any).student_merchant_stats.findUnique({
-          where: { student_id_merchant_id: { student_id: studentId, merchant_id: merchantId } },
-        }),
-        (this.prisma as any).student_offer_stats.findUnique({
-          where: { student_id_offer_id: { student_id: studentId, offer_id: offerId } },
         }),
       ]);
 
@@ -2257,11 +2240,14 @@ export class RedemptionsService {
           const activeProgram = activeOfferProgram || activeMerchantProgram;
 
           if (activeProgram) {
-            const redemptionCount = activeProgram.scope === 'offer'
-              ? (studentOfferStats?.redemption_count || 0)
-              : (studentMerchantStats?.redemption_count || 0);
+            const visitsThisMonth = await countLoyaltyVisitsThisMonth(tx, {
+              studentId,
+              merchantId,
+              offerId: activeProgram.scope === 'offer' ? offerId : undefined,
+              now,
+            });
 
-            if ((redemptionCount + 1) % activeProgram.redemptions_required === 0) {
+            if (isLoyaltyBonusVisit(visitsThisMonth + 1, activeProgram.redemptions_required)) {
               isBonusApplied = true;
               bonusDiscountType = activeProgram.discount_type;
               bonusAdditionalItem = activeProgram.additional_item ?? null;

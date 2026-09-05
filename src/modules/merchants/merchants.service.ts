@@ -27,6 +27,7 @@ import {
   PaginationMeta,
 } from '../../utils/pagination.util';
 import { formatPakistaniPhone } from '../../utils/pakistani-phone.util';
+import { startOfPakistanMonth } from '../../utils/pakistan-time.util';
 
 export interface CorporateMerchantResponse {
   id: string;
@@ -103,6 +104,7 @@ export interface LoyaltyProgramResponse {
 /** Loyalty reward summary (merchant-wide or per-offer) */
 export interface LoyaltySummaryInMerchantDetails {
   redemptionsRequired: number;
+  /** Visits this Pakistan calendar month toward the bonus. Resets on the 1st. */
   currentRedemptions?: number;
   discountDescription: string;
   isActive: boolean;
@@ -2341,13 +2343,14 @@ export class MerchantsService {
     //
     // This raw query fetches everything in one go:
     //   • merchant + role validation
-    //   • active branches + bonus settings (LEFT JOIN)
-    //   • active/valid offers with their branch assignments (LEFT JOIN + JSON_AGG)
-    //   • student redemption stats for this student × these branches (LEFT JOIN)
+    //   • active branches + merchant-wide loyalty
+    //   • active/valid offers (LEFT JOIN + JSON_AGG)
+    //   • this-month visit count toward the loyalty bonus (PKT calendar month)
     //
     // All joins are on indexed foreign keys, so Postgres cost is unchanged.
     // The only saving is eliminating 2 extra network hops.
     const now = new Date();
+    const monthStart = startOfPakistanMonth(now);
 
     // Resolve student UUID once (cheap indexed lookup on idx_students_user)
     // Only needed if a userId was supplied.
@@ -2419,8 +2422,15 @@ export class MerchantsService {
         lp.additional_item          AS lp_additional_item,
         lp.is_active                AS lp_is_active,
 
-        -- Merchant-wide loyalty count
-        sms.redemption_count        AS sms_redemption_count,
+        -- Merchant-wide loyalty count this Pakistan calendar month
+        (
+          SELECT COUNT(*)::int
+          FROM public.redemptions r
+          JOIN public.merchant_branches mb ON mb.id = r.branch_id
+          WHERE r.student_id = ${studentId ? studentId : null}::uuid
+            AND mb.merchant_id = m.id
+            AND r.created_at >= ${monthStart}
+        )                       AS sms_redemption_count,
 
         -- Branch
         b.id                        AS b_id,
@@ -2459,7 +2469,6 @@ export class MerchantsService {
       FROM public.merchants m
       JOIN public.users u ON u.id = m.user_id
       LEFT JOIN public.loyalty_programs lp ON lp.merchant_id = m.id AND lp.scope = 'merchant' AND lp.is_active = true
-      LEFT JOIN public.student_merchant_stats sms ON sms.merchant_id = m.id AND sms.student_id = ${studentId ? studentId : null}::uuid
       LEFT JOIN public.merchant_branches b ON b.merchant_id = m.id AND b.is_active = true
       WHERE m.id = ${merchantId}::uuid
       ORDER BY b.branch_name ASC
@@ -2522,16 +2531,20 @@ export class MerchantsService {
       let offerRedemptionMap = new Map<string, number>();
       if (studentId) {
         const offerIds = [...loyaltyByOfferId.keys()];
-        const offerStats = await this.prisma.student_offer_stats.findMany({
-          where: {
-            student_id: studentId,
-            offer_id: { in: offerIds },
-          },
-          select: { offer_id: true, redemption_count: true },
-        });
-        offerRedemptionMap = new Map(
-          offerStats.map((s) => [s.offer_id, s.redemption_count ?? 0]),
-        );
+        if (offerIds.length > 0) {
+          const offerStats = await this.prisma.redemptions.groupBy({
+            by: ['offer_id'],
+            where: {
+              student_id: studentId,
+              offer_id: { in: offerIds },
+              created_at: { gte: monthStart },
+            },
+            _count: { id: true },
+          });
+          offerRedemptionMap = new Map(
+            offerStats.map((s) => [s.offer_id, s._count.id ?? 0]),
+          );
+        }
       }
 
       offers = offers.map((offer) => {

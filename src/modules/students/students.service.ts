@@ -25,6 +25,8 @@ import { PaginationMeta } from '../../utils/pagination.util';
 import { SohoStrategy } from '../redemptions/strategies/soho.strategy';
 import { generateParchiId } from '../../utils/parchi-id.util';
 import { rowsToCsv } from '../../utils/csv.util';
+import { startOfPakistanMonth } from '../../utils/pakistan-time.util';
+import { monthlyPunchCardCurrent } from '../../utils/loyalty-month.util';
 import { buildStudentFilterWhere } from './filters/student-filter.builder';
 import {
   getStudentFilterFieldsMetadata,
@@ -842,24 +844,25 @@ export class StudentsService {
     }
     // Parallelize independent queries for better performance
     const now = new Date();
-    const [studentMerchantStats, studentOfferStats, loyaltyPrograms, branchOffers, lastRedemption] = await Promise.all([
-      // 1. Get student merchant-wide stats
-      (this.prisma as any).student_merchant_stats.findUnique({
-        where: {
-          student_id_merchant_id: {
-            student_id: student.id,
-            merchant_id: merchantId,
-          },
-        },
-        select: { redemption_count: true },
-      }),
-      // 2. Get student offer-specific stats
-      (this.prisma as any).student_offer_stats.findMany({
+    const monthStart = startOfPakistanMonth(now);
+    const [merchantMonthVisits, offerMonthVisits, loyaltyPrograms, branchOffers, lastRedemption] = await Promise.all([
+      // 1. Visits at this merchant this Pakistan calendar month
+      this.prisma.redemptions.count({
         where: {
           student_id: student.id,
-          offers: { merchant_id: merchantId }
+          merchant_branches: { merchant_id: merchantId },
+          created_at: { gte: monthStart },
         },
-        select: { offer_id: true, redemption_count: true }
+      }),
+      // 2. Per-offer visits this month (for offer-scoped loyalty)
+      this.prisma.redemptions.groupBy({
+        by: ['offer_id'],
+        where: {
+          student_id: student.id,
+          created_at: { gte: monthStart },
+          offers: { merchant_id: merchantId },
+        },
+        _count: { id: true },
       }),
       // 3. Get all active loyalty programs for this merchant
       (this.prisma as any).loyalty_programs.findMany({
@@ -894,7 +897,7 @@ export class StudentsService {
     ]);
 
     // Map offer stats for easy lookup
-    const offerStatsMap = new Map(studentOfferStats.map(s => [s.offer_id, s.redemption_count]));
+    const offerStatsMap = new Map(offerMonthVisits.map(s => [s.offer_id, s._count.id]));
 
     // Determine applicable offers
     const offers = await Promise.all(branchOffers.map(async (offer) => {
@@ -913,7 +916,7 @@ export class StudentsService {
       }
 
       const currentOfferRedemptions = (offerStatsMap.get(offer.id) as any) ?? 0;
-      const currentMerchantRedemptions = (studentMerchantStats as any)?.redemption_count ?? 0;
+      const currentMerchantRedemptions = merchantMonthVisits;
 
       return this.determineOfferStatus(
         offer,
@@ -1774,27 +1777,43 @@ export class StudentsService {
       platform = await this.getInferredPlatform(student.user_id) || undefined;
     }
 
-    // Get loyalty progress across all merchants
-    const loyaltyProgress = await this.prisma.student_merchant_stats.findMany({
-      where: { student_id: student.id },
-      include: {
-        merchants: {
-          include: {
-            loyalty_programs: {
-              where: { is_active: true, scope: 'merchant' },
-              take: 1
+    // Get loyalty progress across all merchants (this Pakistan calendar month)
+    const monthStart = startOfPakistanMonth(new Date());
+    const [loyaltyProgress, monthlyVisitRows] = await Promise.all([
+      this.prisma.student_merchant_stats.findMany({
+        where: { student_id: student.id },
+        include: {
+          merchants: {
+            include: {
+              loyalty_programs: {
+                where: { is_active: true, scope: 'merchant' },
+                take: 1
+              }
             }
           }
         }
-      }
-    });
+      }),
+      this.prisma.$queryRaw<Array<{ merchant_id: string; visit_count: bigint }>>`
+        SELECT mb.merchant_id, COUNT(*)::bigint AS visit_count
+        FROM redemptions r
+        JOIN merchant_branches mb ON mb.id = r.branch_id
+        WHERE r.student_id = ${student.id}::uuid
+          AND r.created_at >= ${monthStart}
+        GROUP BY mb.merchant_id
+      `,
+    ]);
+
+    const monthlyVisitsByMerchant = new Map(
+      monthlyVisitRows.map((row) => [row.merchant_id, Number(row.visit_count)]),
+    );
 
     const formattedLoyalty = loyaltyProgress
       .filter(stat => stat.merchants.loyalty_programs.length > 0)
       .map(stat => {
         const prog = stat.merchants.loyalty_programs[0];
         const req = prog.redemptions_required || 5;
-        const current = (stat.redemption_count || 0) % req;
+        const visitsThisMonth = monthlyVisitsByMerchant.get(stat.merchant_id) ?? 0;
+        const current = monthlyPunchCardCurrent(visitsThisMonth, req);
         return {
           merchantName: stat.merchants.business_name,
           merchantLogo: stat.merchants.logo_path,
