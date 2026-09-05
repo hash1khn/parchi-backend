@@ -218,6 +218,8 @@ export class QrRedemptionsService {
           isBonusApplied: redemption.isBonusApplied,
           bonusDiscountApplied: redemption.bonusDiscountApplied,
           bonusDiscountType: redemption.bonusDiscountType,
+          bonusDescription: redemption.bonusDescription,
+          bonusAdditionalItem: redemption.bonusAdditionalItem,
         },
       };
     }
@@ -326,25 +328,34 @@ export class QrRedemptionsService {
         where: { id: request.redemption_id },
       });
       if (redemption) {
-        const bonusDiscountType = redemption.is_bonus_applied
-          ? await this.redemptionsService.resolveBonusDiscountType(
+        const bonusDetails = redemption.is_bonus_applied
+          ? await this.redemptionsService.resolveBonusDetails(
               request.merchant_branches.merchant_id,
               request.offer_id,
               {
                 redemptionStrategy: request.offers?.redemption_strategy,
                 isBonusApplied: true,
+                bonusDiscountApplied: redemption.bonus_discount_applied != null
+                  ? Number(redemption.bonus_discount_applied)
+                  : null,
               },
             )
-          : null;
+          : { type: null, additionalItem: null, description: null };
 
         request.redemption = {
           id: redemption.id,
           isBonusApplied: redemption.is_bonus_applied,
-          bonusDiscountApplied: redemption.bonus_discount_applied ? Number(redemption.bonus_discount_applied) : null,
-          bonusDiscountType,
+          bonusDiscountApplied: redemption.bonus_discount_applied != null
+            ? Number(redemption.bonus_discount_applied)
+            : null,
+          bonusDiscountType: bonusDetails.type,
+          bonusDescription: bonusDetails.description,
+          bonusAdditionalItem: bonusDetails.additionalItem,
           offer: request.offers ? {
             title: request.offers.title,
             formattedDiscount: this.formatDiscount(request.offers),
+            discountType: request.offers.discount_type,
+            discountValue: Number(request.offers.discount_value),
           } : null,
           branch: request.merchant_branches ? {
             branchName: request.merchant_branches.branch_name,

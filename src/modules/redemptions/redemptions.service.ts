@@ -42,6 +42,8 @@ export interface RedemptionResponse {
   isBonusApplied: boolean;
   bonusDiscountApplied: number | null;
   bonusDiscountType?: string | null;
+  bonusDescription?: string | null;
+  bonusAdditionalItem?: string | null;
   verifiedBy: string | null;
   notes: string | null;
   createdAt: Date | null;
@@ -1662,6 +1664,28 @@ export class RedemptionsService {
   }
 
   /**
+   * Human-readable loyalty bonus line (percentage extra, cash extra, or free item).
+   */
+  formatBonusRewardDescription(
+    discountType: string | null | undefined,
+    discountValue: number | null | undefined,
+    additionalItem?: string | null,
+  ): string {
+    const type = (discountType ?? '').toLowerCase();
+    if (type === 'percentage' && discountValue != null) {
+      return `${discountValue}% extra off`;
+    }
+    if ((type === 'fixed' || type === 'pkr') && discountValue != null) {
+      return `Rs. ${discountValue} extra off`;
+    }
+    if (type === 'item') {
+      const item = additionalItem?.trim();
+      return item ? `Free ${item}` : 'Free reward';
+    }
+    return 'Loyalty bonus unlocked';
+  }
+
+  /**
    * Resolve how a loyalty bonus discount should be displayed (percentage, fixed, item).
    */
   async resolveBonusDiscountType(
@@ -1669,8 +1693,39 @@ export class RedemptionsService {
     offerId: string,
     options?: { redemptionStrategy?: string | null; isBonusApplied?: boolean },
   ): Promise<string | null> {
-    if (!options?.isBonusApplied) return null;
-    if (options.redemptionStrategy === 'soho_hierarchical') return 'percentage';
+    const details = await this.resolveBonusDetails(merchantId, offerId, options);
+    return details.type;
+  }
+
+  /**
+   * Full bonus display payload for student/staff UIs.
+   */
+  async resolveBonusDetails(
+    merchantId: string,
+    offerId: string,
+    options?: {
+      redemptionStrategy?: string | null;
+      isBonusApplied?: boolean;
+      bonusDiscountApplied?: number | null;
+    },
+  ): Promise<{
+    type: string | null;
+    additionalItem: string | null;
+    description: string | null;
+  }> {
+    if (!options?.isBonusApplied) {
+      return { type: null, additionalItem: null, description: null };
+    }
+    if (options.redemptionStrategy === 'soho_hierarchical') {
+      return {
+        type: 'percentage',
+        additionalItem: null,
+        description: this.formatBonusRewardDescription(
+          'percentage',
+          options.bonusDiscountApplied ?? null,
+        ),
+      };
+    }
 
     const loyaltyPrograms = await (this.prisma as any).loyalty_programs.findMany({
       where: {
@@ -1685,7 +1740,20 @@ export class RedemptionsService {
     );
     const activeMerchantProgram = loyaltyPrograms.find((p: any) => p.scope === 'merchant');
     const activeProgram = activeOfferProgram || activeMerchantProgram;
-    return activeProgram?.discount_type ?? 'percentage';
+    const type = activeProgram?.discount_type ?? 'percentage';
+    const additionalItem = activeProgram?.additional_item ?? null;
+    const value =
+      options.bonusDiscountApplied != null
+        ? Number(options.bonusDiscountApplied)
+        : activeProgram?.discount_value != null
+          ? Number(activeProgram.discount_value)
+          : null;
+
+    return {
+      type,
+      additionalItem,
+      description: this.formatBonusRewardDescription(type, value, additionalItem),
+    };
   }
 
   /**
@@ -1700,13 +1768,17 @@ export class RedemptionsService {
           : 'pending';
 
     const merchantId = redemption.merchant_branches?.merchants?.id;
-    const bonusDiscountType =
+    const bonusDetails =
       redemption.is_bonus_applied && merchantId
-        ? await this.resolveBonusDiscountType(merchantId, redemption.offer_id, {
+        ? await this.resolveBonusDetails(merchantId, redemption.offer_id, {
             redemptionStrategy: redemption.offers?.redemption_strategy,
             isBonusApplied: true,
+            bonusDiscountApplied: redemption.bonus_discount_applied != null
+              ? Number(redemption.bonus_discount_applied)
+              : null,
           })
-        : null;
+        : { type: null, additionalItem: null, description: null };
+    const bonusDiscountType = bonusDetails.type;
 
     const offerDiscountType = redemption.is_bonus_applied && bonusDiscountType
       ? bonusDiscountType
@@ -1718,10 +1790,12 @@ export class RedemptionsService {
       offerId: redemption.offer_id,
       branchId: redemption.branch_id,
       isBonusApplied: redemption.is_bonus_applied || false,
-      bonusDiscountApplied: redemption.bonus_discount_applied
+      bonusDiscountApplied: redemption.bonus_discount_applied != null
         ? Number(redemption.bonus_discount_applied)
         : null,
       bonusDiscountType,
+      bonusDescription: bonusDetails.description,
+      bonusAdditionalItem: bonusDetails.additionalItem,
       verifiedBy: redemption.verified_by,
       notes: redemption.notes,
       createdAt: redemption.created_at,
@@ -2059,7 +2133,14 @@ export class RedemptionsService {
     verifiedById: string;
     notes?: string;
     imageUrl?: string;
-  }): Promise<{ id: string; isBonusApplied: boolean; bonusDiscountApplied: number | null; bonusDiscountType: string | null }> {
+  }): Promise<{
+    id: string;
+    isBonusApplied: boolean;
+    bonusDiscountApplied: number | null;
+    bonusDiscountType: string | null;
+    bonusDescription: string | null;
+    bonusAdditionalItem: string | null;
+  }> {
     const { studentId, offerId, branchId, verifiedById, notes, imageUrl } = params;
     const now = new Date();
     const recentWindow = new Date(now.getTime() - this.DUPLICATE_PREVENTION_WINDOW_MS);
@@ -2121,6 +2202,8 @@ export class RedemptionsService {
     startOfDay.setHours(0, 0, 0, 0);
 
     let bonusDiscountType: string | null = null;
+    let bonusAdditionalItem: string | null = null;
+    let bonusDescription: string | null = null;
 
     const newRedemption = await this.prisma.$transaction(
       async (tx) => {
@@ -2162,6 +2245,10 @@ export class RedemptionsService {
           bonusDiscountApplied = calculatedStrategyDiscount;
           bonusDiscountType = 'percentage';
           isBonusApplied = true;
+          bonusDescription = this.formatBonusRewardDescription(
+            'percentage',
+            bonusDiscountApplied,
+          );
         }
 
         if (!(offer as any).redemption_strategy && loyaltyPrograms.length > 0) {
@@ -2177,6 +2264,7 @@ export class RedemptionsService {
             if ((redemptionCount + 1) % activeProgram.redemptions_required === 0) {
               isBonusApplied = true;
               bonusDiscountType = activeProgram.discount_type;
+              bonusAdditionalItem = activeProgram.additional_item ?? null;
               if (activeProgram.discount_type === 'percentage') {
                 bonusDiscountApplied = Number(activeProgram.discount_value);
                 if (activeProgram.max_discount_amount) {
@@ -2187,6 +2275,11 @@ export class RedemptionsService {
               } else if (activeProgram.discount_type === 'item') {
                 bonusDiscountApplied = 0;
               }
+              bonusDescription = this.formatBonusRewardDescription(
+                bonusDiscountType,
+                bonusDiscountApplied,
+                bonusAdditionalItem,
+              );
             }
           }
         }
@@ -2287,6 +2380,8 @@ export class RedemptionsService {
       isBonusApplied: newRedemption.is_bonus_applied ?? false,
       bonusDiscountApplied: newRedemption.bonus_discount_applied !== null ? Number(newRedemption.bonus_discount_applied) : null,
       bonusDiscountType,
+      bonusDescription,
+      bonusAdditionalItem,
     };
   }
 }
