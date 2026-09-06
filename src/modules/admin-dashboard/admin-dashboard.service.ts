@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminDashboardStatsResponse } from './dto/dashboard-stats-response.dto';
 import { RedemptionAnalyticsResponse } from './dto/redemption-analytics-response.dto';
+import { ApprovedSignupsAnalyticsResponse } from './dto/approved-signups-analytics-response.dto';
 import {
     BrandPortfolioHealthResponse,
     CompetitorBenchmarksResponse,
@@ -1103,6 +1104,139 @@ export class AdminDashboardService {
             behaviorHistogram,
             repeatRates,
             fifthBonusStats,
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // New Approved Signups Analytics
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Volume trends of NEW signups that have been approved, bucketed by
+     * day / week / month / year. "Approved" = students.verification_status = 'approved',
+     * bucketed on verified_at (the approval timestamp), mirroring how
+     * getPlatformOverview counts "students approved this month".
+     *
+     * When no custom range is supplied each bucket falls back to a sensible
+     * trailing window (30 days / 12 weeks / 12 months / 5 years).
+     */
+    async getApprovedSignupsAnalytics(
+        startDate?: Date,
+        endDate?: Date,
+    ): Promise<ApprovedSignupsAnalyticsResponse> {
+        const dateFilter = Prisma.sql`
+            ${startDate ? Prisma.sql`AND verified_at >= ${startDate}` : Prisma.empty}
+            ${endDate ? Prisma.sql`AND verified_at <= ${endDate}` : Prisma.empty}
+        `;
+
+        const baseWhere = Prisma.sql`
+            WHERE verification_status = 'approved'
+              AND verified_at IS NOT NULL
+              ${dateFilter}
+        `;
+
+        // Trailing windows only when the caller has not pinned a custom range.
+        const dailyLimit = startDate ? Prisma.empty : Prisma.sql`AND verified_at >= NOW() - INTERVAL '30 days'`;
+        const weeklyLimit = startDate ? Prisma.empty : Prisma.sql`AND verified_at >= NOW() - INTERVAL '12 weeks'`;
+        const monthlyLimit = startDate ? Prisma.empty : Prisma.sql`AND verified_at >= NOW() - INTERVAL '12 months'`;
+        const yearlyLimit = startDate ? Prisma.empty : Prisma.sql`AND verified_at >= NOW() - INTERVAL '5 years'`;
+
+        const now = new Date();
+        const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const endOfLastMonth = startOfCurrentMonth;
+
+        const [
+            totalApprovedResult,
+            dailyTrends,
+            weeklyTrends,
+            monthlyTrends,
+            yearlyTrends,
+            thisMonthResult,
+            lastMonthResult,
+        ] = await Promise.all([
+            // Total approved within the selected window (all-time when no range).
+            this.prisma.$queryRaw<[{ count: bigint }]>`
+                SELECT COUNT(*) AS count
+                FROM students
+                ${baseWhere}
+            `,
+            // Daily buckets
+            this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
+                SELECT
+                    TO_CHAR(verified_at AT TIME ZONE 'Asia/Karachi', 'YYYY-MM-DD') AS date,
+                    COUNT(*) AS count
+                FROM students
+                ${baseWhere}
+                ${dailyLimit}
+                GROUP BY date
+                ORDER BY date
+            `,
+            // Weekly buckets (ISO week start)
+            this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
+                SELECT
+                    TO_CHAR(DATE_TRUNC('week', verified_at AT TIME ZONE 'Asia/Karachi'), 'YYYY-MM-DD') AS date,
+                    COUNT(*) AS count
+                FROM students
+                ${baseWhere}
+                ${weeklyLimit}
+                GROUP BY date
+                ORDER BY date
+            `,
+            // Monthly buckets
+            this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
+                SELECT
+                    TO_CHAR(DATE_TRUNC('month', verified_at AT TIME ZONE 'Asia/Karachi'), 'YYYY-MM') AS date,
+                    COUNT(*) AS count
+                FROM students
+                ${baseWhere}
+                ${monthlyLimit}
+                GROUP BY date
+                ORDER BY date
+            `,
+            // Yearly buckets
+            this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
+                SELECT
+                    TO_CHAR(DATE_TRUNC('year', verified_at AT TIME ZONE 'Asia/Karachi'), 'YYYY') AS date,
+                    COUNT(*) AS count
+                FROM students
+                ${baseWhere}
+                ${yearlyLimit}
+                GROUP BY date
+                ORDER BY date
+            `,
+            // Approved this calendar month (independent of the range filter)
+            this.prisma.students.count({
+                where: {
+                    verification_status: 'approved',
+                    verified_at: { gte: startOfCurrentMonth },
+                },
+            }),
+            // Approved last calendar month
+            this.prisma.students.count({
+                where: {
+                    verification_status: 'approved',
+                    verified_at: { gte: startOfLastMonth, lt: endOfLastMonth },
+                },
+            }),
+        ]);
+
+        const thisMonth = Number(thisMonthResult ?? 0);
+        const lastMonth = Number(lastMonthResult ?? 0);
+
+        return {
+            totalApproved: Number(totalApprovedResult[0]?.count ?? 0),
+            thisMonth,
+            lastMonth,
+            changePercent: lastMonth > 0
+                ? Math.round(((thisMonth - lastMonth) / lastMonth) * 1000) / 10
+                : 0,
+            volumeTrends: {
+                daily:   dailyTrends.map(r   => ({ date: r.date, count: Number(r.count) })),
+                weekly:  weeklyTrends.map(r  => ({ date: r.date, count: Number(r.count) })),
+                monthly: monthlyTrends.map(r => ({ date: r.date, count: Number(r.count) })),
+                yearly:  yearlyTrends.map(r  => ({ date: r.date, count: Number(r.count) })),
+            },
         };
     }
 

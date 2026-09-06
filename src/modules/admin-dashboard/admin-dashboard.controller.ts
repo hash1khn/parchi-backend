@@ -184,6 +184,24 @@ export class AdminDashboardController {
         return createApiResponse(data, 'Redemption analytics retrieved successfully');
     }
 
+    @Get('approved-signups-analytics')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(ROLES.ADMIN)
+    @HttpCode(HttpStatus.OK)
+    async getApprovedSignupsAnalytics(
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+    ) {
+        const data = await this.adminDashboardService.getApprovedSignupsAnalytics(
+            startDate ? new Date(startDate) : undefined,
+            endDate ? new Date(endDate) : undefined,
+        );
+        return createApiResponse(
+            data,
+            'Approved signups analytics retrieved successfully',
+        );
+    }
+
     @Get('brand-portfolio')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(ROLES.ADMIN)
