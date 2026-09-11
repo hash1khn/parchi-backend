@@ -502,6 +502,43 @@ export class MerchantsService {
   }
 
   /**
+   * Public platform-wide stats for the landing page (merchants, students, redemptions)
+   */
+  async getPublicStats(): Promise<{
+    totalMerchants: number;
+    totalStudents: number;
+    totalRedemptions: number;
+    redemptionsThisMonth: number;
+  }> {
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const [totalMerchants, totalStudents, totalRedemptions, redemptionsThisMonth] =
+      await Promise.all([
+        this.prisma.merchants.count({
+          where: {
+            verification_status: 'approved',
+            is_active: true,
+          },
+        }),
+        this.prisma.students.count({
+          where: {
+            verification_status: 'approved',
+          },
+        }),
+        this.prisma.redemptions.count(),
+        this.prisma.redemptions.count({
+          where: {
+            created_at: { gte: startOfMonth },
+          },
+        }),
+      ]);
+
+    return { totalMerchants, totalStudents, totalRedemptions, redemptionsThisMonth };
+  }
+
+  /**
    * Get all active brands (corporate merchants)
    * Accessible by students
    * Featured brands (with featured_order 1-8) are shown first, then others alphabetically
