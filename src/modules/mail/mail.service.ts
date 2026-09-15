@@ -200,10 +200,14 @@ export class MailService {
         periodLabel: string;
         totalRedemptions: number;
         uniqueStudents: number;
-        totalDiscountGiven: number;
-        avgDiscountPerOrder: number;
+        bonusRedemptions: number;
+        totalFixedDiscountPkr: number;
         branchRows: { branchName: string; totalRedemptions: number }[];
-        topOffers: { offerTitle: string; totalRedemptions: number }[];
+        topOffers: {
+            offerTitle: string;
+            totalRedemptions: number;
+            discountLabel: string;
+        }[];
         pdfBuffer: Buffer;
         pdfFileName: string;
         dashboardUrl?: string;
@@ -214,8 +218,8 @@ export class MailService {
             periodLabel,
             totalRedemptions,
             uniqueStudents,
-            totalDiscountGiven,
-            avgDiscountPerOrder,
+            bonusRedemptions,
+            totalFixedDiscountPkr,
             branchRows,
             topOffers,
             pdfBuffer,
@@ -240,10 +244,10 @@ export class MailService {
                 ? topOffers
                       .map(
                           (o) =>
-                              `<tr><td style="padding:8px;border-bottom:1px solid #eee;">${escapeHtml(o.offerTitle)}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${o.totalRedemptions}</td></tr>`,
+                              `<tr><td style="padding:8px;border-bottom:1px solid #eee;">${escapeHtml(o.offerTitle)}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${o.totalRedemptions}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(o.discountLabel)}</td></tr>`,
                       )
                       .join('')
-                : `<tr><td colspan="2" style="padding:8px;color:#666;">No offer activity this month</td></tr>`;
+                : `<tr><td colspan="3" style="padding:8px;color:#666;">No offer activity this month</td></tr>`;
 
         const cta = dashboardUrl
             ? `<div style="text-align:center;margin-top:28px;"><a href="${dashboardUrl}" style="background-color:#1a1a2e;color:#fff;padding:12px 24px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">Open Dashboard</a></div>`
@@ -263,8 +267,8 @@ export class MailService {
             <tr>
               <td style="padding:14px;text-align:center;width:25%;"><div style="font-size:11px;color:#666;text-transform:uppercase;">Redemptions</div><div style="font-size:22px;font-weight:bold;margin-top:4px;">${totalRedemptions}</div></td>
               <td style="padding:14px;text-align:center;width:25%;"><div style="font-size:11px;color:#666;text-transform:uppercase;">Students</div><div style="font-size:22px;font-weight:bold;margin-top:4px;">${uniqueStudents}</div></td>
-              <td style="padding:14px;text-align:center;width:25%;"><div style="font-size:11px;color:#666;text-transform:uppercase;">Discount Given</div><div style="font-size:22px;font-weight:bold;margin-top:4px;">PKR ${Math.round(totalDiscountGiven)}</div></td>
-              <td style="padding:14px;text-align:center;width:25%;"><div style="font-size:11px;color:#666;text-transform:uppercase;">Avg / Order</div><div style="font-size:22px;font-weight:bold;margin-top:4px;">PKR ${avgDiscountPerOrder}</div></td>
+              <td style="padding:14px;text-align:center;width:25%;"><div style="font-size:11px;color:#666;text-transform:uppercase;">Bonus Redemptions</div><div style="font-size:22px;font-weight:bold;margin-top:4px;">${bonusRedemptions}</div></td>
+              <td style="padding:14px;text-align:center;width:25%;"><div style="font-size:11px;color:#666;text-transform:uppercase;">Fixed Disc. PKR</div><div style="font-size:22px;font-weight:bold;margin-top:4px;">${Math.round(totalFixedDiscountPkr)}</div></td>
             </tr>
           </table>
 
@@ -276,7 +280,7 @@ export class MailService {
 
           <h3 style="margin:24px 0 8px 0;font-size:15px;">Top Offers</h3>
           <table style="width:100%;border-collapse:collapse;font-size:14px;">
-            <thead><tr style="background:#f0f0f0;"><th style="padding:8px;text-align:left;">Offer</th><th style="padding:8px;text-align:right;">Redemptions</th></tr></thead>
+            <thead><tr style="background:#f0f0f0;"><th style="padding:8px;text-align:left;">Offer</th><th style="padding:8px;text-align:right;">Redemptions</th><th style="padding:8px;text-align:right;">Discount</th></tr></thead>
             <tbody>${offersHtml}</tbody>
           </table>
 

@@ -33,7 +33,6 @@ export class MerchantDigestPdfService {
   private readonly printer = new PdfPrinter(fonts);
 
   async generate(digest: MerchantDigestPayload): Promise<Buffer> {
-    // Compact date so the Date column does not wrap awkwardly
     const fmtDate = (d: Date) =>
       new Intl.DateTimeFormat('en-GB', {
         timeZone: PAKISTAN_TIMEZONE,
@@ -85,9 +84,9 @@ export class MerchantDigestPdfService {
           {
             width: '*',
             stack: [
-              { text: 'Total Discount Given', style: 'kpiLabel' },
+              { text: 'Bonus Redemptions', style: 'kpiLabel' },
               {
-                text: `PKR ${Math.round(digest.summary.totalDiscountGiven)}`,
+                text: String(digest.summary.bonusRedemptions),
                 style: 'kpiValue',
               },
             ],
@@ -95,9 +94,9 @@ export class MerchantDigestPdfService {
           {
             width: '*',
             stack: [
-              { text: 'Avg Discount / Order', style: 'kpiLabel' },
+              { text: 'Fixed Discount (PKR)', style: 'kpiLabel' },
               {
-                text: `PKR ${digest.summary.avgDiscountPerOrder}`,
+                text: `PKR ${Math.round(digest.summary.totalFixedDiscountPkr)}`,
                 style: 'kpiValue',
               },
             ],
@@ -123,7 +122,12 @@ export class MerchantDigestPdfService {
                     alignment: 'right' as const,
                   },
                 ])
-              : [['No branch activity', { text: '0', alignment: 'right' as const }]]),
+              : [
+                  [
+                    'No branch activity',
+                    { text: '0', alignment: 'right' as const },
+                  ],
+                ]),
           ],
         },
         layout: 'lightHorizontalLines',
@@ -148,10 +152,7 @@ export class MerchantDigestPdfService {
                     alignment: 'right' as const,
                   },
                   {
-                    text:
-                      o.discountType === 'percentage'
-                        ? `${o.discountValue}%`
-                        : `PKR ${o.discountValue}`,
+                    text: pdfSafe(o.discountLabel),
                     alignment: 'right' as const,
                   },
                 ])
@@ -173,16 +174,16 @@ export class MerchantDigestPdfService {
         margin: [0, 0, 0, 8],
       },
       {
-        // Landscape-friendly fixed widths on A4 portrait (~515pt usable)
         table: {
           headerRows: 1,
           dontBreakRows: true,
-          widths: [78, 78, 95, 48, 110, 42],
+          widths: [72, 70, 88, 42, 42, 95, 42],
           body: [
             [
               { text: 'Date (PKT)', style: 'tableHeader' },
               { text: 'Branch', style: 'tableHeader' },
               { text: 'Offer', style: 'tableHeader' },
+              { text: 'Offer Disc', style: 'tableHeader' },
               { text: 'Parchi ID', style: 'tableHeader' },
               { text: 'University', style: 'tableHeader' },
               { text: 'Bonus', style: 'tableHeader', alignment: 'right' },
@@ -192,13 +193,11 @@ export class MerchantDigestPdfService {
                   fmtDate(r.date),
                   pdfSafe(r.branchName),
                   pdfSafe(r.offerTitle),
+                  pdfSafe(r.offerDiscountLabel),
                   pdfSafe(r.parchiId),
                   pdfSafe(r.university || empty),
                   {
-                    text:
-                      r.bonusDiscountApplied > 0
-                        ? `PKR ${r.bonusDiscountApplied}`
-                        : empty,
+                    text: pdfSafe(r.bonusDiscountLabel),
                     alignment: 'right' as const,
                   },
                 ])
@@ -206,6 +205,7 @@ export class MerchantDigestPdfService {
                   [
                     empty,
                     'No redemptions this month',
+                    empty,
                     empty,
                     empty,
                     empty,
@@ -234,7 +234,7 @@ export class MerchantDigestPdfService {
         sectionTitle: { fontSize: 12, bold: true, color: '#1a1a2e' },
         kpiLabel: { fontSize: 8, color: '#666666' },
         kpiValue: { fontSize: 14, bold: true, margin: [0, 2, 0, 0] },
-        tableHeader: { bold: true, fillColor: '#f0f0f0', fontSize: 8 },
+        tableHeader: { bold: true, fillColor: '#f0f0f0', fontSize: 7 },
         footer: { fontSize: 8, color: '#999999' },
       },
       content,

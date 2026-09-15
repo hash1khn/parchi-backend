@@ -13,6 +13,7 @@ import {
   pakistanCalendarMonthRange,
   previousPakistanCalendarMonthRange,
 } from '../../utils/pakistan-time.util';
+import { formatDiscountLabel } from './merchant-digest.types';
 
 const BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 1500;
@@ -97,6 +98,8 @@ export class MerchantDigestService {
                   title: true,
                   discount_value: true,
                   discount_type: true,
+                  redemption_strategy: true,
+                  additional_item: true,
                 },
               },
               students: {
@@ -109,8 +112,41 @@ export class MerchantDigestService {
             orderBy: { created_at: 'desc' },
           });
 
+    const loyaltyPrograms = await this.prisma.loyalty_programs.findMany({
+      where: { merchant_id: merchantId, is_active: true },
+      select: {
+        scope: true,
+        offer_id: true,
+        discount_type: true,
+        additional_item: true,
+      },
+    });
+
+    const resolveBonusType = (
+      offerId: string,
+      redemptionStrategy: string | null | undefined,
+      isBonusApplied: boolean | null | undefined,
+    ): { type: string | null; additionalItem: string | null } => {
+      if (!isBonusApplied) return { type: null, additionalItem: null };
+      if (redemptionStrategy === 'soho_hierarchical') {
+        return { type: 'percentage', additionalItem: null };
+      }
+      const offerProgram = loyaltyPrograms.find(
+        (p) => p.scope === 'offer' && p.offer_id === offerId,
+      );
+      const merchantProgram = loyaltyPrograms.find(
+        (p) => p.scope === 'merchant',
+      );
+      const program = offerProgram || merchantProgram;
+      return {
+        type: program?.discount_type ?? 'percentage',
+        additionalItem: program?.additional_item ?? null,
+      };
+    };
+
     const uniqueStudentIds = new Set<string>();
-    let totalDiscountGiven = 0;
+    let totalFixedDiscountPkr = 0;
+    let bonusRedemptions = 0;
     const branchMap = new Map<string, number>();
     const offerMap = new Map<
       string,
@@ -124,11 +160,25 @@ export class MerchantDigestService {
 
     for (const r of redemptions) {
       uniqueStudentIds.add(r.student_id);
-      const offerDiscount = Number(r.offers.discount_value);
-      const bonusDiscount = r.bonus_discount_applied
+      if (r.is_bonus_applied) bonusRedemptions += 1;
+
+      const offerType = r.offers.discount_type;
+      const offerValue = Number(r.offers.discount_value);
+      if (offerType === 'fixed') {
+        totalFixedDiscountPkr += offerValue;
+      }
+
+      const bonusValue = r.bonus_discount_applied
         ? Number(r.bonus_discount_applied)
         : 0;
-      totalDiscountGiven += offerDiscount + bonusDiscount;
+      const { type: bonusType } = resolveBonusType(
+        r.offer_id,
+        r.offers.redemption_strategy,
+        r.is_bonus_applied,
+      );
+      if (bonusType === 'fixed' && bonusValue > 0) {
+        totalFixedDiscountPkr += bonusValue;
+      }
 
       const branchName = r.merchant_branches.branch_name;
       branchMap.set(branchName, (branchMap.get(branchName) ?? 0) + 1);
@@ -148,10 +198,6 @@ export class MerchantDigestService {
     }
 
     const totalRedemptions = redemptions.length;
-    const avgDiscountPerOrder =
-      totalRedemptions > 0
-        ? Math.round(totalDiscountGiven / totalRedemptions)
-        : 0;
 
     const branchBreakdown = Array.from(branchMap.entries())
       .map(([branchName, totalRedemptions]) => ({
@@ -166,6 +212,7 @@ export class MerchantDigestService {
         totalRedemptions: o.count,
         discountType: o.discountType,
         discountValue: o.discountValue,
+        discountLabel: formatDiscountLabel(o.discountType, o.discountValue),
       }))
       .sort((a, b) => b.totalRedemptions - a.totalRedemptions)
       .slice(0, 5);
@@ -180,22 +227,42 @@ export class MerchantDigestService {
       summary: {
         totalRedemptions,
         uniqueStudents: uniqueStudentIds.size,
-        totalDiscountGiven,
-        avgDiscountPerOrder,
+        bonusRedemptions,
+        totalFixedDiscountPkr,
       },
       branchBreakdown,
       topOffers,
-      redemptions: redemptions.map((r) => ({
-        id: r.id,
-        date: r.created_at ?? new Date(),
-        branchName: r.merchant_branches.branch_name,
-        offerTitle: r.offers.title,
-        parchiId: r.students?.parchi_id || 'Unknown',
-        university: r.students?.university ?? null,
-        bonusDiscountApplied: r.bonus_discount_applied
+      redemptions: redemptions.map((r) => {
+        const bonusMeta = resolveBonusType(
+          r.offer_id,
+          r.offers.redemption_strategy,
+          r.is_bonus_applied,
+        );
+        const bonusValue = r.bonus_discount_applied
           ? Number(r.bonus_discount_applied)
-          : 0,
-      })),
+          : 0;
+        return {
+          id: r.id,
+          date: r.created_at ?? new Date(),
+          branchName: r.merchant_branches.branch_name,
+          offerTitle: r.offers.title,
+          offerDiscountLabel: formatDiscountLabel(
+            r.offers.discount_type,
+            Number(r.offers.discount_value),
+            { additionalItem: r.offers.additional_item },
+          ),
+          parchiId: r.students?.parchi_id || 'Unknown',
+          university: r.students?.university ?? null,
+          isBonusApplied: !!r.is_bonus_applied,
+          bonusDiscountApplied: bonusValue,
+          bonusDiscountType: bonusMeta.type,
+          bonusDiscountLabel: r.is_bonus_applied
+            ? formatDiscountLabel(bonusMeta.type, bonusValue, {
+                additionalItem: bonusMeta.additionalItem,
+              })
+            : '-',
+        };
+      }),
     };
   }
 
@@ -282,10 +349,14 @@ export class MerchantDigestService {
         periodLabel: digest.periodLabel,
         totalRedemptions: digest.summary.totalRedemptions,
         uniqueStudents: digest.summary.uniqueStudents,
-        totalDiscountGiven: digest.summary.totalDiscountGiven,
-        avgDiscountPerOrder: digest.summary.avgDiscountPerOrder,
+        bonusRedemptions: digest.summary.bonusRedemptions,
+        totalFixedDiscountPkr: digest.summary.totalFixedDiscountPkr,
         branchRows: digest.branchBreakdown,
-        topOffers: digest.topOffers,
+        topOffers: digest.topOffers.map((o) => ({
+          offerTitle: o.offerTitle,
+          totalRedemptions: o.totalRedemptions,
+          discountLabel: o.discountLabel,
+        })),
         pdfBuffer,
         pdfFileName,
         dashboardUrl: dashboardUrl || undefined,
