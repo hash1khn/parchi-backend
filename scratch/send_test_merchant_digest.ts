@@ -133,7 +133,12 @@ async function main() {
     );
 
     console.log(
-      `Stats: redemptions=${digest.summary.totalRedemptions} students=${digest.summary.uniqueStudents} discount=${Math.round(digest.summary.totalDiscountGiven)}`,
+      `Stats: redemptions=${digest.summary.totalRedemptions} students=${digest.summary.uniqueStudents} bonus=${digest.summary.bonusRedemptions} fixedPkr=${Math.round(digest.summary.totalFixedDiscountPkr)}`,
+    );
+    const bonusSample = digest.redemptions.filter((r) => r.isBonusApplied).slice(0, 3);
+    console.log(
+      'Bonus sample labels:',
+      bonusSample.map((r) => `${r.bonusDiscountLabel} (type=${r.bonusDiscountType})`).join(', ') || 'none',
     );
 
     const pdfBuffer = await pdfService.generate(digest);
@@ -147,10 +152,14 @@ async function main() {
       periodLabel: digest.periodLabel,
       totalRedemptions: digest.summary.totalRedemptions,
       uniqueStudents: digest.summary.uniqueStudents,
-      totalDiscountGiven: digest.summary.totalDiscountGiven,
-      avgDiscountPerOrder: digest.summary.avgDiscountPerOrder,
+      bonusRedemptions: digest.summary.bonusRedemptions,
+      totalFixedDiscountPkr: digest.summary.totalFixedDiscountPkr,
       branchRows: digest.branchBreakdown,
-      topOffers: digest.topOffers,
+      topOffers: digest.topOffers.map((o) => ({
+        offerTitle: o.offerTitle,
+        totalRedemptions: o.totalRedemptions,
+        discountLabel: o.discountLabel,
+      })),
       pdfBuffer,
       pdfFileName,
       dashboardUrl: dashboardUrl || undefined,
