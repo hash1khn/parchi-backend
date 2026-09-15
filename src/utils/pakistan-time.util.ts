@@ -115,3 +115,45 @@ export function addPakistanCalendarDays(
   );
   return getYmdInPakistan(shifted);
 }
+
+/** End of calendar month 23:59:59.999 PKT for the Pakistan calendar month of `d`. */
+export function endOfPakistanMonth(d: Date): Date {
+  const { y, m } = getYmdInPakistan(d);
+  const nextMonth = m === 12 ? 1 : m + 1;
+  const nextYear = m === 12 ? y + 1 : y;
+  const startOfNext = zonedWallTimePakistanToUtc(nextYear, nextMonth, 1, 0, 0, 0, 0);
+  return new Date(startOfNext.getTime() - 1);
+}
+
+/**
+ * Previous full calendar month in PKT relative to `d`.
+ * e.g. run on 1 Mar 2026 → February 2026 [start, end].
+ */
+export function previousPakistanCalendarMonthRange(d: Date): {
+  start: Date;
+  end: Date;
+  year: number;
+  month: number;
+} {
+  const startOfThisMonth = startOfPakistanMonth(d);
+  const lastMsOfPrevMonth = new Date(startOfThisMonth.getTime() - 1);
+  const { y, m } = getYmdInPakistan(lastMsOfPrevMonth);
+  return {
+    start: startOfPakistanMonth(lastMsOfPrevMonth),
+    end: endOfPakistanMonth(lastMsOfPrevMonth),
+    year: y,
+    month: m,
+  };
+}
+
+/** Inclusive PKT calendar month range for a given year/month (1–12). */
+export function pakistanCalendarMonthRange(
+  year: number,
+  month: number,
+): { start: Date; end: Date } {
+  const mid = zonedWallTimePakistanToUtc(year, month, 15, 12, 0, 0, 0);
+  return {
+    start: startOfPakistanMonth(mid),
+    end: endOfPakistanMonth(mid),
+  };
+}

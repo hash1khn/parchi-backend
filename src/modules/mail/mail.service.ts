@@ -2,6 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as https from 'https';
 
+export interface MailAttachment {
+    name: string;
+    /** Base64-encoded file content (Brevo expects this without data-URI prefix). */
+    content: string;
+}
+
 @Injectable()
 export class MailService {
     private readonly logger = new Logger(MailService.name);
@@ -11,7 +17,12 @@ export class MailService {
     // ─── Core send via Brevo Transactional Email API (HTTPS, port 443) ──────────
     // Replaces nodemailer/SMTP entirely. Port 587 is often blocked on cloud hosts.
     // Docs: https://developers.brevo.com/reference/sendtransacemail
-    async sendMail(to: string, subject: string, html: string): Promise<boolean> {
+    async sendMail(
+        to: string,
+        subject: string,
+        html: string,
+        attachments?: MailAttachment[],
+    ): Promise<boolean> {
         const apiKey = this.configService.get<string>('BREVO_API_KEY');
         const fromRaw = this.configService.get<string>('SMTP_FROM', '"Parchi" <parchipakistan@gmail.com>');
 
@@ -25,12 +36,21 @@ export class MailService {
         const fromEmail = fromMatch ? fromMatch[2].trim() : fromRaw.trim();
         const fromName  = fromMatch ? fromMatch[1].trim() : 'Parchi';
 
-        const body = JSON.stringify({
+        const payload: Record<string, unknown> = {
             sender:  { name: fromName, email: fromEmail },
             to:      [{ email: to }],
             subject,
             htmlContent: html,
-        });
+        };
+
+        if (attachments?.length) {
+            payload.attachment = attachments.map((a) => ({
+                name: a.name,
+                content: a.content,
+            }));
+        }
+
+        const body = JSON.stringify(payload);
 
         return new Promise((resolve) => {
             const req = https.request(
@@ -72,7 +92,7 @@ export class MailService {
         });
     }
 
-    // ─── Templates (unchanged) ───────────────────────────────────────────────────
+    // ─── Templates ───────────────────────────────────────────────────────────────
 
     async sendStudentAppliedEmail(email: string, name: string) {
         const subject = 'Application Received - Parchi Student Program';
@@ -173,4 +193,115 @@ export class MailService {
     `;
         return this.sendMail(email, subject, html);
     }
+
+    async sendMerchantMonthEndDigestEmail(params: {
+        to: string;
+        businessName: string;
+        periodLabel: string;
+        totalRedemptions: number;
+        uniqueStudents: number;
+        totalDiscountGiven: number;
+        avgDiscountPerOrder: number;
+        branchRows: { branchName: string; totalRedemptions: number }[];
+        topOffers: { offerTitle: string; totalRedemptions: number }[];
+        pdfBuffer: Buffer;
+        pdfFileName: string;
+        dashboardUrl?: string;
+    }): Promise<boolean> {
+        const {
+            to,
+            businessName,
+            periodLabel,
+            totalRedemptions,
+            uniqueStudents,
+            totalDiscountGiven,
+            avgDiscountPerOrder,
+            branchRows,
+            topOffers,
+            pdfBuffer,
+            pdfFileName,
+            dashboardUrl,
+        } = params;
+
+        const subject = `Parchi Month-End Digest — ${businessName} — ${periodLabel}`;
+
+        const branchHtml =
+            branchRows.length > 0
+                ? branchRows
+                      .map(
+                          (b) =>
+                              `<tr><td style="padding:8px;border-bottom:1px solid #eee;">${escapeHtml(b.branchName)}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${b.totalRedemptions}</td></tr>`,
+                      )
+                      .join('')
+                : `<tr><td colspan="2" style="padding:8px;color:#666;">No branch activity this month</td></tr>`;
+
+        const offersHtml =
+            topOffers.length > 0
+                ? topOffers
+                      .map(
+                          (o) =>
+                              `<tr><td style="padding:8px;border-bottom:1px solid #eee;">${escapeHtml(o.offerTitle)}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${o.totalRedemptions}</td></tr>`,
+                      )
+                      .join('')
+                : `<tr><td colspan="2" style="padding:8px;color:#666;">No offer activity this month</td></tr>`;
+
+        const cta = dashboardUrl
+            ? `<div style="text-align:center;margin-top:28px;"><a href="${dashboardUrl}" style="background-color:#1a1a2e;color:#fff;padding:12px 24px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">Open Dashboard</a></div>`
+            : '';
+
+        const html = `
+      <div style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;line-height:1.6;color:#333;max-width:640px;margin:0 auto;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
+        <div style="background-color:#1a1a2e;padding:22px;text-align:center;">
+          <h1 style="color:#fff;margin:0;font-size:20px;">Month-End Digest</h1>
+          <p style="color:#bbb;margin:6px 0 0 0;font-size:14px;">${escapeHtml(periodLabel)}</p>
+        </div>
+        <div style="padding:28px;background:#fff;">
+          <p style="margin-top:0;">Hi <strong>${escapeHtml(businessName)}</strong>,</p>
+          <p>Here is your Parchi performance summary for <strong>${escapeHtml(periodLabel)}</strong>. Full line-item detail is attached as a PDF.</p>
+
+          <table style="width:100%;border-collapse:collapse;margin:20px 0;background:#f8f9fa;border-radius:6px;">
+            <tr>
+              <td style="padding:14px;text-align:center;width:25%;"><div style="font-size:11px;color:#666;text-transform:uppercase;">Redemptions</div><div style="font-size:22px;font-weight:bold;margin-top:4px;">${totalRedemptions}</div></td>
+              <td style="padding:14px;text-align:center;width:25%;"><div style="font-size:11px;color:#666;text-transform:uppercase;">Students</div><div style="font-size:22px;font-weight:bold;margin-top:4px;">${uniqueStudents}</div></td>
+              <td style="padding:14px;text-align:center;width:25%;"><div style="font-size:11px;color:#666;text-transform:uppercase;">Discount Given</div><div style="font-size:22px;font-weight:bold;margin-top:4px;">PKR ${Math.round(totalDiscountGiven)}</div></td>
+              <td style="padding:14px;text-align:center;width:25%;"><div style="font-size:11px;color:#666;text-transform:uppercase;">Avg / Order</div><div style="font-size:22px;font-weight:bold;margin-top:4px;">PKR ${avgDiscountPerOrder}</div></td>
+            </tr>
+          </table>
+
+          <h3 style="margin:24px 0 8px 0;font-size:15px;">Branch Breakdown</h3>
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <thead><tr style="background:#f0f0f0;"><th style="padding:8px;text-align:left;">Branch</th><th style="padding:8px;text-align:right;">Redemptions</th></tr></thead>
+            <tbody>${branchHtml}</tbody>
+          </table>
+
+          <h3 style="margin:24px 0 8px 0;font-size:15px;">Top Offers</h3>
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <thead><tr style="background:#f0f0f0;"><th style="padding:8px;text-align:left;">Offer</th><th style="padding:8px;text-align:right;">Redemptions</th></tr></thead>
+            <tbody>${offersHtml}</tbody>
+          </table>
+
+          ${cta}
+        </div>
+        <div style="background:#f4f4f4;padding:16px;text-align:center;font-size:12px;color:#777;">
+          <p style="margin:0;">© ${new Date().getFullYear()} Parchi. All rights reserved.</p>
+          <p style="margin:4px 0 0 0;">This is an automated message — please do not reply directly.</p>
+        </div>
+      </div>
+    `;
+
+        return this.sendMail(to, subject, html, [
+            {
+                name: pdfFileName,
+                content: pdfBuffer.toString('base64'),
+            },
+        ]);
+    }
+}
+
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
