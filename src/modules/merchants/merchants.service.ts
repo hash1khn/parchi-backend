@@ -28,6 +28,12 @@ import {
 } from '../../utils/pagination.util';
 import { formatPakistaniPhone } from '../../utils/pakistani-phone.util';
 import { startOfPakistanMonth } from '../../utils/pakistan-time.util';
+import { RedisService } from '../redis/redis.service';
+import {
+  CACHE_KEYS,
+  CACHE_PREFIX,
+  CACHE_TTL,
+} from '../redis/cache-keys';
 
 export interface CorporateMerchantResponse {
   id: string;
@@ -153,8 +159,17 @@ export class MerchantsService {
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
     private readonly notificationsService: NotificationsService,
+    private readonly redis: RedisService,
   ) { }
   private readonly logger = new Logger(MerchantsService.name);
+
+  private async invalidateMerchantListCaches() {
+    await Promise.all([
+      this.redis.del(CACHE_KEYS.brands()),
+      this.redis.del(CACHE_KEYS.publicStats()),
+      this.redis.delByPrefix(CACHE_PREFIX.merchants),
+    ]);
+  }
 
   private formatCorporateMerchant(
     merchant: {
@@ -495,6 +510,7 @@ export class MerchantsService {
       select: { id: true, restaurant_list_pinned_position: true },
     });
 
+    await this.invalidateMerchantListCaches();
     return {
       id: updated.id,
       restaurantListPinnedPosition: updated.restaurant_list_pinned_position,
@@ -510,32 +526,47 @@ export class MerchantsService {
     totalRedemptions: number;
     redemptionsThisMonth: number;
   }> {
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
+    return this.redis.getOrSet(
+      CACHE_KEYS.publicStats(),
+      CACHE_TTL.PUBLIC_STATS,
+      async () => {
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
 
-    const [totalMerchants, totalStudents, totalRedemptions, redemptionsThisMonth] =
-      await Promise.all([
-        this.prisma.merchants.count({
-          where: {
-            verification_status: 'approved',
-            is_active: true,
-          },
-        }),
-        this.prisma.students.count({
-          where: {
-            verification_status: 'approved',
-          },
-        }),
-        this.prisma.redemptions.count(),
-        this.prisma.redemptions.count({
-          where: {
-            created_at: { gte: startOfMonth },
-          },
-        }),
-      ]);
+        const [
+          totalMerchants,
+          totalStudents,
+          totalRedemptions,
+          redemptionsThisMonth,
+        ] = await Promise.all([
+          this.prisma.merchants.count({
+            where: {
+              verification_status: 'approved',
+              is_active: true,
+            },
+          }),
+          this.prisma.students.count({
+            where: {
+              verification_status: 'approved',
+            },
+          }),
+          this.prisma.redemptions.count(),
+          this.prisma.redemptions.count({
+            where: {
+              created_at: { gte: startOfMonth },
+            },
+          }),
+        ]);
 
-    return { totalMerchants, totalStudents, totalRedemptions, redemptionsThisMonth };
+        return {
+          totalMerchants,
+          totalStudents,
+          totalRedemptions,
+          redemptionsThisMonth,
+        };
+      },
+    );
   }
 
   /**
@@ -544,53 +575,53 @@ export class MerchantsService {
    * Featured brands (with featured_order 1-8) are shown first, then others alphabetically
    */
   async getAllBrands(): Promise<Partial<CorporateMerchantResponse>[]> {
-    const brands = await this.prisma.merchants.findMany({
-      where: {
-        verification_status: 'approved',
-        is_active: true,
-        business_name: {
-          not: 'Test Merchant',
-        },
-        users: {
-          role: 'merchant_corporate',
-        },
+    return this.redis.getOrSet(
+      CACHE_KEYS.brands(),
+      CACHE_TTL.BRANDS,
+      async () => {
+        const brands = await this.prisma.merchants.findMany({
+          where: {
+            verification_status: 'approved',
+            is_active: true,
+            business_name: {
+              not: 'Test Merchant',
+            },
+            users: {
+              role: 'merchant_corporate',
+            },
+          },
+          select: {
+            id: true,
+            business_name: true,
+            logo_path: true,
+            category: true,
+            featured_order: true,
+          },
+        });
+
+        // Sort: featured brands first (by featured_order 1-8), then others alphabetically
+        brands.sort((a, b) => {
+          if (a.featured_order !== null && b.featured_order !== null) {
+            return a.featured_order - b.featured_order;
+          }
+          if (a.featured_order !== null) {
+            return -1;
+          }
+          if (b.featured_order !== null) {
+            return 1;
+          }
+          return a.business_name.localeCompare(b.business_name);
+        });
+
+        return brands.map((brand) => ({
+          id: brand.id,
+          businessName: brand.business_name,
+          logoPath: brand.logo_path,
+          category: brand.category,
+          featuredOrder: brand.featured_order,
+        }));
       },
-      select: {
-        id: true,
-        business_name: true,
-        logo_path: true,
-        category: true,
-        featured_order: true,
-      },
-    });
-
-    // Sort: featured brands first (by featured_order 1-8), then others alphabetically
-    brands.sort((a, b) => {
-      // If both have featured_order, sort by featured_order
-      if (a.featured_order !== null && b.featured_order !== null) {
-        return a.featured_order - b.featured_order;
-      }
-      // If only a has featured_order, a comes first
-      if (a.featured_order !== null) {
-        return -1;
-      }
-      // If only b has featured_order, b comes first
-      if (b.featured_order !== null) {
-        return 1;
-      }
-      // Neither has featured_order, sort alphabetically
-      return a.business_name.localeCompare(b.business_name);
-    });
-
-    const formattedBrands = brands.map((brand) => ({
-      id: brand.id,
-      businessName: brand.business_name,
-      logoPath: brand.logo_path,
-      category: brand.category,
-      featuredOrder: brand.featured_order,
-    }));
-
-    return formattedBrands;
+    );
   }
 
   /**
@@ -607,6 +638,41 @@ export class MerchantsService {
   ): Promise<{ items: any[]; pagination: PaginationMeta }> {
     const { page: normalizedPage, limit: normalizedLimit } =
       normalizePaginationParams(page, limit);
+
+    const cacheKey = CACHE_KEYS.studentMerchantList({
+      page: normalizedPage,
+      limit: normalizedLimit,
+      month,
+      search,
+      category,
+      subCategory,
+    });
+
+    return this.redis.getOrSet(
+      cacheKey,
+      CACHE_TTL.STUDENT_MERCHANT_LIST,
+      () =>
+        this.fetchAllMerchantsForStudents(
+          normalizedPage,
+          normalizedLimit,
+          month,
+          search,
+          category,
+          subCategory,
+        ),
+    );
+  }
+
+  private async fetchAllMerchantsForStudents(
+    page: number,
+    limit: number,
+    month?: string,
+    search?: string,
+    category?: string,
+    subCategory?: string,
+  ): Promise<{ items: any[]; pagination: PaginationMeta }> {
+    const normalizedPage = page;
+    const normalizedLimit = limit;
 
     // Determine date range for redemption calculation
     let targetDate = new Date();
@@ -952,6 +1018,7 @@ export class MerchantsService {
       },
     );
 
+    await this.invalidateMerchantListCaches();
     return formattedMerchant;
   }
 
@@ -1044,6 +1111,7 @@ export class MerchantsService {
       updatedMerchant,
     );
 
+    await this.invalidateMerchantListCaches();
     return formattedMerchant;
   }
 
@@ -2710,6 +2778,7 @@ export class MerchantsService {
       }
     });
 
+    await this.invalidateMerchantListCaches();
     return { message: 'Featured brands updated successfully' };
   }
 }

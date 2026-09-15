@@ -14,6 +14,8 @@ import {
   previousPakistanCalendarMonthRange,
 } from '../../utils/pakistan-time.util';
 import { formatDiscountLabel } from './merchant-digest.types';
+import { RedisService } from '../redis/redis.service';
+import { CACHE_KEYS } from '../redis/cache-keys';
 
 const BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 1500;
@@ -51,6 +53,7 @@ export class MerchantDigestService {
     private readonly mailService: MailService,
     private readonly pdfService: MerchantDigestPdfService,
     private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
   ) {}
 
   periodLabel(year: number, month: number): string {
@@ -281,8 +284,10 @@ export class MerchantDigestService {
     });
   }
 
+
   /**
    * Send digest for one merchant. Idempotent unless force=true.
+   * Claims the unique log row as `sending` before Brevo so concurrent replicas cannot double-send.
    */
   async sendDigestForMerchant(params: {
     merchantId: string;
@@ -294,7 +299,7 @@ export class MerchantDigestService {
     const { merchantId, year, month, force = false, dryRun = false } = params;
 
     if (month < 1 || month > 12) {
-      throw new BadRequestException('month must be 1ù12');
+      throw new BadRequestException('month must be 1-12');
     }
 
     const existing = await this.prisma.merchant_monthly_digest_logs.findUnique({
@@ -307,7 +312,7 @@ export class MerchantDigestService {
       },
     });
 
-    if (existing?.status === 'sent' && !force) {
+    if (!force && existing?.status === 'sent') {
       const merchant = await this.prisma.merchants.findUnique({
         where: { id: merchantId },
         select: { business_name: true },
@@ -321,6 +326,20 @@ export class MerchantDigestService {
       };
     }
 
+    if (!force && existing?.status === 'sending') {
+      const updatedAt = existing.updated_at ?? existing.created_at;
+      const ageMs = updatedAt ? Date.now() - updatedAt.getTime() : 0;
+      if (ageMs < 30 * 60 * 1000) {
+        return {
+          merchantId,
+          businessName: merchantId,
+          status: 'skipped',
+          redemptionCount: existing.redemption_count,
+          recipientEmail: existing.recipient_email ?? undefined,
+        };
+      }
+    }
+
     const digest = await this.buildDigestByMerchantId(merchantId, year, month);
     const pdfFileName = `Parchi_Month_End_Digest_${year}-${String(month).padStart(2, '0')}.pdf`;
 
@@ -332,6 +351,24 @@ export class MerchantDigestService {
         merchantId,
         businessName: digest.businessName,
         status: 'dry_run',
+        redemptionCount: digest.summary.totalRedemptions,
+        recipientEmail: digest.contactEmail,
+      };
+    }
+
+    const claimed = await this.claimMerchantSend({
+      merchantId,
+      year,
+      month,
+      recipientEmail: digest.contactEmail,
+      redemptionCount: digest.summary.totalRedemptions,
+      force,
+    });
+    if (!claimed) {
+      return {
+        merchantId,
+        businessName: digest.businessName,
+        status: 'skipped',
         redemptionCount: digest.summary.totalRedemptions,
         recipientEmail: digest.contactEmail,
       };
@@ -426,16 +463,19 @@ export class MerchantDigestService {
 
   /**
    * Run digests for all eligible merchants for a given period (or previous month).
+   * Multi-replica safe via Upstash Redis SET NX lock.
    */
   async runForPeriod(options?: {
     year?: number;
     month?: number;
     force?: boolean;
     dryRun?: boolean;
+    useDistributedLock?: boolean;
   }): Promise<{
     year: number;
     month: number;
     results: DigestSendResult[];
+    skippedAsFollower?: boolean;
   }> {
     let year: number;
     let month: number;
@@ -453,6 +493,22 @@ export class MerchantDigestService {
       options?.dryRun === true ||
       this.configService.get<string>('MERCHANT_DIGEST_DRY_RUN') === 'true';
 
+    const useLock = options?.useDistributedLock !== false && !options?.force;
+    const lockKey = CACHE_KEYS.digestCronLock(year, month);
+    const lockToken = `pid=${process.pid}:${Date.now()}`;
+    let lockHeld = false;
+
+    if (useLock && !dryRun) {
+      lockHeld = await this.redisService.acquireLock(lockKey, 7200, lockToken);
+      if (!lockHeld) {
+        this.logger.log(
+          `Month-end digest ${year}-${month}: skipped on this replica (Redis lock held)`,
+        );
+        return { year, month, results: [], skippedAsFollower: true };
+      }
+      this.logger.log(`Redis cron lock acquired: ${lockKey}`);
+    }
+
     const merchants = await this.listEligibleMerchants();
     this.logger.log(
       `Month-end digest ${year}-${month}: ${merchants.length} eligible merchants (dryRun=${dryRun})`,
@@ -460,34 +516,116 @@ export class MerchantDigestService {
 
     const results: DigestSendResult[] = [];
 
-    for (let i = 0; i < merchants.length; i += BATCH_SIZE) {
-      const batch = merchants.slice(i, i + BATCH_SIZE);
-      for (const m of batch) {
-        const result = await this.sendDigestForMerchant({
-          merchantId: m.id,
-          year,
-          month,
-          force: options?.force,
-          dryRun,
-        });
-        results.push(result);
-        this.logger.log(
-          `Digest ${result.status}: ${m.business_name} (${result.redemptionCount} redemptions) ? ${result.recipientEmail ?? m.contact_email}`,
-        );
+    try {
+      for (let i = 0; i < merchants.length; i += BATCH_SIZE) {
+        const batch = merchants.slice(i, i + BATCH_SIZE);
+        for (const m of batch) {
+          const result = await this.sendDigestForMerchant({
+            merchantId: m.id,
+            year,
+            month,
+            force: options?.force,
+            dryRun,
+          });
+          results.push(result);
+          this.logger.log(
+            `Digest ${result.status}: ${m.business_name} (${result.redemptionCount} redemptions) -> ${result.recipientEmail ?? m.contact_email}`,
+          );
+        }
+        if (i + BATCH_SIZE < merchants.length && !dryRun) {
+          await sleep(BATCH_DELAY_MS);
+        }
       }
-      if (i + BATCH_SIZE < merchants.length && !dryRun) {
-        await sleep(BATCH_DELAY_MS);
+    } finally {
+      if (lockHeld) {
+        await this.redisService.releaseLock(lockKey, lockToken);
       }
     }
 
     return { year, month, results };
   }
 
+  private async claimMerchantSend(params: {
+    merchantId: string;
+    year: number;
+    month: number;
+    recipientEmail: string;
+    redemptionCount: number;
+    force: boolean;
+  }): Promise<boolean> {
+    const {
+      merchantId,
+      year,
+      month,
+      recipientEmail,
+      redemptionCount,
+      force,
+    } = params;
+
+    try {
+      await this.prisma.merchant_monthly_digest_logs.create({
+        data: {
+          merchant_id: merchantId,
+          period_year: year,
+          period_month: month,
+          status: 'sending',
+          recipient_email: recipientEmail,
+          redemption_count: redemptionCount,
+        },
+      });
+      return true;
+    } catch (err: unknown) {
+      if (!isUniqueConstraintError(err)) throw err;
+    }
+
+    if (force) {
+      await this.upsertLog({
+        merchantId,
+        year,
+        month,
+        status: 'sending',
+        recipientEmail,
+        redemptionCount,
+      });
+      return true;
+    }
+
+    const row = await this.prisma.merchant_monthly_digest_logs.findUnique({
+      where: {
+        merchant_id_period_year_period_month: {
+          merchant_id: merchantId,
+          period_year: year,
+          period_month: month,
+        },
+      },
+    });
+
+    if (!row) return false;
+    if (row.status === 'sent' || row.status === 'sending') return false;
+
+    const reclaimed = await this.prisma.merchant_monthly_digest_logs.updateMany({
+      where: {
+        merchant_id: merchantId,
+        period_year: year,
+        period_month: month,
+        status: 'failed',
+      },
+      data: {
+        status: 'sending',
+        recipient_email: recipientEmail,
+        redemption_count: redemptionCount,
+        error_message: null,
+        updated_at: new Date(),
+      },
+    });
+    return reclaimed.count > 0;
+  }
+
   private async upsertLog(params: {
     merchantId: string;
     year: number;
     month: number;
-    status: 'sent' | 'failed' | 'skipped';
+    status: 'sent' | 'failed' | 'skipped' | 'sending';
     recipientEmail: string;
     redemptionCount: number;
     errorMessage?: string;
@@ -526,6 +664,7 @@ export class MerchantDigestService {
         redemption_count: redemptionCount,
         error_message: errorMessage ?? null,
         sent_at: status === 'sent' ? new Date() : null,
+        updated_at: new Date(),
       },
     });
   }
@@ -533,4 +672,13 @@ export class MerchantDigestService {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: string }).code === 'P2002'
+  );
 }

@@ -1,28 +1,36 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import { CACHE_KEYS, CACHE_TTL } from '../redis/cache-keys';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+  ) {}
+
+  private async bustCategoryCache() {
+    await this.redis.del(CACHE_KEYS.categories());
+  }
 
   // Public: Get all active categories with nested active subcategories
   async findAllActive() {
-    return this.prisma.merchant_categories.findMany({
-      where: { is_active: true },
-      include: {
-        merchant_subcategories: {
+    return this.redis.getOrSet(
+      CACHE_KEYS.categories(),
+      CACHE_TTL.CATEGORIES,
+      () =>
+        this.prisma.merchant_categories.findMany({
           where: { is_active: true },
-          orderBy: [
-            { sort_order: 'asc' },
-            { name: 'asc' }
-          ]
-        }
-      },
-      orderBy: [
-        { sort_order: 'asc' },
-        { name: 'asc' }
-      ]
-    });
+          include: {
+            merchant_subcategories: {
+              where: { is_active: true },
+              orderBy: [{ sort_order: 'asc' }, { name: 'asc' }],
+            },
+          },
+          orderBy: [{ sort_order: 'asc' }, { name: 'asc' }],
+        }),
+    );
   }
 
   // Admin: Get all categories with nested subcategories (including inactive)
@@ -58,6 +66,9 @@ export class CategoriesService {
         name,
         sort_order: sortOrder ?? 0
       }
+    }).then(async (created) => {
+      await this.bustCategoryCache();
+      return created;
     });
   }
 
@@ -80,7 +91,7 @@ export class CategoriesService {
       }
     }
 
-    return this.prisma.merchant_categories.update({
+    const updated = await this.prisma.merchant_categories.update({
       where: { id },
       data: {
         ...(name && { name }),
@@ -89,6 +100,8 @@ export class CategoriesService {
         updated_at: new Date()
       }
     });
+    await this.bustCategoryCache();
+    return updated;
   }
 
   // Admin: Delete category (checks merchant usage)
@@ -112,9 +125,11 @@ export class CategoriesService {
       );
     }
 
-    return this.prisma.merchant_categories.delete({
+    const deleted = await this.prisma.merchant_categories.delete({
       where: { id }
     });
+    await this.bustCategoryCache();
+    return deleted;
   }
 
   // Admin: Create subcategory
@@ -140,13 +155,15 @@ export class CategoriesService {
       throw new ConflictException('Subcategory with this name already exists in this category');
     }
 
-    return this.prisma.merchant_subcategories.create({
+    const created = await this.prisma.merchant_subcategories.create({
       data: {
         category_id: categoryId,
         name,
         sort_order: sortOrder ?? 0
       }
     });
+    await this.bustCategoryCache();
+    return created;
   }
 
   // Admin: Update subcategory
@@ -173,7 +190,7 @@ export class CategoriesService {
       }
     }
 
-    return this.prisma.merchant_subcategories.update({
+    const updated = await this.prisma.merchant_subcategories.update({
       where: { id },
       data: {
         ...(name && { name }),
@@ -182,6 +199,8 @@ export class CategoriesService {
         updated_at: new Date()
       }
     });
+    await this.bustCategoryCache();
+    return updated;
   }
 
   // Admin: Delete subcategory (checks merchant usage)
@@ -205,8 +224,10 @@ export class CategoriesService {
       );
     }
 
-    return this.prisma.merchant_subcategories.delete({
+    const deleted = await this.prisma.merchant_subcategories.delete({
       where: { id }
     });
+    await this.bustCategoryCache();
+    return deleted;
   }
 }

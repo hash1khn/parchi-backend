@@ -7,6 +7,8 @@ import { MerchantDigestService } from './merchant-digest.service';
  * Sends month-end stats digests to active approved merchants
  * on the 1st of each month at 09:00 Pakistan time.
  *
+ * Multi-replica safe: Upstash Redis SET NX lock (only one Railway replica runs).
+ *
  * Gated by MERCHANT_DIGEST_CRON_ENABLED=true (off by default in dev).
  * Optional MERCHANT_DIGEST_DRY_RUN=true logs without sending.
  */
@@ -32,9 +34,18 @@ export class MerchantMonthEndDigestTask {
       return;
     }
 
-    this.logger.log('Starting merchant month-end digest cron…');
+    this.logger.log('Starting merchant month-end digest cron...');
     try {
-      const { year, month, results } = await this.digestService.runForPeriod();
+      const { year, month, results, skippedAsFollower } =
+        await this.digestService.runForPeriod({ useDistributedLock: true });
+
+      if (skippedAsFollower) {
+        this.logger.log(
+          `Month-end digest ${year}-${month}: this replica is follower - no work`,
+        );
+        return;
+      }
+
       const sent = results.filter((r) => r.status === 'sent').length;
       const failed = results.filter((r) => r.status === 'failed').length;
       const skipped = results.filter((r) => r.status === 'skipped').length;

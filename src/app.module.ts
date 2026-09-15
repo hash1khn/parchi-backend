@@ -22,6 +22,7 @@ import { SystemConfigModule } from './modules/system-config/system-config.module
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { QrRedemptionsModule } from './modules/qr-redemptions/qr-redemptions.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { RedisModule } from './modules/redis/redis.module';
 
 
 
@@ -44,6 +45,7 @@ import { CategoriesModule } from './modules/categories/categories.module';
     }),
     ConfigModule,
     PrismaModule,
+    RedisModule,
     AuditModule,
     AuthModule,
     MerchantsModule,

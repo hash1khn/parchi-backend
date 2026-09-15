@@ -20,6 +20,12 @@ import {
 } from '../../utils/pagination.util';
 import { SetFeaturedOffersDto } from './dto/set-featured-offers.dto';
 import { Logger } from '@nestjs/common';
+import { RedisService } from '../redis/redis.service';
+import {
+  CACHE_KEYS,
+  CACHE_PREFIX,
+  CACHE_TTL,
+} from '../redis/cache-keys';
 
 export interface OfferResponse {
   id: string;
@@ -96,7 +102,20 @@ export interface OfferDetailsResponse extends OfferResponse {
 
 @Injectable()
 export class OffersService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) { }
+
+  private async invalidateOfferCaches(merchantId?: string) {
+    await Promise.all([
+      this.redis.del(CACHE_KEYS.featuredOffers()),
+      this.redis.delByPrefix(CACHE_PREFIX.offers),
+      merchantId
+        ? this.redis.del(CACHE_KEYS.merchantOffers(merchantId))
+        : Promise.resolve(),
+    ]);
+  }
   private readonly logger = new Logger(OffersService.name);
 
   /**
@@ -1386,6 +1405,47 @@ export class OffersService {
     items: OfferResponseWithDistance[];
     pagination: PaginationMeta;
   }> {
+    const latKey =
+      latitude !== undefined ? Math.round(latitude * 1000) / 1000 : undefined;
+    const lngKey =
+      longitude !== undefined ? Math.round(longitude * 1000) / 1000 : undefined;
+
+    return this.redis.getOrSet(
+      CACHE_KEYS.activeOffers({
+        category,
+        lat: latKey,
+        lng: lngKey,
+        radius,
+        sort,
+        page,
+        limit,
+      }),
+      CACHE_TTL.ACTIVE_OFFERS,
+      () =>
+        this.fetchActiveOffersForStudents(
+          category,
+          latitude,
+          longitude,
+          radius,
+          sort,
+          page,
+          limit,
+        ),
+    );
+  }
+
+  private async fetchActiveOffersForStudents(
+    category?: string,
+    latitude?: number,
+    longitude?: number,
+    radius: number = 10,
+    sort?: 'popularity' | 'proximity' | 'newest',
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<{
+    items: OfferResponseWithDistance[];
+    pagination: PaginationMeta;
+  }> {
     const skip = calculateSkip(page, limit);
     const now = new Date();
     const hasLocation = latitude !== undefined && longitude !== undefined;
@@ -1593,57 +1653,59 @@ export class OffersService {
   async getOffersByMerchantForStudents(
     merchantId: string,
   ): Promise<OfferResponse[]> {
-    const now = new Date();
+    return this.redis.getOrSet(
+      CACHE_KEYS.merchantOffers(merchantId),
+      CACHE_TTL.MERCHANT_OFFERS,
+      async () => {
+        const now = new Date();
 
-    // Verify merchant exists
-    const merchant = await this.prisma.merchants.findUnique({
-      where: { id: merchantId },
-    });
+        // Verify merchant exists
+        const merchant = await this.prisma.merchants.findUnique({
+          where: { id: merchantId },
+        });
 
-    if (!merchant) {
-      throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
-    }
+        if (!merchant) {
+          throw new NotFoundException(API_RESPONSE_MESSAGES.MERCHANT.NOT_FOUND);
+        }
 
-    // Get active offers for this merchant
-    const offers = await this.prisma.offers.findMany({
-      where: {
-        merchant_id: merchantId,
-        status: 'active',
-        valid_from: { lte: now },
-        valid_until: { gte: now },
-      },
-      include: {
-        offer_branches: {
+        // Get active offers for this merchant
+        const offers = await this.prisma.offers.findMany({
+          where: {
+            merchant_id: merchantId,
+            status: 'active',
+            valid_from: { lte: now },
+            valid_until: { gte: now },
+          },
           include: {
-            merchant_branches: {
+            offer_branches: {
+              include: {
+                merchant_branches: {
+                  select: {
+                    id: true,
+                    branch_name: true,
+                    is_active: true,
+                  },
+                },
+              },
+            },
+            merchants: {
               select: {
                 id: true,
-                branch_name: true,
-                is_active: true,
+                business_name: true,
+                logo_path: true,
+                category: true,
+                banner_url: true,
               },
             },
           },
-        },
-        merchants: {
-          select: {
-            id: true,
-            business_name: true,
-            logo_path: true,
-            category: true,
-            banner_url: true,
+          orderBy: {
+            created_at: 'desc',
           },
-        },
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-    });
+        });
 
-    const formattedOffers = offers.map((offer) =>
-      this.formatOfferResponse(offer),
+        return offers.map((offer) => this.formatOfferResponse(offer));
+      },
     );
-
-    return formattedOffers;
   }
 
   /**
@@ -1758,41 +1820,47 @@ export class OffersService {
    * Returns top 6 featured offers sorted by order
    */
   async getFeaturedOffers(): Promise<OfferResponse[]> {
-    const offers = await this.prisma.offers.findMany({
-      where: {
-        status: 'active',
-        featured_order: { not: null },
-        valid_from: { lte: new Date() },
-        valid_until: { gte: new Date() },
-      },
-      include: {
-        offer_branches: {
+    return this.redis.getOrSet(
+      CACHE_KEYS.featuredOffers(),
+      CACHE_TTL.FEATURED_OFFERS,
+      async () => {
+        const offers = await this.prisma.offers.findMany({
+          where: {
+            status: 'active',
+            featured_order: { not: null },
+            valid_from: { lte: new Date() },
+            valid_until: { gte: new Date() },
+          },
           include: {
-            merchant_branches: {
+            offer_branches: {
+              include: {
+                merchant_branches: {
+                  select: {
+                    id: true,
+                    branch_name: true,
+                    is_active: true,
+                  },
+                },
+              },
+            },
+            merchants: {
               select: {
                 id: true,
-                branch_name: true,
-                is_active: true,
+                business_name: true,
+                logo_path: true,
+                category: true,
+                banner_url: true,
               },
             },
           },
-        },
-        merchants: {
-          select: {
-            id: true,
-            business_name: true,
-            logo_path: true,
-            category: true,
-            banner_url: true,
+          orderBy: {
+            featured_order: 'asc',
           },
-        },
-      },
-      orderBy: {
-        featured_order: 'asc',
-      },
-    });
+        });
 
-    return offers.map((offer) => this.formatOfferResponse(offer));
+        return offers.map((offer) => this.formatOfferResponse(offer));
+      },
+    );
   }
 
   /**
@@ -1846,6 +1914,7 @@ export class OffersService {
       }
     });
 
+    await this.invalidateOfferCaches();
     return { message: 'Featured offers updated successfully' };
   }
 }
