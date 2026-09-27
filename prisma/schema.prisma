@@ -943,6 +943,45 @@ model deletion_requests {
   @@schema("public")
 }
 
+model merchant_applications {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_name String
+  contact_name  String
+  email         String
+  phone         String
+  city          String
+  category      String
+  branch_count  String
+  website       String?
+  message       String?
+  status        String   @default("new")
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([created_at(sort: Desc)], map: "merchant_applications_created_at_idx")
+  @@index([status], map: "merchant_applications_status_idx")
+  @@map("merchant_applications")
+  @@schema("public")
+}
+
+model ambassador_applications {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  full_name     String
+  email         String
+  phone         String
+  institute     String
+  year_of_study String
+  city          String
+  instagram     String?
+  motivation    String
+  status        String   @default("new")
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([created_at(sort: Desc)], map: "ambassador_applications_created_at_idx")
+  @@index([status], map: "ambassador_applications_status_idx")
+  @@map("ambassador_applications")
+  @@schema("public")
+}
+
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model custom_oauth_providers {
   id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
