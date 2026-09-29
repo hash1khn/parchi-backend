@@ -20,11 +20,11 @@ export class UpdateEventDto {
   description?: string | null;
 
   @IsOptional()
-  @IsUrl({ require_protocol: true })
+  @IsUrl({ require_protocol: true, protocols: ['https'] })
   imageUrl?: string | null;
 
   @IsOptional()
-  @IsUrl({ require_protocol: true })
+  @IsUrl({ require_protocol: true, protocols: ['https'] })
   externalUrl?: string;
 
   @IsOptional()

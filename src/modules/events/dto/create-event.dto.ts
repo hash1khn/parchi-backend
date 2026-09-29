@@ -21,11 +21,11 @@ export class CreateEventDto {
   description?: string;
 
   @IsOptional()
-  @IsUrl({ require_protocol: true })
+  @IsUrl({ require_protocol: true, protocols: ['https'] })
   imageUrl?: string;
 
   @IsNotEmpty()
-  @IsUrl({ require_protocol: true })
+  @IsUrl({ require_protocol: true, protocols: ['https'] })
   externalUrl: string;
 
   @IsOptional()

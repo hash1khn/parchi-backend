@@ -34,6 +34,15 @@ async function bootstrap() {
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('etag', false);
 
+  // Behind a reverse proxy / load balancer, req.ip is the proxy unless Express is told
+  // to trust X-Forwarded-For. Set TRUST_PROXY (e.g. "1" for one hop) in that case so
+  // IP-based rate limiting sees real client IPs. Left unset by default: trusting the
+  // header without a proxy in front would let clients spoof their IP.
+  const trustProxy = process.env.TRUST_PROXY;
+  if (trustProxy) {
+    expressApp.set('trust proxy', /^\d+$/.test(trustProxy) ? parseInt(trustProxy, 10) : trustProxy);
+  }
+
   // ── HTTP request logging ──────────────────────────────────────────────────
   const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
   app.use(morgan(morganFormat));

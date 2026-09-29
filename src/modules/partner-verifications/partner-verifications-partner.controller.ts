@@ -11,13 +11,18 @@ import {
 } from '@nestjs/common';
 import { PartnerVerificationsService } from './partner-verifications.service';
 import { CreatePartnerVerificationDto } from './dto/create-partner-verification.dto';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PartnerApiKeyGuard } from '../../common/guards/partner-api-key.guard';
+import { PartnerRateLimitGuard } from '../../common/guards/partner-rate-limit.guard';
 import { CurrentPartner } from '../../decorators/current-partner.decorator';
 import type { PartnerContext } from '../../decorators/current-partner.decorator';
 import { createApiResponse } from '../../utils/serializer.util';
 
 @Controller('v1/partners/verification-requests')
-@UseGuards(PartnerApiKeyGuard)
+// The IP-based global throttler is replaced by per-partner limits (PartnerRateLimitGuard)
+// plus a failed-auth limiter inside PartnerApiKeyGuard.
+@SkipThrottle({ global: true })
+@UseGuards(PartnerApiKeyGuard, PartnerRateLimitGuard)
 export class PartnerVerificationsPartnerController {
   constructor(private readonly partnerVerificationsService: PartnerVerificationsService) {}
 

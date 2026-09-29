@@ -1314,6 +1314,9 @@ model partner_verification_requests {
   expires_at          DateTime                     @db.Timestamptz(6)
   approved_at         DateTime?                    @db.Timestamptz(6)
   rejected_at         DateTime?                    @db.Timestamptz(6)
+  match_code          String?                      @db.VarChar(4)
+  push_status         String?                      @db.VarChar(20)
+  push_sent_at        DateTime?                    @db.Timestamptz(6)
   partner_api_keys    partner_api_keys             @relation(fields: [partner_id], references: [id], onDelete: Cascade)
   students            students                     @relation(fields: [student_id], references: [id], onDelete: Cascade)
 
@@ -1321,5 +1324,6 @@ model partner_verification_requests {
   @@index([student_id, status], map: "idx_partner_verify_student_status")
   @@index([expires_at], map: "idx_partner_verify_expires")
   @@index([student_id, external_reference], map: "idx_partner_verify_student_ref")
+  @@index([student_id, partner_id, created_at(sort: Desc)], map: "idx_partner_verify_student_partner_created")
   @@schema("public")
 }
