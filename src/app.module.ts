@@ -24,6 +24,8 @@ import { QrRedemptionsModule } from './modules/qr-redemptions/qr-redemptions.mod
 import { CategoriesModule } from './modules/categories/categories.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { ApplicationsModule } from './modules/applications/applications.module';
+import { EventsModule } from './modules/events/events.module';
+import { PartnerVerificationsModule } from './modules/partner-verifications/partner-verifications.module';
 
 
 
@@ -63,6 +65,8 @@ import { ApplicationsModule } from './modules/applications/applications.module';
     QrRedemptionsModule,
     CategoriesModule,
     ApplicationsModule,
+    EventsModule,
+    PartnerVerificationsModule,
   ],
   controllers: [AppController],
   providers: [
