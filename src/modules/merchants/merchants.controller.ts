@@ -15,6 +15,10 @@ import {
   ParseUUIDPipe,
   DefaultValuePipe,
   ParseIntPipe,
+  Res,
+  BadRequestException,
+  ForbiddenException,
+  Header,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -36,10 +40,15 @@ import { SetRestaurantListPinDto } from './dto/set-restaurant-list-pin.dto';
 import { Audit } from '../../decorators/audit.decorator';
 import { createApiResponse, createPaginatedResponse } from '../../utils/serializer.util';
 import { API_RESPONSE_MESSAGES } from '../../constants/api-response/api-response.constants';
+import { MerchantDigestService } from './merchant-digest.service';
+import type { Response } from 'express';
 
 @Controller('merchants')
 export class MerchantsController {
-  constructor(private readonly merchantsService: MerchantsService) { }
+  constructor(
+    private readonly merchantsService: MerchantsService,
+    private readonly digestService: MerchantDigestService,
+  ) { }
 
   // ========== Corporate Merchant Endpoints (Admin) ==========
 
@@ -270,6 +279,42 @@ export class MerchantsController {
       endDate ? new Date(endDate) : new Date(),
     );
     return createApiResponse(data, 'Redemption report retrieved successfully');
+  }
+
+  /**
+   * Same month-end digest PDF that is emailed by cron (stats/analytics, no payable).
+   * Query: year=2026&month=9
+   */
+  @Get('dashboard/reports/digest-pdf')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.MERCHANT_CORPORATE)
+  @HttpCode(HttpStatus.OK)
+  @Header('Content-Type', 'application/pdf')
+  async downloadDigestPdf(
+    @CurrentUser() currentUser: ICurrentUser,
+    @Res() res: Response,
+    @Query('year', ParseIntPipe) year: number,
+    @Query('month', ParseIntPipe) month: number,
+  ) {
+    if (!currentUser.merchant_id) {
+      throw new ForbiddenException('Merchant context required');
+    }
+    if (month < 1 || month > 12) {
+      throw new BadRequestException('month must be 1-12');
+    }
+
+    const { buffer, fileName } = await this.digestService.generatePdfForMerchant(
+      currentUser.merchant_id,
+      year,
+      month,
+    );
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fileName}"`,
+    );
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
   }
 
   // ========== Bonus Settings Endpoints (Corporate & Admin) ==========

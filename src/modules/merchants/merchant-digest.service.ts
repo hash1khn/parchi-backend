@@ -60,6 +60,21 @@ export class MerchantDigestService {
     return `${MONTH_NAMES[month - 1]} ${year}`;
   }
 
+  /** Build the same PDF used in month-end email (for corporate dashboard download). */
+  async generatePdfForMerchant(
+    merchantId: string,
+    year: number,
+    month: number,
+  ): Promise<{ buffer: Buffer; fileName: string; periodLabel: string }> {
+    if (month < 1 || month > 12) {
+      throw new BadRequestException('month must be 1-12');
+    }
+    const digest = await this.buildDigestByMerchantId(merchantId, year, month);
+    const buffer = await this.pdfService.generate(digest);
+    const fileName = `Parchi_Month_End_Digest_${year}-${String(month).padStart(2, '0')}.pdf`;
+    return { buffer, fileName, periodLabel: digest.periodLabel };
+  }
+
   async buildDigestByMerchantId(
     merchantId: string,
     year: number,
