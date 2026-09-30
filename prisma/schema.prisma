@@ -115,21 +115,22 @@ model mfa_challenges {
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model mfa_factors {
-  id                           String           @id @db.Uuid
-  user_id                      String           @db.Uuid
+  id                           String                  @id @db.Uuid
+  user_id                      String                  @db.Uuid
   friendly_name                String?
   factor_type                  factor_type
   status                       factor_status
-  created_at                   DateTime         @db.Timestamptz(6)
-  updated_at                   DateTime         @db.Timestamptz(6)
+  created_at                   DateTime                @db.Timestamptz(6)
+  updated_at                   DateTime                @db.Timestamptz(6)
   secret                       String?
   phone                        String?
-  last_challenged_at           DateTime?        @unique @db.Timestamptz(6)
+  last_challenged_at           DateTime?               @unique @db.Timestamptz(6)
   web_authn_credential         Json?
-  web_authn_aaguid             String?          @db.Uuid
+  web_authn_aaguid             String?                 @db.Uuid
   last_webauthn_challenge_data Json?
   mfa_challenges               mfa_challenges[]
-  users                        auth_users       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                        auth_users              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  mfa_recovery_code_sets       mfa_recovery_code_sets?
 
   @@unique([user_id, phone], map: "unique_phone_factor_per_user")
   @@index([user_id, created_at], map: "factor_id_created_at_idx")
@@ -211,6 +212,7 @@ model one_time_tokens {
   relates_to String
   created_at DateTime            @default(now()) @db.Timestamp(6)
   updated_at DateTime            @default(now()) @db.Timestamp(6)
+  expires_at DateTime?           @db.Timestamptz(6)
   users      auth_users          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([user_id, token_type])
@@ -347,6 +349,8 @@ model sso_providers {
   disabled          Boolean?
   saml_providers    saml_providers[]
   saml_relay_states saml_relay_states[]
+  scim_tokens       scim_tokens[]
+  scim_users        scim_users[]
   sso_domains       sso_domains[]
 
   @@index([resource_id], map: "sso_providers_resource_id_pattern_idx")
@@ -358,46 +362,48 @@ model sso_providers {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model auth_users {
-  instance_id                 String?                @db.Uuid
-  id                          String                 @id @db.Uuid
-  aud                         String?                @db.VarChar(255)
-  role                        String?                @db.VarChar(255)
-  email                       String?                @db.VarChar(255)
-  encrypted_password          String?                @db.VarChar(255)
-  email_confirmed_at          DateTime?              @db.Timestamptz(6)
-  invited_at                  DateTime?              @db.Timestamptz(6)
-  confirmation_token          String?                @db.VarChar(255)
-  confirmation_sent_at        DateTime?              @db.Timestamptz(6)
-  recovery_token              String?                @db.VarChar(255)
-  recovery_sent_at            DateTime?              @db.Timestamptz(6)
-  email_change_token_new      String?                @db.VarChar(255)
-  email_change                String?                @db.VarChar(255)
-  email_change_sent_at        DateTime?              @db.Timestamptz(6)
-  last_sign_in_at             DateTime?              @db.Timestamptz(6)
+  instance_id                 String?                 @db.Uuid
+  id                          String                  @id @db.Uuid
+  aud                         String?                 @db.VarChar(255)
+  role                        String?                 @db.VarChar(255)
+  email                       String?                 @db.VarChar(255)
+  encrypted_password          String?                 @db.VarChar(255)
+  email_confirmed_at          DateTime?               @db.Timestamptz(6)
+  invited_at                  DateTime?               @db.Timestamptz(6)
+  confirmation_token          String?                 @db.VarChar(255)
+  confirmation_sent_at        DateTime?               @db.Timestamptz(6)
+  recovery_token              String?                 @db.VarChar(255)
+  recovery_sent_at            DateTime?               @db.Timestamptz(6)
+  email_change_token_new      String?                 @db.VarChar(255)
+  email_change                String?                 @db.VarChar(255)
+  email_change_sent_at        DateTime?               @db.Timestamptz(6)
+  last_sign_in_at             DateTime?               @db.Timestamptz(6)
   raw_app_meta_data           Json?
   raw_user_meta_data          Json?
   is_super_admin              Boolean?
-  created_at                  DateTime?              @db.Timestamptz(6)
-  updated_at                  DateTime?              @db.Timestamptz(6)
-  phone                       String?                @unique
-  phone_confirmed_at          DateTime?              @db.Timestamptz(6)
-  phone_change                String?                @default("")
-  phone_change_token          String?                @default("") @db.VarChar(255)
-  phone_change_sent_at        DateTime?              @db.Timestamptz(6)
-  confirmed_at                DateTime?              @default(dbgenerated("LEAST(email_confirmed_at, phone_confirmed_at)")) @db.Timestamptz(6)
-  email_change_token_current  String?                @default("") @db.VarChar(255)
-  email_change_confirm_status Int?                   @default(0) @db.SmallInt
-  banned_until                DateTime?              @db.Timestamptz(6)
-  reauthentication_token      String?                @default("") @db.VarChar(255)
-  reauthentication_sent_at    DateTime?              @db.Timestamptz(6)
-  is_sso_user                 Boolean                @default(false)
-  deleted_at                  DateTime?              @db.Timestamptz(6)
-  is_anonymous                Boolean                @default(false)
+  created_at                  DateTime?               @db.Timestamptz(6)
+  updated_at                  DateTime?               @db.Timestamptz(6)
+  phone                       String?                 @unique
+  phone_confirmed_at          DateTime?               @db.Timestamptz(6)
+  phone_change                String?                 @default("")
+  phone_change_token          String?                 @default("") @db.VarChar(255)
+  phone_change_sent_at        DateTime?               @db.Timestamptz(6)
+  confirmed_at                DateTime?               @default(dbgenerated("LEAST(email_confirmed_at, phone_confirmed_at)")) @db.Timestamptz(6)
+  email_change_token_current  String?                 @default("") @db.VarChar(255)
+  email_change_confirm_status Int?                    @default(0) @db.SmallInt
+  banned_until                DateTime?               @db.Timestamptz(6)
+  reauthentication_token      String?                 @default("") @db.VarChar(255)
+  reauthentication_sent_at    DateTime?               @db.Timestamptz(6)
+  is_sso_user                 Boolean                 @default(false)
+  deleted_at                  DateTime?               @db.Timestamptz(6)
+  is_anonymous                Boolean                 @default(false)
   identities                  identities[]
   mfa_factors                 mfa_factors[]
+  mfa_recovery_code_sets      mfa_recovery_code_sets?
   oauth_authorizations        oauth_authorizations[]
   oauth_consents              oauth_consents[]
   one_time_tokens             one_time_tokens[]
+  scim_users                  scim_users[]
   sessions                    sessions[]
   webauthn_challenges         webauthn_challenges[]
   webauthn_credentials        webauthn_credentials[]
@@ -673,48 +679,49 @@ model student_merchant_stats {
 }
 
 model students {
-  id                       String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id                  String                   @unique @db.Uuid
-  parchi_id                String?                  @unique @db.VarChar(10)
-  first_name               String                   @db.VarChar(100)
-  last_name                String                   @db.VarChar(100)
-  university               String                   @db.VarChar(255)
-  graduation_year          Int?
-  is_founders_club         Boolean?                 @default(false)
-  total_savings            Decimal?                 @default(0.00) @db.Decimal(12, 2)
-  total_redemptions        Int?                     @default(0)
-  verification_status      verification_status?     @default(pending)
-  verified_at              DateTime?                @db.Timestamptz(6)
-  verification_expires_at  DateTime?                @db.Timestamptz(6)
-  created_at               DateTime?                @default(now()) @db.Timestamptz(6)
-  updated_at               DateTime?                @default(now()) @db.Timestamptz(6)
-  profile_picture          String?
-  verification_selfie_path String?
-  verified_by              String?                  @db.Uuid
-  cnic                     String?                  @unique @db.VarChar(13)
-  date_of_birth            DateTime?                @db.Date
-  has_seen_app_intro       Boolean?                 @default(false)
-  educational_grade        String?                  @db.VarChar(50)
-  platform                 String?                  @db.VarChar(20)
-  institute_id             String?                  @db.Uuid
-  student_id_number        String?                  @db.VarChar(100)
-  last_redemption_at       DateTime?                @db.Timestamptz(6)
-  lifetime_redemptions     Int?                     @default(0)
-  admin_notes              String?
-  degree                   String?                  @db.VarChar(255)
-  gender                   String?                  @db.VarChar(20)
-  year_of_study            String?                  @db.VarChar(50)
-  qr_redemption_requests          qr_redemption_requests[]
-  partner_verification_requests   partner_verification_requests[]
-  redemptions                     redemptions[]
-  selfie_change_requests   selfie_change_requests[]
-  student_branch_stats     student_branch_stats[]
-  student_kyc              student_kyc[]
-  student_merchant_stats   student_merchant_stats[]
-  student_offer_stats      student_offer_stats[]
-  institutes               institutes?              @relation(fields: [institute_id], references: [id], onUpdate: NoAction)
-  users                    public_users             @relation("student_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  verified_by_user         public_users?            @relation("verified_by", fields: [verified_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                            String                          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                       String                          @unique @db.Uuid
+  parchi_id                     String?                         @unique @db.VarChar(10)
+  first_name                    String                          @db.VarChar(100)
+  last_name                     String                          @db.VarChar(100)
+  university                    String                          @db.VarChar(255)
+  graduation_year               Int?
+  is_founders_club              Boolean?                        @default(false)
+  total_savings                 Decimal?                        @default(0.00) @db.Decimal(12, 2)
+  total_redemptions             Int?                            @default(0)
+  verification_status           verification_status?            @default(pending)
+  verified_at                   DateTime?                       @db.Timestamptz(6)
+  verification_expires_at       DateTime?                       @db.Timestamptz(6)
+  created_at                    DateTime?                       @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime?                       @default(now()) @db.Timestamptz(6)
+  profile_picture               String?
+  verification_selfie_path      String?
+  verified_by                   String?                         @db.Uuid
+  cnic                          String?                         @unique @db.VarChar(13)
+  date_of_birth                 DateTime?                       @db.Date
+  has_seen_app_intro            Boolean?                        @default(false)
+  educational_grade             String?                         @db.VarChar(50)
+  platform                      String?                         @db.VarChar(20)
+  institute_id                  String?                         @db.Uuid
+  student_id_number             String?                         @db.VarChar(100)
+  last_redemption_at            DateTime?                       @db.Timestamptz(6)
+  lifetime_redemptions          Int?                            @default(0)
+  admin_notes                   String?
+  degree                        String?                         @db.VarChar(255)
+  gender                        String?                         @db.VarChar(20)
+  year_of_study                 String?                         @db.VarChar(50)
+  partner_discount_redemptions  partner_discount_redemptions[]
+  partner_verification_requests partner_verification_requests[]
+  qr_redemption_requests        qr_redemption_requests[]
+  redemptions                   redemptions[]
+  selfie_change_requests        selfie_change_requests[]
+  student_branch_stats          student_branch_stats[]
+  student_kyc                   student_kyc[]
+  student_merchant_stats        student_merchant_stats[]
+  student_offer_stats           student_offer_stats[]
+  institutes                    institutes?                     @relation(fields: [institute_id], references: [id], onUpdate: NoAction)
+  users                         public_users                    @relation("student_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  verified_by_user              public_users?                   @relation("verified_by", fields: [verified_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([institute_id, student_id_number], map: "idx_students_institute_id_number")
   @@index([parchi_id], map: "idx_students_parchi_id")
@@ -958,8 +965,8 @@ model merchant_applications {
   status        String   @default("new")
   created_at    DateTime @default(now()) @db.Timestamptz(6)
 
-  @@index([created_at(sort: Desc)], map: "merchant_applications_created_at_idx")
-  @@index([status], map: "merchant_applications_status_idx")
+  @@index([created_at(sort: Desc)])
+  @@index([status])
   @@map("merchant_applications")
   @@schema("public")
 }
@@ -977,8 +984,8 @@ model ambassador_applications {
   status        String   @default("new")
   created_at    DateTime @default(now()) @db.Timestamptz(6)
 
-  @@index([created_at(sort: Desc)], map: "ambassador_applications_created_at_idx")
-  @@index([status], map: "ambassador_applications_status_idx")
+  @@index([created_at(sort: Desc)])
+  @@index([status])
   @@map("ambassador_applications")
   @@schema("public")
 }
@@ -1138,6 +1145,154 @@ model qr_redemption_requests {
   @@schema("public")
 }
 
+model events {
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  title         String    @db.VarChar(255)
+  description   String?
+  image_url     String?
+  external_url  String
+  event_date    DateTime? @db.Timestamptz(6)
+  venue         String?   @db.VarChar(255)
+  is_active     Boolean   @default(true)
+  display_order Int       @default(0)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([is_active, display_order], map: "idx_events_active_order")
+  @@index([event_date], map: "idx_events_date")
+  @@schema("public")
+}
+
+model partner_api_keys {
+  id                            String                          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  partner_name                  String                          @unique @db.VarChar(100)
+  hashed_key                    String
+  is_active                     Boolean                         @default(true)
+  created_at                    DateTime                        @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime                        @default(now()) @db.Timestamptz(6)
+  partner_discount_redemptions  partner_discount_redemptions[]
+  partner_verification_requests partner_verification_requests[]
+
+  @@index([is_active], map: "idx_partner_api_keys_active")
+  @@schema("public")
+}
+
+model partner_verification_requests {
+  id                           String                        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  partner_id                   String                        @db.Uuid
+  student_id                   String                        @db.Uuid
+  external_reference           String                        @db.VarChar(255)
+  event_label                  String?                       @db.VarChar(255)
+  status                       partner_verification_status   @default(pending)
+  created_at                   DateTime                      @default(now()) @db.Timestamptz(6)
+  updated_at                   DateTime                      @default(now()) @db.Timestamptz(6)
+  expires_at                   DateTime                      @db.Timestamptz(6)
+  approved_at                  DateTime?                     @db.Timestamptz(6)
+  rejected_at                  DateTime?                     @db.Timestamptz(6)
+  match_code                   String?                       @db.VarChar(4)
+  push_status                  String?                       @db.VarChar(20)
+  push_sent_at                 DateTime?                     @db.Timestamptz(6)
+  partner_discount_redemptions partner_discount_redemptions?
+  partner_api_keys             partner_api_keys              @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+  students                     students                      @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([partner_id, status], map: "idx_partner_verify_partner_status")
+  @@index([student_id, status], map: "idx_partner_verify_student_status")
+  @@index([expires_at], map: "idx_partner_verify_expires")
+  @@index([student_id, external_reference], map: "idx_partner_verify_student_ref")
+  @@index([student_id, partner_id, created_at(sort: Desc)], map: "idx_partner_verify_student_partner_created")
+  @@schema("public")
+}
+
+model partner_discount_redemptions {
+  id                            String                        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  partner_id                    String                        @db.Uuid
+  student_id                    String                        @db.Uuid
+  verification_request_id       String                        @unique @db.Uuid
+  external_reference            String                        @db.VarChar(255)
+  event_label                   String?                       @db.VarChar(255)
+  discount_amount_pkr           Decimal                       @db.Decimal(12, 2)
+  order_total_pkr               Decimal?                      @db.Decimal(12, 2)
+  currency                      String                        @default("PKR") @db.VarChar(3)
+  paid_at                       DateTime                      @db.Timestamptz(6)
+  created_at                    DateTime                      @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime                      @default(now()) @db.Timestamptz(6)
+  partner_api_keys              partner_api_keys              @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+  students                      students                      @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  partner_verification_requests partner_verification_requests @relation(fields: [verification_request_id], references: [id])
+
+  @@unique([partner_id, external_reference], map: "uq_partner_discount_partner_ref")
+  @@index([partner_id, created_at(sort: Desc)], map: "idx_partner_discount_partner_created")
+  @@index([student_id, created_at(sort: Desc)], map: "idx_partner_discount_student_created")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model mfa_recovery_code_sets {
+  id                        String               @id @db.Uuid
+  user_id                   String               @unique @db.Uuid
+  mfa_factor_id             String               @unique @db.Uuid
+  failed_verification_count Int                  @default(0)
+  verification_locked_until DateTime?            @db.Timestamptz(6)
+  created_at                DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime             @default(now()) @db.Timestamptz(6)
+  mfa_factors               mfa_factors          @relation(fields: [mfa_factor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                     auth_users           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  mfa_recovery_codes        mfa_recovery_codes[]
+
+  @@schema("auth")
+}
+
+model mfa_recovery_codes {
+  id                       String                 @id @db.Uuid
+  mfa_recovery_code_set_id String                 @db.Uuid
+  code_hash                String
+  consumed_at              DateTime?              @db.Timestamptz(6)
+  created_at               DateTime               @default(now()) @db.Timestamptz(6)
+  mfa_recovery_code_sets   mfa_recovery_code_sets @relation(fields: [mfa_recovery_code_set_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([mfa_recovery_code_set_id], map: "mfa_recovery_codes_set_id_idx")
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model scim_tokens {
+  id              String        @id @db.Uuid
+  sso_provider_id String        @db.Uuid
+  token_hash      String        @unique
+  prefix          String
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  expires_at      DateTime?     @db.Timestamptz(6)
+  revoked_at      DateTime?     @db.Timestamptz(6)
+  last_used_at    DateTime?     @db.Timestamptz(6)
+  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([expires_at])
+  @@index([revoked_at])
+  @@index([sso_provider_id])
+  @@schema("auth")
+}
+
+model scim_users {
+  id              String        @id @db.Uuid
+  sso_provider_id String        @db.Uuid
+  user_id         String?       @db.Uuid
+  resource        Json
+  user_name       String        @default(dbgenerated("lower((resource ->> 'userName'::text))"))
+  external_id     String?       @default(dbgenerated("(resource ->> 'externalId'::text)"))
+  active          Boolean       @default(dbgenerated("COALESCE(((resource ->> 'active'::text))::boolean, true)"))
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime      @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime?     @db.Timestamptz(6)
+  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           auth_users?   @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([deleted_at])
+  @@index([sso_provider_id])
+  @@index([user_id])
+  @@schema("auth")
+}
+
 enum aal_level {
   aal1
   aal2
@@ -1164,6 +1319,7 @@ enum factor_type {
   totp
   webauthn
   phone
+  recovery_code
 
   @@schema("auth")
 }
@@ -1268,62 +1424,5 @@ enum partner_verification_status {
   rejected
   expired
 
-  @@schema("public")
-}
-
-model events {
-  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  title         String    @db.VarChar(255)
-  description   String?
-  image_url     String?
-  external_url  String
-  event_date    DateTime? @db.Timestamptz(6)
-  venue         String?   @db.VarChar(255)
-  is_active     Boolean   @default(true)
-  display_order Int       @default(0)
-  created_at    DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime  @default(now()) @db.Timestamptz(6)
-
-  @@index([is_active, display_order], map: "idx_events_active_order")
-  @@index([event_date], map: "idx_events_date")
-  @@schema("public")
-}
-
-model partner_api_keys {
-  id                            String                          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  partner_name                  String                          @unique @db.VarChar(100)
-  hashed_key                    String
-  is_active                     Boolean                         @default(true)
-  created_at                    DateTime                        @default(now()) @db.Timestamptz(6)
-  updated_at                    DateTime                        @default(now()) @db.Timestamptz(6)
-  partner_verification_requests partner_verification_requests[]
-
-  @@index([is_active], map: "idx_partner_api_keys_active")
-  @@schema("public")
-}
-
-model partner_verification_requests {
-  id                  String                       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  partner_id          String                       @db.Uuid
-  student_id          String                       @db.Uuid
-  external_reference  String                       @db.VarChar(255)
-  event_label         String?                      @db.VarChar(255)
-  status              partner_verification_status  @default(pending)
-  created_at          DateTime                     @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime                     @default(now()) @db.Timestamptz(6)
-  expires_at          DateTime                     @db.Timestamptz(6)
-  approved_at         DateTime?                    @db.Timestamptz(6)
-  rejected_at         DateTime?                    @db.Timestamptz(6)
-  match_code          String?                      @db.VarChar(4)
-  push_status         String?                      @db.VarChar(20)
-  push_sent_at        DateTime?                    @db.Timestamptz(6)
-  partner_api_keys    partner_api_keys             @relation(fields: [partner_id], references: [id], onDelete: Cascade)
-  students            students                     @relation(fields: [student_id], references: [id], onDelete: Cascade)
-
-  @@index([partner_id, status], map: "idx_partner_verify_partner_status")
-  @@index([student_id, status], map: "idx_partner_verify_student_status")
-  @@index([expires_at], map: "idx_partner_verify_expires")
-  @@index([student_id, external_reference], map: "idx_partner_verify_student_ref")
-  @@index([student_id, partner_id, created_at(sort: Desc)], map: "idx_partner_verify_student_partner_created")
   @@schema("public")
 }

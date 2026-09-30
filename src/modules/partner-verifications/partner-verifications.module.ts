@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PartnerVerificationsService } from './partner-verifications.service';
 import { PartnerVerificationsPartnerController } from './partner-verifications-partner.controller';
 import { PartnerVerificationsStudentController } from './partner-verifications-student.controller';
+import { PartnerDiscountRedemptionsController } from './partner-discount-redemptions.controller';
 import { PartnerVerificationsCleanupTask } from './partner-verifications-cleanup.task';
 import { PartnerApiKeyGuard } from '../../common/guards/partner-api-key.guard';
 import { PartnerRateLimitGuard } from '../../common/guards/partner-rate-limit.guard';
@@ -16,6 +17,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
   controllers: [
     PartnerVerificationsPartnerController,
     PartnerVerificationsStudentController,
+    PartnerDiscountRedemptionsController,
   ],
   providers: [
     PartnerVerificationsService,

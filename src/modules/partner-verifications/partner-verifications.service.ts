@@ -15,8 +15,10 @@ import { createHash, randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Prisma } from '@prisma/client';
 import { CreatePartnerVerificationDto } from './dto/create-partner-verification.dto';
 import { ApprovePartnerVerificationDto } from './dto/approve-partner-verification.dto';
+import { CreatePartnerDiscountRedemptionDto } from './dto/create-partner-discount-redemption.dto';
 import { CurrentUser } from '../../types/global.types';
 import { PartnerContext } from '../../decorators/current-partner.decorator';
 import { ROLES } from '../../constants/app.constants';
@@ -578,6 +580,160 @@ export class PartnerVerificationsService implements OnModuleInit {
           : null,
       // Lets the app correct for a wrong device clock when showing the countdown.
       serverTime: new Date(),
+    };
+  }
+
+  // ── Discount redemption log (paid checkout with Parchi discount applied) ─
+
+  async recordDiscountRedemption(
+    dto: CreatePartnerDiscountRedemptionDto,
+    partner: PartnerContext,
+  ): Promise<{ data: ReturnType<PartnerVerificationsService['formatDiscountRedemption']>; created: boolean }> {
+    const request = await this.prisma.partner_verification_requests.findUnique({
+      where: { id: dto.verificationRequestId },
+      include: { students: { select: { parchi_id: true } } },
+    });
+
+    if (!request || request.partner_id !== partner.id) {
+      throw new NotFoundException('Verification request not found');
+    }
+    if (request.status !== 'approved') {
+      throw new ConflictException(
+        `Discount can only be logged for an approved verification (status: ${request.status})`,
+      );
+    }
+    if (request.students.parchi_id !== dto.parchiId.trim()) {
+      throw new BadRequestException('parchiId does not match this verification request');
+    }
+
+    const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
+    const eventLabel = dto.eventLabel ?? request.event_label;
+
+    try {
+      const created = await this.prisma.partner_discount_redemptions.create({
+        data: {
+          partner_id: partner.id,
+          student_id: request.student_id,
+          verification_request_id: request.id,
+          external_reference: dto.externalReference,
+          event_label: eventLabel,
+          discount_amount_pkr: dto.discountAmountPkr,
+          order_total_pkr: dto.orderTotalPkr ?? null,
+          currency: dto.currency ?? 'PKR',
+          paid_at: paidAt,
+        },
+      });
+
+      await this.auditService.logCreate(
+        'CREATE_PARTNER_DISCOUNT_REDEMPTION',
+        'partner_discount_redemptions',
+        created.id,
+        {
+          partnerId: partner.id,
+          studentId: request.student_id,
+          verificationRequestId: request.id,
+          externalReference: dto.externalReference,
+          discountAmountPkr: dto.discountAmountPkr,
+          orderTotalPkr: dto.orderTotalPkr ?? null,
+          currency: dto.currency ?? 'PKR',
+        },
+      );
+
+      return { data: this.formatDiscountRedemption(created), created: true };
+    } catch (err) {
+      if (this.isUniqueConstraint(err)) {
+        const existing = await this.resolveDiscountRedemptionConflict(
+          partner.id,
+          request.id,
+          dto.externalReference,
+        );
+        return { data: this.formatDiscountRedemption(existing), created: false };
+      }
+      throw err;
+    }
+  }
+
+  private isUniqueConstraint(err: unknown): boolean {
+    return (
+      (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') ||
+      (!!err && typeof err === 'object' && (err as { code?: string }).code === 'P2002')
+    );
+  }
+
+  async getDiscountRedemption(redemptionId: string, partner: PartnerContext) {
+    const row = await this.prisma.partner_discount_redemptions.findUnique({
+      where: { id: redemptionId },
+    });
+    if (!row || row.partner_id !== partner.id) {
+      throw new NotFoundException('Discount redemption not found');
+    }
+    return this.formatDiscountRedemption(row);
+  }
+
+  /**
+   * Identical retry (same verification + same order) → existing row.
+   * Either unique key bound to a *different* pairing → 409, never 200 with another checkout.
+   */
+  private async resolveDiscountRedemptionConflict(
+    partnerId: string,
+    verificationRequestId: string,
+    externalReference: string,
+  ) {
+    const [byVerification, byOrder] = await Promise.all([
+      this.prisma.partner_discount_redemptions.findFirst({
+        where: { partner_id: partnerId, verification_request_id: verificationRequestId },
+      }),
+      this.prisma.partner_discount_redemptions.findFirst({
+        where: { partner_id: partnerId, external_reference: externalReference },
+      }),
+    ]);
+
+    if (byVerification && byOrder && byVerification.id !== byOrder.id) {
+      throw new ConflictException(
+        'This verification and this order were already logged as separate checkouts',
+      );
+    }
+
+    const existing = byVerification ?? byOrder;
+    if (
+      existing &&
+      existing.verification_request_id === verificationRequestId &&
+      existing.external_reference === externalReference
+    ) {
+      return existing;
+    }
+
+    if (existing?.verification_request_id === verificationRequestId) {
+      throw new ConflictException('This verification was already logged against a different order');
+    }
+    if (existing?.external_reference === externalReference) {
+      throw new ConflictException('This order was already logged against a different verification');
+    }
+
+    throw new ConflictException('Discount redemption already recorded');
+  }
+
+  private formatDiscountRedemption(row: {
+    id: string;
+    verification_request_id: string;
+    external_reference: string;
+    event_label: string | null;
+    discount_amount_pkr: Prisma.Decimal | number;
+    order_total_pkr: Prisma.Decimal | number | null;
+    currency: string;
+    paid_at: Date;
+    created_at: Date;
+  }) {
+    return {
+      redemptionId: row.id,
+      verificationRequestId: row.verification_request_id,
+      externalReference: row.external_reference,
+      eventLabel: row.event_label,
+      discountAmountPkr: Number(row.discount_amount_pkr),
+      orderTotalPkr: row.order_total_pkr == null ? null : Number(row.order_total_pkr),
+      currency: row.currency,
+      paidAt: row.paid_at,
+      createdAt: row.created_at,
     };
   }
 }

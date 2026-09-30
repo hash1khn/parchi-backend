@@ -9,6 +9,8 @@ const RETENTION_DAYS = 30;
  *  - persists `expired` for pending rows nobody read after the TTL
  *    (also lets Realtime subscribers see the change)
  *  - drops finished requests after RETENTION_DAYS (audit_logs keep the history)
+ *  - never deletes a verification that has a discount-redemption row
+ *    (paid-checkout attribution must outlive verification TTL)
  */
 @Injectable()
 export class PartnerVerificationsCleanupTask {
@@ -36,7 +38,11 @@ export class PartnerVerificationsCleanupTask {
     try {
       const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
       const result = await this.prisma.partner_verification_requests.deleteMany({
-        where: { status: { not: 'pending' }, expires_at: { lt: cutoff } },
+        where: {
+          status: { not: 'pending' },
+          expires_at: { lt: cutoff },
+          partner_discount_redemptions: { is: null },
+        },
       });
       if (result.count > 0) {
         this.logger.log(`Purged ${result.count} verification request(s) older than ${RETENTION_DAYS} days`);

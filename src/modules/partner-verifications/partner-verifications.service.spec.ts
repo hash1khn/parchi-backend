@@ -27,6 +27,9 @@ function makeFakePrisma() {
 
   const matches = (row: Row, where: Row): boolean =>
     Object.entries(where).every(([k, cond]) => {
+      if (k === 'OR' && Array.isArray(cond)) {
+        return cond.some((clause) => matches(row, clause));
+      }
       const v = row[k];
       if (cond && typeof cond === 'object' && !(cond instanceof Date)) {
         if ('gt' in cond && !(v > cond.gt)) return false;
@@ -39,9 +42,12 @@ function makeFakePrisma() {
     });
 
   const students: Row[] = [];
+  const discountRows: Row[] = [];
+  let discountChain: Promise<unknown> = Promise.resolve();
   const prisma: any = {
     rows,
     keys,
+    discountRows,
     students: {
       list: students,
       findUnique: jest.fn(async ({ where }: any) =>
@@ -72,9 +78,15 @@ function makeFakePrisma() {
       findUnique: jest.fn(async ({ where, include }: any) => {
         const r = rows.find((x) => x.id === where.id);
         if (!r) return null;
-        return include?.partner_api_keys
-          ? { ...r, partner_api_keys: { partner_name: 'inside_karachi' } }
-          : { ...r };
+        const out: Row = { ...r };
+        if (include?.partner_api_keys) {
+          out.partner_api_keys = { partner_name: 'inside_karachi' };
+        }
+        if (include?.students) {
+          const s = students.find((x) => x.id === r.student_id);
+          out.students = { parchi_id: s?.parchi_id ?? null };
+        }
+        return out;
       }),
       findFirst: jest.fn(async ({ where }: any) => {
         const hit = rows.filter((r) => matches(r, where));
@@ -112,6 +124,40 @@ function makeFakePrisma() {
         const r = rows.find((x) => x.id === where.id)!;
         Object.assign(r, data);
         return { ...r };
+      }),
+    },
+    partner_discount_redemptions: {
+      findUnique: jest.fn(async ({ where }: any) => {
+        const r = discountRows.find((x) => x.id === where.id);
+        return r ? { ...r } : null;
+      }),
+      findFirst: jest.fn(async ({ where, orderBy }: any) => {
+        const hit = discountRows.filter((r) => matches(r, where));
+        if (orderBy?.created_at === 'asc') hit.sort((a, b) => a.created_at - b.created_at);
+        return hit[0] ? { ...hit[0] } : null;
+      }),
+      create: jest.fn(async ({ data }: any) => {
+        const run = discountChain.then(async () => {
+          const dup = discountRows.some(
+            (r) =>
+              r.verification_request_id === data.verification_request_id ||
+              (r.partner_id === data.partner_id && r.external_reference === data.external_reference),
+          );
+          if (dup) {
+            const err: any = new Error('Unique constraint failed');
+            err.code = 'P2002';
+            throw err;
+          }
+          const row = {
+            id: `disc-${++seq}`,
+            created_at: new Date(Date.now() + seq),
+            ...data,
+          };
+          discountRows.push(row);
+          return { ...row };
+        });
+        discountChain = run.catch(() => undefined);
+        return run;
       }),
     },
     $executeRawUnsafe: jest.fn(async () => 1),
@@ -440,6 +486,160 @@ describe('PartnerVerificationsService', () => {
       } finally {
         process.env.NODE_ENV = prev;
       }
+    });
+  });
+
+  describe('recordDiscountRedemption', () => {
+    const redemptionDto = (over: Row = {}) => ({
+      verificationRequestId: 'req-1',
+      externalReference: 'ik_order_98123',
+      parchiId: '48219',
+      discountAmountPkr: 1000,
+      orderTotalPkr: 4500,
+      ...over,
+    });
+
+    const addApprovedRequest = (over: Row = {}) => {
+      prisma.rows.push({
+        id: 'req-1',
+        partner_id: 'partner-1',
+        student_id: 'stu-1',
+        status: 'approved',
+        event_label: 'Show',
+        ...over,
+      });
+    };
+
+    it('creates a row for an approved verification', async () => {
+      addStudent();
+      addApprovedRequest();
+      const result = await service.recordDiscountRedemption(redemptionDto(), partner);
+      expect(result.created).toBe(true);
+      expect(result.data).toMatchObject({
+        verificationRequestId: 'req-1',
+        externalReference: 'ik_order_98123',
+        discountAmountPkr: 1000,
+        orderTotalPkr: 4500,
+        currency: 'PKR',
+      });
+      expect(audit.logCreate).toHaveBeenCalledWith(
+        'CREATE_PARTNER_DISCOUNT_REDEMPTION',
+        'partner_discount_redemptions',
+        result.data.redemptionId,
+        expect.objectContaining({ externalReference: 'ik_order_98123', discountAmountPkr: 1000 }),
+      );
+    });
+
+    it('returns the existing row on the same externalReference (idempotent)', async () => {
+      addStudent();
+      addApprovedRequest();
+      const first = await service.recordDiscountRedemption(redemptionDto(), partner);
+      const second = await service.recordDiscountRedemption(
+        redemptionDto({ discountAmountPkr: 50, orderTotalPkr: 1 }),
+        partner,
+      );
+      expect(second.created).toBe(false);
+      expect(second.data.redemptionId).toBe(first.data.redemptionId);
+      expect(second.data.discountAmountPkr).toBe(1000);
+      expect(prisma.discountRows).toHaveLength(1);
+    });
+
+    it('concurrent identical posts leave exactly one row', async () => {
+      addStudent();
+      addApprovedRequest();
+      const [a, b] = await Promise.all([
+        service.recordDiscountRedemption(redemptionDto(), partner),
+        service.recordDiscountRedemption(redemptionDto(), partner),
+      ]);
+      expect([a.created, b.created].sort()).toEqual([false, true]);
+      expect(a.data.redemptionId).toBe(b.data.redemptionId);
+      expect(prisma.discountRows).toHaveLength(1);
+    });
+
+    it('409s when the same verification is reused with a different order id', async () => {
+      addStudent();
+      addApprovedRequest();
+      await service.recordDiscountRedemption(redemptionDto(), partner);
+      await expect(
+        service.recordDiscountRedemption(redemptionDto({ externalReference: 'ik_order_other' }), partner),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.discountRows).toHaveLength(1);
+    });
+
+    it('409s when the same order is reused with a different verification', async () => {
+      addStudent();
+      addApprovedRequest();
+      addApprovedRequest({ id: 'req-2' });
+      await service.recordDiscountRedemption(redemptionDto(), partner);
+      await expect(
+        service.recordDiscountRedemption(redemptionDto({ verificationRequestId: 'req-2' }), partner),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.discountRows).toHaveLength(1);
+    });
+
+    it('409s when verification and order already belong to two different rows', async () => {
+      addStudent();
+      addApprovedRequest();
+      addApprovedRequest({ id: 'req-2' });
+      await service.recordDiscountRedemption(redemptionDto(), partner);
+      await service.recordDiscountRedemption(
+        redemptionDto({ verificationRequestId: 'req-2', externalReference: 'ik_order_other' }),
+        partner,
+      );
+      await expect(
+        service.recordDiscountRedemption(
+          redemptionDto({ verificationRequestId: 'req-1', externalReference: 'ik_order_other' }),
+          partner,
+        ),
+      ).rejects.toMatchObject({
+        message: 'This verification and this order were already logged as separate checkouts',
+      });
+      expect(prisma.discountRows).toHaveLength(2);
+    });
+
+    it('rejects pending, rejected, and expired verifications', async () => {
+      addStudent();
+      for (const status of ['pending', 'rejected', 'expired']) {
+        prisma.rows.length = 0;
+        addApprovedRequest({ status });
+        await expect(service.recordDiscountRedemption(redemptionDto(), partner)).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+      }
+    });
+
+    it('404s when the verification belongs to another partner', async () => {
+      addStudent();
+      addApprovedRequest({ partner_id: 'other-partner' });
+      await expect(service.recordDiscountRedemption(redemptionDto(), partner)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('400s when parchiId does not match the verification student', async () => {
+      addStudent();
+      addApprovedRequest();
+      await expect(
+        service.recordDiscountRedemption(redemptionDto({ parchiId: '99999' }), partner),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('404s an unknown verification id', async () => {
+      addStudent();
+      await expect(service.recordDiscountRedemption(redemptionDto(), partner)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('GET returns the partner-scoped row and 404s others', async () => {
+      addStudent();
+      addApprovedRequest();
+      const { data } = await service.recordDiscountRedemption(redemptionDto(), partner);
+      const fetched = await service.getDiscountRedemption(data.redemptionId, partner);
+      expect(fetched.redemptionId).toBe(data.redemptionId);
+      await expect(
+        service.getDiscountRedemption(data.redemptionId, { id: 'other-partner', partnerName: 'x' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });
