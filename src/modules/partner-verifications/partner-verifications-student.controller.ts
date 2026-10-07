@@ -31,6 +31,19 @@ import type { CurrentUser as ICurrentUser } from '../../types/global.types';
 export class PartnerVerificationsStudentController {
   constructor(private readonly partnerVerificationsService: PartnerVerificationsService) {}
 
+  @Get(':id/discount-redemption')
+  @HttpCode(HttpStatus.OK)
+  async getDiscountRedemption(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: ICurrentUser,
+  ) {
+    const data = await this.partnerVerificationsService.getStudentDiscountRedemption(
+      id,
+      currentUser,
+    );
+    return createApiResponse(data, 'Discount redemption fetched');
+  }
+
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   async getRequest(

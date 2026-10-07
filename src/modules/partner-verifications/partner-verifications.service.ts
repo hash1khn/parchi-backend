@@ -591,7 +591,7 @@ export class PartnerVerificationsService implements OnModuleInit {
   ): Promise<{ data: ReturnType<PartnerVerificationsService['formatDiscountRedemption']>; created: boolean }> {
     const request = await this.prisma.partner_verification_requests.findUnique({
       where: { id: dto.verificationRequestId },
-      include: { students: { select: { parchi_id: true } } },
+      include: { students: { select: { parchi_id: true, user_id: true } } },
     });
 
     if (!request || request.partner_id !== partner.id) {
@@ -639,6 +639,14 @@ export class PartnerVerificationsService implements OnModuleInit {
         },
       );
 
+      void this.dispatchDiscountPush(
+        request.students.user_id,
+        request.id,
+        partner.partnerName,
+        eventLabel,
+        dto.discountAmountPkr,
+      );
+
       return { data: this.formatDiscountRedemption(created), created: true };
     } catch (err) {
       if (this.isUniqueConstraint(err)) {
@@ -651,6 +659,60 @@ export class PartnerVerificationsService implements OnModuleInit {
       }
       throw err;
     }
+  }
+
+  /**
+   * Student poll endpoint: returns the paid-checkout attribution row for this verification,
+   * or 404 until the partner posts it.
+   */
+  async getStudentDiscountRedemption(requestId: string, currentUser: CurrentUser) {
+    const student = await this.requireStudent(currentUser);
+    const { partnerName } = await this.findOwned(requestId, student.id);
+
+    const row = await this.prisma.partner_discount_redemptions.findFirst({
+      where: { verification_request_id: requestId, student_id: student.id },
+    });
+    if (!row) {
+      throw new NotFoundException('Discount redemption not found');
+    }
+
+    return {
+      ...this.formatDiscountRedemption(row),
+      partnerName: this.prettyPartnerName(partnerName),
+    };
+  }
+
+  private async dispatchDiscountPush(
+    userId: string,
+    verificationRequestId: string,
+    partnerName: string,
+    eventLabel: string | null,
+    discountAmountPkr: number,
+  ) {
+    const displayName = this.prettyPartnerName(partnerName);
+    const amount = this.formatPkrAmount(discountAmountPkr);
+    const body = eventLabel
+      ? `You saved Rs. ${amount} at ${displayName} for ${eventLabel}!`
+      : `You saved Rs. ${amount} at ${displayName}!`;
+
+    try {
+      await this.notificationsService.sendPersonalNotification(
+        userId,
+        'Discount unlocked',
+        body,
+        undefined,
+        `${DEEP_LINK_APP_BASE}/${verificationRequestId}`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Discount redemption push failed for verification ${verificationRequestId}: ${err?.message}`,
+      );
+    }
+  }
+
+  private formatPkrAmount(value: number): string {
+    if (Number.isInteger(value)) return String(value);
+    return Number(value.toFixed(2)).toString();
   }
 
   private isUniqueConstraint(err: unknown): boolean {

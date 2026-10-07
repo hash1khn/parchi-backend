@@ -84,7 +84,10 @@ function makeFakePrisma() {
         }
         if (include?.students) {
           const s = students.find((x) => x.id === r.student_id);
-          out.students = { parchi_id: s?.parchi_id ?? null };
+          out.students = {
+            parchi_id: s?.parchi_id ?? null,
+            user_id: s?.user_id ?? null,
+          };
         }
         return out;
       }),
@@ -528,12 +531,23 @@ describe('PartnerVerificationsService', () => {
         result.data.redemptionId,
         expect.objectContaining({ externalReference: 'ik_order_98123', discountAmountPkr: 1000 }),
       );
+      // Let the fire-and-forget push settle.
+      await Promise.resolve();
+      expect(notifications.sendPersonalNotification).toHaveBeenCalledWith(
+        'user-1',
+        'Discount unlocked',
+        'You saved Rs. 1000 at Inside Karachi for Show!',
+        undefined,
+        'parchi://verify/req-1',
+      );
     });
 
     it('returns the existing row on the same externalReference (idempotent)', async () => {
       addStudent();
       addApprovedRequest();
       const first = await service.recordDiscountRedemption(redemptionDto(), partner);
+      await Promise.resolve();
+      notifications.sendPersonalNotification.mockClear();
       const second = await service.recordDiscountRedemption(
         redemptionDto({ discountAmountPkr: 50, orderTotalPkr: 1 }),
         partner,
@@ -542,6 +556,32 @@ describe('PartnerVerificationsService', () => {
       expect(second.data.redemptionId).toBe(first.data.redemptionId);
       expect(second.data.discountAmountPkr).toBe(1000);
       expect(prisma.discountRows).toHaveLength(1);
+      await Promise.resolve();
+      expect(notifications.sendPersonalNotification).not.toHaveBeenCalled();
+    });
+
+    it('student GET returns the discount row for the owning student', async () => {
+      addStudent();
+      addApprovedRequest();
+      await service.recordDiscountRedemption(redemptionDto(), partner);
+      const fetched = await service.getStudentDiscountRedemption('req-1', studentUser);
+      expect(fetched).toMatchObject({
+        verificationRequestId: 'req-1',
+        discountAmountPkr: 1000,
+        partnerName: 'Inside Karachi',
+        eventLabel: 'Show',
+      });
+      await expect(
+        service.getStudentDiscountRedemption('req-1', otherUser),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('student GET 404s until the partner posts a discount', async () => {
+      addStudent();
+      addApprovedRequest();
+      await expect(
+        service.getStudentDiscountRedemption('req-1', studentUser),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('concurrent identical posts leave exactly one row', async () => {
