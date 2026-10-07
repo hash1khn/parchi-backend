@@ -559,8 +559,10 @@ export class PartnerVerificationsService implements OnModuleInit {
       partnerName: this.prettyPartnerName(partnerName),
       // Show this on the checkout screen ("tap <code> in your Parchi app"). Only while pending.
       matchCode: request.status === 'pending' ? request.match_code : null,
+      // Push uses the plain custom-scheme link (number-matching required).
       verifyDeepLink: `${DEEP_LINK_APP_BASE}/${request.id}`,
-      verifyWebLink: `${DEEP_LINK_WEB_BASE}/${request.id}`,
+      // Web / QR link marks presence so the app can skip number-matching.
+      verifyWebLink: `${DEEP_LINK_WEB_BASE}/${request.id}?via=qr`,
     };
   }
 
