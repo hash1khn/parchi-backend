@@ -698,6 +698,7 @@ export class RedemptionsService {
     const page = queryDto.page || 1;
     const limit = queryDto.limit || 10;
     const skip = calculateSkip(page, limit);
+    const sort = queryDto.sort || 'newest';
 
     const whereClause: Prisma.redemptionsWhereInput = {
       student_id: student.id,
@@ -750,46 +751,81 @@ export class RedemptionsService {
       whereClause.offer_id = queryDto.offerId;
     }
 
-    const [redemptions, total] = await Promise.all([
-      this.prisma.redemptions.findMany({
-        where: whereClause,
-        // List view: only fetch the minimal fields needed to render a row.
-        // Full offer/branch/merchant details are loaded on-demand via GET /redemptions/:id
+    const includePartnerDiscounts = this.shouldIncludePartnerDiscounts(queryDto);
+    const listSelect = {
+      id: true,
+      student_id: true,
+      offer_id: true,
+      branch_id: true,
+      is_bonus_applied: true,
+      bonus_discount_applied: true,
+      verified_by: true,
+      notes: true,
+      created_at: true,
+      merchant_branches: {
         select: {
-          id: true,
-          student_id: true,
-          offer_id: true,
-          branch_id: true,
-          is_bonus_applied: true,
-          bonus_discount_applied: true,
-          verified_by: true,
-          notes: true,
-          created_at: true,
-          merchant_branches: {
+          branch_name: true,
+          merchants: {
             select: {
-              branch_name: true,
-              merchants: {
-                select: {
-                  business_name: true,
-                  logo_path: true,
-                },
-              },
+              business_name: true,
+              logo_path: true,
             },
           },
         },
-        orderBy: this.getOrderBy(queryDto.sort || 'newest'),
-        skip,
-        take: limit,
+      },
+    } as const;
+
+    if (!includePartnerDiscounts) {
+      const [redemptions, total] = await Promise.all([
+        this.prisma.redemptions.findMany({
+          where: whereClause,
+          select: listSelect,
+          orderBy: this.getOrderBy(sort),
+          skip,
+          take: limit,
+        }),
+        this.prisma.redemptions.count({ where: whereClause }),
+      ]);
+
+      const formattedRedemptions = await Promise.all(
+        redemptions.map((r) => this.formatListRedemptionResponse(r)),
+      );
+
+      return {
+        items: formattedRedemptions,
+        pagination: calculatePaginationMeta(total, page, limit),
+      };
+    }
+
+    // Partner rows interleave by date; fetch a merchant prefix of size skip+limit
+    // plus all partner discounts, merge-sort, then slice the page.
+    const [redemptions, merchantTotal, partnerRows] = await Promise.all([
+      this.prisma.redemptions.findMany({
+        where: whereClause,
+        select: listSelect,
+        orderBy: this.getOrderBy(sort),
+        take: skip + limit,
       }),
       this.prisma.redemptions.count({ where: whereClause }),
+      this.findPartnerDiscountsForStudent(student.id, {
+        startDate: queryDto.startDate,
+        endDate: queryDto.endDate,
+      }),
     ]);
 
-    const formattedRedemptions = await Promise.all(
+    const merchantItems = await Promise.all(
       redemptions.map((r) => this.formatListRedemptionResponse(r)),
     );
+    const partnerItems = partnerRows.map((r) =>
+      this.formatPartnerDiscountAsRedemption(r, { includeOffer: false }),
+    );
+
+    const merged = this.mergeRedemptionItems(merchantItems, partnerItems, sort);
+    const items = merged.slice(skip, skip + limit);
+    const total = merchantTotal + partnerRows.length;
 
     return {
-      items: formattedRedemptions,
+      items,
       pagination: calculatePaginationMeta(total, page, limit),
     };
   }
@@ -855,17 +891,29 @@ export class RedemptionsService {
       },
     });
 
-    if (!redemption) {
+    if (redemption) {
+      if (redemption.student_id !== student.id) {
+        throw new ForbiddenException(
+          API_RESPONSE_MESSAGES.REDEMPTION.ACCESS_DENIED,
+        );
+      }
+      return await this.formatRedemptionResponse(redemption);
+    }
+
+    const partnerRow = await this.prisma.partner_discount_redemptions.findFirst({
+      where: { id, student_id: student.id },
+      include: {
+        partner_api_keys: { select: { partner_name: true } },
+      },
+    });
+
+    if (!partnerRow) {
       throw new NotFoundException(API_RESPONSE_MESSAGES.REDEMPTION.NOT_FOUND);
     }
 
-    if (redemption.student_id !== student.id) {
-      throw new ForbiddenException(
-        API_RESPONSE_MESSAGES.REDEMPTION.ACCESS_DENIED,
-      );
-    }
-
-    return await this.formatRedemptionResponse(redemption);
+    return this.formatPartnerDiscountAsRedemption(partnerRow, {
+      includeOffer: true,
+    });
   }
 
   /**
@@ -1489,8 +1537,14 @@ export class RedemptionsService {
           AND (r.notes IS NULL OR r.notes NOT ILIKE 'REJECTED%')
           AND r.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi'
       `;
-      const totalRedemptions = Number(monthlyResult[0]?.monthly_count ?? 0);
+      const merchantMonthly = Number(monthlyResult[0]?.monthly_count ?? 0);
+      const partnerMonthly =
+        await this.countPartnerDiscountsForStudent(student.id, {
+          monthOnly: true,
+        });
+      const totalRedemptions = merchantMonthly + partnerMonthly;
 
+      // Rank stays merchant-only (lifetime_redemptions / monthly merchant counts).
       const rankResult = await this.prisma.$queryRaw<[{ rank: bigint }]>`
         WITH monthly_counts AS (
           SELECT
@@ -1506,11 +1560,11 @@ export class RedemptionsService {
         )
         SELECT COUNT(*)::bigint + 1 AS rank
         FROM monthly_counts mc
-        WHERE mc.monthly_count > ${totalRedemptions}::bigint
-           OR (mc.monthly_count = ${totalRedemptions}::bigint AND mc.student_id < ${student.id}::uuid)
+        WHERE mc.monthly_count > ${merchantMonthly}::bigint
+           OR (mc.monthly_count = ${merchantMonthly}::bigint AND mc.student_id < ${student.id}::uuid)
       `;
       const leaderboardPosition =
-        totalRedemptions > 0 ? Number(rankResult[0]?.rank ?? 0) : 0;
+        merchantMonthly > 0 ? Number(rankResult[0]?.rank ?? 0) : 0;
 
       const bonusResult = await this.prisma.$queryRaw<[{ count: bigint }]>`
         SELECT COUNT(*)::bigint AS count
@@ -1529,7 +1583,11 @@ export class RedemptionsService {
       };
     }
 
-    const totalRedemptions = student.lifetime_redemptions || 0;
+    const partnerAllTime = await this.countPartnerDiscountsForStudent(
+      student.id,
+    );
+    const totalRedemptions =
+      (student.lifetime_redemptions || 0) + partnerAllTime;
 
     const bonusesUnlocked = await this.prisma.redemptions.count({
       where: {
@@ -1571,6 +1629,150 @@ export class RedemptionsService {
       bonusesUnlocked,
       leaderboardPosition,
     };
+  }
+
+  /**
+   * Partner ticket discounts map into the merchant redemption shape Flutter already
+   * renders. Omit when filtering to pending/rejected or merchant-scoped ids.
+   */
+  private shouldIncludePartnerDiscounts(queryDto: QueryRedemptionsDto): boolean {
+    if (queryDto.merchantId || queryDto.branchId || queryDto.offerId) {
+      return false;
+    }
+    if (queryDto.status === 'pending' || queryDto.status === 'rejected') {
+      return false;
+    }
+    return true;
+  }
+
+  private async findPartnerDiscountsForStudent(
+    studentId: string,
+    opts?: { startDate?: string; endDate?: string },
+  ) {
+    const where: Prisma.partner_discount_redemptionsWhereInput = {
+      student_id: studentId,
+    };
+    if (opts?.startDate || opts?.endDate) {
+      where.paid_at = {};
+      if (opts.startDate) where.paid_at.gte = new Date(opts.startDate);
+      if (opts.endDate) where.paid_at.lte = new Date(opts.endDate);
+    }
+    return this.prisma.partner_discount_redemptions.findMany({
+      where,
+      include: {
+        partner_api_keys: { select: { partner_name: true } },
+      },
+      orderBy: { paid_at: 'desc' },
+    });
+  }
+
+  private async countPartnerDiscountsForStudent(
+    studentId: string,
+    opts?: { monthOnly?: boolean },
+  ): Promise<number> {
+    if (opts?.monthOnly) {
+      const result = await this.prisma.$queryRaw<[{ count: bigint }]>`
+        SELECT COUNT(*)::bigint AS count
+        FROM partner_discount_redemptions p
+        WHERE p.student_id = ${studentId}::uuid
+          AND p.paid_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi'
+      `;
+      return Number(result[0]?.count ?? 0);
+    }
+    return this.prisma.partner_discount_redemptions.count({
+      where: { student_id: studentId },
+    });
+  }
+
+  /**
+   * Map a partner_discount_redemptions row into RedemptionResponse for history UI.
+   */
+  formatPartnerDiscountAsRedemption(
+    row: {
+      id: string;
+      student_id: string;
+      partner_id: string;
+      event_label: string | null;
+      discount_amount_pkr: unknown;
+      paid_at: Date;
+      created_at: Date;
+      partner_api_keys?: { partner_name: string } | null;
+    },
+    opts: { includeOffer: boolean },
+  ): RedemptionResponse {
+    const eventLabel = row.event_label?.trim() || 'Event ticket';
+    const partnerName = this.prettyPartnerName(
+      row.partner_api_keys?.partner_name ?? 'partner',
+    );
+    const discountValue = Number(row.discount_amount_pkr);
+    const createdAt = row.paid_at ?? row.created_at;
+
+    const base: RedemptionResponse = {
+      id: row.id,
+      studentId: row.student_id,
+      offerId: row.id,
+      branchId: '',
+      isBonusApplied: false,
+      bonusDiscountApplied: null,
+      bonusDiscountType: null,
+      verifiedBy: row.id,
+      notes: null,
+      createdAt,
+      status: 'verified',
+      merchant: {
+        id: row.partner_id,
+        businessName: partnerName,
+        logoPath: null,
+        category: 'events',
+      },
+      branch: {
+        id: '',
+        branchName: eventLabel,
+        address: '',
+        city: '',
+      },
+    };
+
+    if (opts.includeOffer) {
+      base.offer = {
+        id: row.id,
+        title: eventLabel,
+        discountType: 'fixed',
+        discountValue,
+        imageUrl: null,
+      };
+      base.discountDetails = `(Rs. ${discountValue} OFF)`;
+    }
+
+    return base;
+  }
+
+  private prettyPartnerName(name: string): string {
+    if (name === 'inside_karachi') return 'Inside Karachi';
+    return name
+      .split(/[_-]/)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  private mergeRedemptionItems(
+    merchantItems: RedemptionResponse[],
+    partnerItems: RedemptionResponse[],
+    sort: string,
+  ): RedemptionResponse[] {
+    const combined = [...merchantItems, ...partnerItems];
+    const newestFirst = sort !== 'oldest';
+    combined.sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (aTime === bTime) {
+        return newestFirst
+          ? b.id.localeCompare(a.id)
+          : a.id.localeCompare(b.id);
+      }
+      return newestFirst ? bTime - aTime : aTime - bTime;
+    });
+    return combined;
   }
 
   /**
