@@ -1688,8 +1688,9 @@ export class RedemptionsService {
    * Public logo for Inside Karachi partner rows in Flutter redemption history
    * (NetworkImage). Hosted on IK Spaces so Parchi needs no Flutter asset.
    */
+  /** Square padded wordmark — Flutter history uses BoxFit.cover in a circle. */
   private static readonly INSIDE_KARACHI_LOGO_URL =
-    'https://insidekhi.sgp1.cdn.digitaloceanspaces.com/brand/inside-khi-logo-light.png';
+    'https://insidekhi.sgp1.cdn.digitaloceanspaces.com/brand/inside-khi-logo-avatar.png';
 
   /**
    * Map a partner_discount_redemptions row into RedemptionResponse for history UI.

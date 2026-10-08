@@ -95,7 +95,7 @@ describe('RedemptionsService partner discount history', () => {
         merchant: {
           businessName: 'Inside Karachi',
           logoPath:
-            'https://insidekhi.sgp1.cdn.digitaloceanspaces.com/brand/inside-khi-logo-light.png',
+            'https://insidekhi.sgp1.cdn.digitaloceanspaces.com/brand/inside-khi-logo-avatar.png',
         },
 
         branch: { branchName: "PRISMFEST'26 - 20 Oct" },
