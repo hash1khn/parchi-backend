@@ -1685,6 +1685,13 @@ export class RedemptionsService {
   }
 
   /**
+   * Public logo for Inside Karachi partner rows in Flutter redemption history
+   * (NetworkImage). Hosted on IK Spaces so Parchi needs no Flutter asset.
+   */
+  private static readonly INSIDE_KARACHI_LOGO_URL =
+    'https://insidekhi.sgp1.cdn.digitaloceanspaces.com/brand/inside-khi-logo-light.png';
+
+  /**
    * Map a partner_discount_redemptions row into RedemptionResponse for history UI.
    */
   formatPartnerDiscountAsRedemption(
@@ -1701,11 +1708,14 @@ export class RedemptionsService {
     opts: { includeOffer: boolean },
   ): RedemptionResponse {
     const eventLabel = row.event_label?.trim() || 'Event ticket';
-    const partnerName = this.prettyPartnerName(
-      row.partner_api_keys?.partner_name ?? 'partner',
-    );
+    const rawPartnerName = row.partner_api_keys?.partner_name ?? 'partner';
+    const partnerName = this.prettyPartnerName(rawPartnerName);
     const discountValue = Number(row.discount_amount_pkr);
     const createdAt = row.paid_at ?? row.created_at;
+    const logoPath =
+      rawPartnerName === 'inside_karachi'
+        ? RedemptionsService.INSIDE_KARACHI_LOGO_URL
+        : null;
 
     const base: RedemptionResponse = {
       id: row.id,
@@ -1722,7 +1732,7 @@ export class RedemptionsService {
       merchant: {
         id: row.partner_id,
         businessName: partnerName,
-        logoPath: null,
+        logoPath,
         category: 'events',
       },
       branch: {

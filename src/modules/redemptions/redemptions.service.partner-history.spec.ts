@@ -92,7 +92,12 @@ describe('RedemptionsService partner discount history', () => {
         studentId: studentId,
         status: 'verified',
         verifiedBy: partnerRedemptionId,
-        merchant: { businessName: 'Inside Karachi', logoPath: null },
+        merchant: {
+          businessName: 'Inside Karachi',
+          logoPath:
+            'https://insidekhi.sgp1.cdn.digitaloceanspaces.com/brand/inside-khi-logo-light.png',
+        },
+
         branch: { branchName: "PRISMFEST'26 - 20 Oct" },
       });
       expect(list.offer).toBeUndefined();
