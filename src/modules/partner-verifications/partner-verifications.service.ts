@@ -39,6 +39,7 @@ const MAX_FAILED_LOOKUPS_PER_MIN = 30;
 
 const DEEP_LINK_WEB_BASE = 'https://www.parchipakistan.com/verify';
 const DEEP_LINK_APP_BASE = 'parchi://verify';
+const DEEP_LINK_MY_TICKETS = 'parchi://tickets';
 const INSIDE_KARACHI_PARTNER = 'inside_karachi';
 
 function hashToInt32(s: string): number {
@@ -703,7 +704,7 @@ export class PartnerVerificationsService implements OnModuleInit {
         'Discount unlocked',
         body,
         undefined,
-        `${DEEP_LINK_APP_BASE}/${verificationRequestId}`,
+        DEEP_LINK_MY_TICKETS,
       );
     } catch (err: any) {
       this.logger.warn(

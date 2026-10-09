@@ -538,7 +538,7 @@ describe('PartnerVerificationsService', () => {
         'Discount unlocked',
         'You saved Rs. 1000 at Inside Karachi for Show!',
         undefined,
-        'parchi://verify/req-1',
+        'parchi://tickets',
       );
     });
 

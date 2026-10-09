@@ -92,6 +92,7 @@ describe('RedemptionsService partner discount history', () => {
         studentId: studentId,
         status: 'verified',
         verifiedBy: partnerRedemptionId,
+        source: 'partner_discount',
         merchant: {
           businessName: 'Inside Karachi',
           logoPath:

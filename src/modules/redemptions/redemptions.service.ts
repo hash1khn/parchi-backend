@@ -52,6 +52,11 @@ export interface RedemptionResponse {
   notes: string | null;
   createdAt: Date | null;
   status: 'pending' | 'verified' | 'rejected';
+  /**
+   * `partner_discount` = paid IK/partner ticket purchase with Parchi discount
+   * (from partner_discount_redemptions). Absent/merchant = cafe QR redeem.
+   */
+  source?: 'merchant' | 'partner_discount';
   offer?: {
     id: string;
     title: string;
@@ -1730,6 +1735,8 @@ export class RedemptionsService {
       notes: null,
       createdAt,
       status: 'verified',
+      // Only written after partner posts a paid checkout (recordDiscountRedemption).
+      source: 'partner_discount',
       merchant: {
         id: row.partner_id,
         businessName: partnerName,
