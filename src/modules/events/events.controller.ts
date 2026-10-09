@@ -45,6 +45,13 @@ export class AdminEventsController {
     return createApiResponse(data, 'Events retrieved successfully');
   }
 
+  @Get('ticket-sales')
+  @HttpCode(HttpStatus.OK)
+  async getTicketSales() {
+    const data = await this.eventsService.getTicketSales();
+    return createApiResponse(data, 'Ticket sales retrieved successfully');
+  }
+
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   async findOne(@Param('id', ParseUUIDPipe) id: string) {

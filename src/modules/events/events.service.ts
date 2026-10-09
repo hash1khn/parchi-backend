@@ -102,6 +102,64 @@ export class EventsService {
     return { success: true };
   }
 
+  async getTicketSales() {
+    const redemptions = await this.prisma.partner_discount_redemptions.findMany({
+      orderBy: { paid_at: 'desc' },
+      include: {
+        students: {
+          include: {
+            users: {
+              select: { email: true, phone: true },
+            },
+            institutes: {
+              select: { name: true },
+            },
+          },
+        },
+        partner_api_keys: {
+          select: { partner_name: true },
+        },
+      },
+    });
+
+    return redemptions.map((r) => {
+      const studentName = [r.students?.first_name, r.students?.last_name]
+        .filter(Boolean)
+        .join(' ') || 'Student';
+
+      let eventTitle = r.event_label ?? 'Event Ticket';
+      let ticketTier = 'General Pass';
+
+      if (r.event_label && r.event_label.includes(' - ')) {
+        const parts = r.event_label.split(' - ');
+        eventTitle = parts[0].trim();
+        ticketTier = parts.slice(1).join(' - ').trim();
+      }
+
+      return {
+        id: r.id,
+        studentId: r.student_id,
+        studentName,
+        studentEmail: r.students?.users?.email ?? null,
+        studentPhone: r.students?.users?.phone ?? null,
+        studentParchiId: r.students?.parchi_id ?? '',
+        studentInstitute: r.students?.institutes?.name ?? r.students?.university ?? null,
+        eventLabel: r.event_label,
+        eventTitle,
+        ticketTier,
+        discountAmountPkr: Number(r.discount_amount_pkr),
+        orderTotalPkr: r.order_total_pkr ? Number(r.order_total_pkr) : null,
+        currency: r.currency,
+        partnerName: r.partner_api_keys?.partner_name === 'inside_karachi'
+          ? 'Inside Karachi'
+          : (r.partner_api_keys?.partner_name ?? 'Inside Karachi'),
+        externalReference: r.external_reference,
+        paidAt: r.paid_at,
+        createdAt: r.created_at,
+      };
+    });
+  }
+
   private formatEvent(event: {
     id: string;
     title: string;
