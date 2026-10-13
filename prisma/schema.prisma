@@ -1107,6 +1107,7 @@ model app_configs {
   min_ios_version          String    @default("1.0.0")
   auto_queue_offers        Boolean   @default(true)
   auto_queue_partners      Boolean   @default(true)
+  home_ad_interval_seconds Int       @default(4)
 
   @@schema("public")
 }
@@ -1160,6 +1161,22 @@ model events {
 
   @@index([is_active, display_order], map: "idx_events_active_order")
   @@index([event_date], map: "idx_events_date")
+  @@schema("public")
+}
+
+model home_ads {
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  title         String    @db.VarChar(255)
+  image_url     String
+  link_url      String?
+  is_active     Boolean   @default(true)
+  display_order Int       @default(0)
+  starts_at     DateTime? @db.Timestamptz(6)
+  ends_at       DateTime? @db.Timestamptz(6)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([is_active, display_order], map: "idx_home_ads_active_order")
   @@schema("public")
 }
 

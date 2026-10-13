@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 
 export class UpdateConfigDto {
   @IsOptional()
@@ -40,4 +40,10 @@ export class UpdateConfigDto {
   @IsOptional()
   @IsBoolean()
   auto_queue_partners?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(2)
+  @Max(30)
+  home_ad_interval_seconds?: number;
 }
