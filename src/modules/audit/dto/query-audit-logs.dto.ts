@@ -21,6 +21,10 @@ export class QueryAuditLogsDto {
 
   @IsOptional()
   @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsString()
   tableName?: string;
 
   @IsOptional()

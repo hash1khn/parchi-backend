@@ -130,66 +130,106 @@ export class AuditService {
     const limit = queryDto.limit ?? 10;
     const skip = calculateSkip(page, limit);
 
-    // Build where clause
-    const where: Prisma.audit_logsWhereInput = {};
+    // Build conditions array to compose safely with AND
+    const andConditions: Prisma.audit_logsWhereInput[] = [];
 
     if (queryDto.userId) {
-      where.user_id = queryDto.userId;
+      andConditions.push({ user_id: queryDto.userId });
     }
 
-    if (queryDto.action) {
-      where.action = {
-        contains: queryDto.action,
-        mode: 'insensitive',
-      };
+    if (queryDto.action && queryDto.action !== 'all') {
+      andConditions.push({
+        action: {
+          contains: queryDto.action,
+          mode: 'insensitive',
+        },
+      });
+    } else if (queryDto.category && queryDto.category !== 'all') {
+      if (queryDto.category === 'accept') {
+        andConditions.push({
+          OR: [
+            { action: { startsWith: 'APPROVE', mode: 'insensitive' } },
+            { action: { startsWith: 'CREATE', mode: 'insensitive' } },
+            { action: { equals: 'UPDATE_OFFER', mode: 'insensitive' } },
+          ],
+        });
+      } else if (queryDto.category === 'reject') {
+        andConditions.push({
+          action: {
+            startsWith: 'REJECT',
+            mode: 'insensitive',
+          },
+        });
+      }
     }
 
     if (queryDto.tableName) {
-      where.table_name = {
-        contains: queryDto.tableName,
-        mode: 'insensitive',
-      };
+      andConditions.push({
+        table_name: {
+          contains: queryDto.tableName,
+          mode: 'insensitive',
+        },
+      });
     }
 
     if (queryDto.recordId) {
-      where.record_id = queryDto.recordId;
+      andConditions.push({ record_id: queryDto.recordId });
     }
 
     if (queryDto.startDate || queryDto.endDate) {
-      where.created_at = {};
+      const dateFilter: Prisma.DateTimeNullableFilter = {};
       if (queryDto.startDate) {
-        where.created_at.gte = new Date(queryDto.startDate);
+        const start = new Date(queryDto.startDate);
+        start.setUTCHours(0, 0, 0, 0);
+        dateFilter.gte = start;
       }
       if (queryDto.endDate) {
-        where.created_at.lte = new Date(queryDto.endDate);
+        const end = new Date(queryDto.endDate);
+        end.setUTCHours(23, 59, 59, 999);
+        dateFilter.lte = end;
       }
+      andConditions.push({ created_at: dateFilter });
     }
 
-    // Search functionality - search in action, table_name, or user email
+    // Search functionality - search in action, table_name, user email, or UUID
     if (queryDto.search) {
-      where.OR = [
-        {
-          action: {
-            contains: queryDto.search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          table_name: {
-            contains: queryDto.search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          users: {
-            email: {
-              contains: queryDto.search,
+      const search = queryDto.search.trim();
+      if (search) {
+        const searchOrConditions: Prisma.audit_logsWhereInput[] = [
+          {
+            action: {
+              contains: search,
               mode: 'insensitive',
             },
           },
-        },
-      ];
+          {
+            table_name: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            users: {
+              email: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        ];
+
+        // If the search term is a valid UUID, also check record_id and user_id
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search);
+        if (isUuid) {
+          searchOrConditions.push({ record_id: search });
+          searchOrConditions.push({ user_id: search });
+        }
+
+        andConditions.push({ OR: searchOrConditions });
+      }
     }
+
+    const where: Prisma.audit_logsWhereInput = andConditions.length > 0 ? { AND: andConditions } : {};
 
     // Determine sort order
     const orderBy: Prisma.audit_logsOrderByWithRelationInput = {
@@ -292,16 +332,20 @@ export class AuditService {
    * Get audit statistics for dashboard
    * Admin only
    */
-  async getAuditStatistics(startDate?: Date, endDate?: Date) {
+  async getAuditStatistics(startDate?: Date | string, endDate?: Date | string) {
     const where: Prisma.audit_logsWhereInput = {};
 
     if (startDate || endDate) {
       where.created_at = {};
       if (startDate) {
-        where.created_at.gte = startDate;
+        const start = new Date(startDate);
+        start.setUTCHours(0, 0, 0, 0);
+        where.created_at.gte = start;
       }
       if (endDate) {
-        where.created_at.lte = endDate;
+        const end = new Date(endDate);
+        end.setUTCHours(23, 59, 59, 999);
+        where.created_at.lte = end;
       }
     }
 
